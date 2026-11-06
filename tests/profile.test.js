@@ -94,3 +94,27 @@ test('смена пароля: нужен текущий, минимум 8 си�
   assert.equal((await client(srv.base).post('/api/auth/login', { email: 'boris@test.local', password: 'password123' })).status, 401);
   assert.equal((await client(srv.base).post('/api/auth/login', { email: 'boris@test.local', password: 'newpassword1' })).status, 200);
 });
+
+test('модераторы — только из ADMIN_EMAIL: убранный адрес теряет доступ при перезапуске, первый — владелец', async () => {
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'torgana-owner-'));
+  const env = (admins) => ({ ADMIN_EMAIL: admins, DATA_DIR: path.join(dir, 'data'), UPLOAD_DIR: path.join(dir, 'uploads') });
+  let s = await startServer(env('old@test.local,owner@test.local'));
+  const old = await registerUser(s.base, { name: 'Старый', email: 'old@test.local' });
+  const owner = await registerUser(s.base, { name: 'Торгана', email: 'owner@test.local' });
+  assert.equal(old.user.isOwner, true);
+  assert.equal(owner.user.isAdmin, true);
+  await s.stop();
+
+  s = await startServer(env('owner@test.local'));
+  const a = client(s.base); await a.post('/api/auth/login', { email: 'owner@test.local', password: 'password123' });
+  const b = client(s.base); await b.post('/api/auth/login', { email: 'old@test.local', password: 'password123' });
+  const me = (await a.get('/api/me')).data.user;
+  assert.equal(me.isAdmin, true);
+  assert.equal(me.isOwner, true);
+  assert.equal((await b.get('/api/me')).data.user.isAdmin, false);
+  assert.equal((await b.get('/api/admin/stats')).status, 403);
+  assert.match(s.log(), /Модерация снята у аккаунтов, которых нет в ADMIN_EMAIL: 1/);
+  await s.stop();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
