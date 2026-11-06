@@ -78,7 +78,11 @@ function pages(d) {
     ['favorites', '/favorites', d.buyer],
     ['messages', '/messages', d.buyer],
     ['chat', `/messages/${d.conv}`, d.buyer],
-    ['admin', '/admin', d.admin]
+    ['admin', '/admin', d.admin],
+    ['admin-mail', '/admin?status=mail', d.admin],
+    ['forgot', '/forgot', null],
+    ['reset-expired', `/reset?token=${'0'.repeat(64)}`, null],
+    ['unsubscribe', `/unsubscribe?t=${'0'.repeat(32)}&k=messages`, null]
   ];
 }
 

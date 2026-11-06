@@ -110,7 +110,7 @@
 
   // ================= состояние =================
   const S = {
-    config: { categories: [], cities: [], ai: false, payments: false, supportEmail: '', priceUnits: [''] },
+    config: { categories: [], cities: [], ai: false, payments: false, mail: false, supportEmail: '', priceUnits: [''] },
     user: null,
     unread: 0,
     city: localStorage.getItem('tg_city') || ''
@@ -311,6 +311,9 @@
     [/^\/edit\/(\d+)$/, viewEditor],
     [/^\/login$/, viewLogin],
     [/^\/register$/, viewRegister],
+    [/^\/forgot$/, viewForgot],
+    [/^\/reset$/, viewReset],
+    [/^\/(verify|unsubscribe)$/, viewMailLink],
     [/^\/favorites$/, viewFavorites],
     [/^\/messages(?:\/(\d+))?$/, viewMessages],
     [/^\/profile$/, viewProfile],
@@ -529,7 +532,8 @@
     if (l.isOwner && l.status === 'rejected') {
       ownerBanner = html`<div class="banner danger"><strong>Объявление отклонено модерацией.</strong> Причина: ${l.rejectReason || 'не указана'}.
         <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-dark btn-sm" href="/edit/${l.id}">Исправить</a>
-        ${l.appealText ? html`<span class="tag">Апелляция отправлена</span>` : html`<button class="btn btn-line btn-sm" data-appeal>Не согласен — подать апелляцию</button>`}</div></div>`;
+        ${l.appealReply ? '' : l.appealText ? html`<span class="tag">Апелляция отправлена</span>` : html`<button class="btn btn-line btn-sm" data-appeal>Не согласен — подать апелляцию</button>`}</div>
+        ${l.appealReply ? html`<div style="margin-top:10px"><strong>Ответ на апелляцию:</strong> ${l.appealReply}</div>` : ''}</div>`;
     } else if (l.isOwner && l.status === 'archived') {
       ownerBanner = html`<div class="banner soft"><strong>Объявление снято с публикации.</strong> Его не видят покупатели.</div>`;
     }
@@ -897,7 +901,8 @@
       <h1>Вход</h1><p class="sub">Рады видеть вас снова.</p>
       <form id="f" novalidate>
         <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" class="input" autocomplete="email" required></div>
-        <div class="field"><label for="password">Пароль</label><input id="password" name="password" type="password" class="input" autocomplete="current-password" required></div>
+        <div class="field"><label for="password">Пароль</label><input id="password" name="password" type="password" class="input" autocomplete="current-password" required>
+          ${S.config.mail ? html`<a class="help" href="/forgot" style="text-decoration:underline;justify-self:start">Забыли пароль?</a>` : ''}</div>
         <div class="form-error hidden" id="err" role="alert"></div>
         <button class="btn btn-dark btn-lg btn-block" type="submit">Войти</button>
       </form>
@@ -924,17 +929,22 @@
     bindAuthForm('/api/auth/register', q.get('next'));
   }
 
-  function bindAuthForm(url, next) {
+  // Отправка формы #f. По умолчанию — вход: запоминаем пользователя и уходим на next.
+  // check(body) может вернуть текст ошибки до отправки; done(r) — свой обработчик ответа.
+  function bindAuthForm(url, next, { extra = {}, check, done } = {}) {
     const f = $('#f');
     f.onsubmit = async (e) => {
       e.preventDefault();
       const err = $('#err');
       err.classList.add('hidden');
-      const body = Object.fromEntries(new FormData(f).entries());
+      const body = { ...Object.fromEntries(new FormData(f).entries()), ...extra };
+      const problem = check && check(body);
+      if (problem) { err.textContent = problem; err.classList.remove('hidden'); return; }
       const btn = $('button[type=submit]', f);
       btn.disabled = true;
       try {
         const r = await api('POST', url, body);
+        if (done) { done(r); return; }
         S.user = r.user;
         await refreshMe();
         go(next && next.startsWith('/') && !next.startsWith('//') ? next : '/', true);
@@ -942,6 +952,67 @@
         err.textContent = ex.message; err.classList.remove('hidden');
         btn.disabled = false;
       }
+    };
+  }
+
+  const authPage = (title, sub, form, alt = '') => {
+    app.innerHTML = String(html`<div class="wrap"><div class="auth"><h1>${title}</h1><p class="sub">${sub}</p>${form}${alt}</div></div>`);
+  };
+
+  async function viewForgot() {
+    setTitle('Восстановление пароля');
+    authPage('Забыли пароль?', 'Пришлём на почту ссылку, по которой можно задать новый пароль.', html`<form id="f" novalidate>
+        <div class="field"><label for="email">Email аккаунта</label><input id="email" name="email" type="email" class="input" autocomplete="email" required></div>
+        <div class="form-error hidden" id="err" role="alert"></div>
+        <button class="btn btn-dark btn-lg btn-block" type="submit">Отправить ссылку</button>
+      </form>`, html`<p class="alt">Вспомнили? <a href="/login">Войти</a></p>`);
+    bindAuthForm('/api/auth/forgot', null, {
+      check: (b) => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email || '') ? '' : 'Проверьте email'),
+      done: () => authPage('Проверьте почту', 'Если такой аккаунт есть, мы отправили письмо со ссылкой. Она действует 1 час. Письма нет — загляните в «Спам».',
+        html`<a class="btn btn-soft btn-lg btn-block" href="/login">Вернуться ко входу</a>`)
+    });
+  }
+
+  async function viewReset(_, q) {
+    setTitle('Новый пароль');
+    const token = q.get('token') || '';
+    const { valid } = await api('GET', `/api/auth/reset?token=${encodeURIComponent(token)}`);
+    if (!valid) {
+      authPage('Ссылка устарела', 'Она действует 1 час и срабатывает один раз. Запросите новую — это займёт минуту.',
+        html`<a class="btn btn-dark btn-lg btn-block" href="/forgot">Получить новую ссылку</a>`);
+      return;
+    }
+    authPage('Новый пароль', 'Придумайте пароль — после смены мы выйдем из аккаунта на других устройствах.', html`<form id="f" novalidate>
+        <div class="field"><label for="password">Новый пароль</label><input id="password" name="password" type="password" class="input" autocomplete="new-password" minlength="8" required><span class="help">Минимум 8 символов</span></div>
+        <div class="field"><label for="password2">Ещё раз</label><input id="password2" name="password2" type="password" class="input" autocomplete="new-password" required></div>
+        <div class="form-error hidden" id="err" role="alert"></div>
+        <button class="btn btn-dark btn-lg btn-block" type="submit">Сохранить и войти</button>
+      </form>`);
+    bindAuthForm('/api/auth/reset', '/profile', {
+      extra: { token },
+      check: (b) => (b.password.length < 8 ? 'Пароль — минимум 8 символов' : b.password !== b.password2 ? 'Пароли не совпадают' : '')
+    });
+  }
+
+  // Ссылки из писем: подтверждение email (срабатывает сразу) и отписка (по кнопке — почтовики иногда сами открывают ссылки).
+  async function viewMailLink(kind, q) {
+    const isVerify = kind === 'verify';
+    setTitle(isVerify ? 'Подтверждение email' : 'Отписка от писем');
+    const run = () => (isVerify ? api('POST', '/api/auth/verify', { token: q.get('token') }) : api('POST', '/api/unsubscribe', { t: q.get('t'), k: q.get('k') }));
+    const fail = (e) => authPage('Не получилось', e.message, html`<a class="btn btn-dark btn-lg btn-block" href="${S.user ? '/profile' : '/'}">${S.user ? 'В профиль' : 'На главную'}</a>`);
+    if (isVerify) {
+      try { await run(); } catch (e) { fail(e); return; }
+      if (S.user) await refreshMe();
+      authPage('Email подтверждён', 'Спасибо! Теперь мы будем сообщать о новых сообщениях и сможем помочь восстановить доступ к аккаунту.',
+        html`<a class="btn btn-dark btn-lg btn-block" href="/">На главную</a>`);
+      return;
+    }
+    const what = { messages: 'о новых сообщениях', moderation: 'о решениях модерации', all: 'с уведомлениями' }[q.get('k')] || 'с уведомлениями';
+    authPage('Отписаться?', `Больше не будем присылать письма ${what}. Включить их снова можно в профиле, в разделе «Настройки».`,
+      html`<form id="f"><button class="btn btn-dark btn-lg btn-block" type="submit">Отписаться</button></form>`);
+    $('#f').onsubmit = async (e) => {
+      e.preventDefault();
+      try { await run(); authPage('Готово', `Письма ${what} больше не придут.`, html`<a class="btn btn-soft btn-lg btn-block" href="/">На главную</a>`); } catch (ex) { fail(ex); }
     };
   }
 
@@ -1073,6 +1144,9 @@
           <button class="btn btn-line" id="logout">Выйти</button>
         </div>
       </div>
+      ${S.config.mail && !u.emailVerified ? html`<div class="banner warn" style="margin-bottom:20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <span style="flex:1 1 260px">${ic('warn', 18)} <strong>Подтвердите email.</strong> Мы отправили письмо на ${u.email} — без этого не придут уведомления о сообщениях.</span>
+        <button class="btn btn-soft btn-sm" id="verify-again">Отправить ещё раз</button></div>` : ''}
       <div class="tabs">
         <a class="chip ${tab === 'listings' ? 'active' : ''}" href="/profile">Мои объявления</a>
         <a class="chip ${tab === 'settings' ? 'active' : ''}" href="/profile?tab=settings">Настройки</a>
@@ -1085,6 +1159,8 @@
       toast('Вы вышли из аккаунта');
       go('/', true);
     };
+    const va = $('#verify-again');
+    if (va) va.onclick = async () => { va.disabled = true; try { await api('POST', '/api/me/verify'); toast(`Письмо отправлено на ${u.email}`); } catch (e) { toast(e.message, true); va.disabled = false; } };
     if (tab === 'settings') return renderSettings();
     return renderMyListings(q.get('status') || 'active');
   }
@@ -1103,13 +1179,13 @@
           <a href="/l/${i.id}" class="t" style="display:block">${i.title}</a>
           <div class="p">${price(i.price, i.priceUnit)}</div>
           <div class="m">${i.city} · ${shortWhen(i.createdAt)} · ${NF.format(i.views)} ${plural(i.views, 'просмотр', 'просмотра', 'просмотров')} · в избранном у ${i.favCount}</div>
-          ${i.status === 'rejected' ? html`<div class="banner danger" style="margin-top:10px;padding:10px 14px;font-size:14px"><strong>Причина:</strong> ${i.rejectReason}${i.appealAt ? html` · <span>апелляция отправлена</span>` : ''}</div>` : ''}
+          ${i.status === 'rejected' ? html`<div class="banner danger" style="margin-top:10px;padding:10px 14px;font-size:14px"><strong>Причина:</strong> ${i.rejectReason}${i.appealAt ? html` · <span>апелляция отправлена</span>` : ''}${i.appealReply ? html`<br><strong>Ответ на апелляцию:</strong> ${i.appealReply}` : ''}</div>` : ''}
         </div>
         <div class="my-actions">
           <a class="btn btn-soft btn-sm" href="/edit/${i.id}">${i.status === 'rejected' ? 'Исправить' : 'Изменить'}</a>
           ${i.status === 'active' ? html`<button class="btn btn-soft btn-sm" data-st="sold" data-id="${i.id}">Продано</button><button class="btn btn-line btn-sm" data-st="archived" data-id="${i.id}">Снять</button>` : ''}
           ${i.status === 'sold' || i.status === 'archived' ? html`<button class="btn btn-soft btn-sm" data-st="active" data-id="${i.id}">Опубликовать</button>` : ''}
-          ${i.status === 'rejected' && !i.appealAt ? html`<button class="btn btn-line btn-sm" data-appeal="${i.id}">Апелляция</button>` : ''}
+          ${i.status === 'rejected' && !i.appealAt && !i.appealReply ? html`<button class="btn btn-line btn-sm" data-appeal="${i.id}">Апелляция</button>` : ''}
           <button class="btn btn-danger btn-sm" data-del="${i.id}">Удалить</button>
         </div>
       </div>`) : html`<div class="empty"><h3>${status === 'active' ? 'У вас пока нет объявлений' : 'Здесь пусто'}</h3><p>${status === 'active' ? 'Разместите первое — это бесплатно.' : 'Объявления появятся здесь, когда сменят статус.'}</p>${status === 'active' ? html`<a class="btn btn-dark" href="/new">Разместить объявление</a>` : ''}</div>`}`);
@@ -1133,13 +1209,19 @@
       <div class="field"><label for="s-name">Имя</label><input id="s-name" name="name" class="input" maxlength="60" value="${u.name}" required></div>
       <div class="field"><label for="s-city">Город</label><input id="s-city" name="city" class="input" list="cities" value="${u.city || ''}" placeholder="Подставим в новые объявления">
         <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
-      <div class="field"><label for="s-email">Email</label><input id="s-email" class="input" value="${u.email}" disabled><span class="help">Email используется для входа</span></div>
+      <div class="field"><label for="s-email">Email</label><input id="s-email" class="input" value="${u.email}" disabled><span class="help">Email используется для входа${S.config.mail ? (u.emailVerified ? ' · подтверждён' : ' · не подтверждён') : ''}</span></div>
+      ${S.config.mail ? html`<div class="field"><span class="label">Письма на почту</span>
+        <label class="switch"><span>Новые сообщения в чате</span><input type="checkbox" name="notifyMessages" ${u.notifyMessages ? raw('checked') : ''}><span class="track"></span></label>
+        <label class="switch"><span>Решения модерации по моим объявлениям</span><input type="checkbox" name="notifyModeration" ${u.notifyModeration ? raw('checked') : ''}><span class="track"></span></label></div>` : ''}
       <div><button class="btn btn-dark" type="submit">Сохранить</button></div>
     </form>`);
     $('#sf').onsubmit = async (e) => {
       e.preventDefault();
       try {
-        const r = await api('PATCH', '/api/me', { name: e.target.name.value, city: e.target.city.value });
+        const f = e.target;
+        const body = { name: f.name.value, city: f.city.value };
+        if (f.notifyMessages) Object.assign(body, { notifyMessages: f.notifyMessages.checked, notifyModeration: f.notifyModeration.checked });
+        const r = await api('PATCH', '/api/me', body);
         S.user = r.user; toast('Сохранено'); renderHeader();
       } catch (ex) { toast(ex.message, true); }
     };
@@ -1165,21 +1247,26 @@
     setTitle('Модерация');
     const status = q.get('status') || 'active';
     const search = q.get('q') || '';
-    const [stats, list] = await Promise.all([api('GET', '/api/admin/stats'), api('GET', `/api/admin/listings?${new URLSearchParams({ status, q: search })}`)]);
-    const tabs = { active: 'Активные', appeals: `Апелляции${stats.appeals ? ` · ${stats.appeals}` : ''}`, rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые' };
+    const isMail = status === 'mail';
+    const [stats, list, mail] = await Promise.all([
+      api('GET', '/api/admin/stats'),
+      isMail ? { items: [] } : api('GET', `/api/admin/listings?${new URLSearchParams({ status, q: search })}`),
+      isMail ? api('GET', '/api/admin/mail') : null
+    ]);
+    const tabs = { active: 'Активные', appeals: `Апелляции${stats.appeals ? ` · ${stats.appeals}` : ''}`, rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые', mail: `Почта${S.config.mail ? '' : ' · не подключена'}` };
     app.innerHTML = String(html`<div class="wrap">
       <div class="profile-head"><h1 style="flex:1">Модерация</h1></div>
-      <div class="stats">
+      ${isMail ? '' : html`<div class="stats">
         <div class="stat"><div class="n">${NF.format(stats.users)}</div><div class="k">пользователей · +${stats.usersToday} за сутки</div></div>
         <div class="stat"><div class="n">${NF.format(stats.active)}</div><div class="k">активных · +${stats.listingsToday} за сутки</div></div>
         <div class="stat"><div class="n">${NF.format(stats.messagesToday)}</div><div class="k">сообщений за сутки</div></div>
         <div class="stat"><div class="n">${NF.format(stats.rejected)}</div><div class="k">отклонено</div></div>
-      </div>
+      </div>`}
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px">
         <div class="tabs" style="margin:0;flex:1">${Object.entries(tabs).map(([k, v]) => html`<a class="chip ${k === status ? 'active' : ''}" href="/admin?status=${k}">${v}</a>`)}</div>
-        <form id="as" class="search" style="width:320px;max-width:100%">${ic('search', 18)}<label class="sr" for="aq">Поиск</label><input id="aq" name="q" placeholder="Текст или email автора" value="${search}"></form>
+        ${isMail ? '' : html`<form id="as" class="search" style="width:320px;max-width:100%">${ic('search', 18)}<label class="sr" for="aq">Поиск</label><input id="aq" name="q" placeholder="Текст или email автора" value="${search}"></form>`}
       </div>
-      ${list.items.length ? list.items.map((i) => html`<div class="my-row">
+      ${isMail ? html`<div id="mail-box"></div>` : list.items.length ? list.items.map((i) => html`<div class="my-row">
         <a href="/l/${i.id}" class="my-img">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 26, 1.3)}</a>
         <div class="my-info">
           <a href="/l/${i.id}" class="t" style="display:block">${i.title}</a>
@@ -1188,26 +1275,30 @@
           ${i.description ? html`<div class="m" style="max-width:640px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${i.description}</div>` : ''}
           ${i.rejectReason && i.status === 'rejected' ? html`<div class="banner danger" style="margin-top:8px;padding:10px 14px;font-size:14px"><strong>Причина:</strong> ${i.rejectReason}</div>` : ''}
           ${i.appealAt ? html`<div class="banner warn" style="margin-top:8px;padding:10px 14px;font-size:14px"><strong>Апелляция:</strong> ${i.appealText}</div>` : ''}
+          ${i.appealReply ? html`<div class="banner soft" style="margin-top:8px;padding:10px 14px;font-size:14px"><strong>Ответ на апелляцию:</strong> ${i.appealReply}</div>` : ''}
         </div>
         <div class="my-actions">
-          ${i.status !== 'rejected' ? html`<button class="btn btn-danger btn-sm" data-reject="${i.id}">Отклонить</button>` : html`<button class="btn btn-accent btn-sm" data-restore="${i.id}">Восстановить</button>`}
+          ${i.status !== 'rejected' ? html`<button class="btn btn-danger btn-sm" data-reject="${i.id}">Отклонить</button>` : html`<button class="btn btn-accent btn-sm" data-restore="${i.id}">${i.appealAt ? 'Одобрить апелляцию' : 'Восстановить'}</button>`}
+          ${i.appealAt ? html`<button class="btn btn-line btn-sm" data-deny="${i.id}">Отказать по апелляции</button>` : ''}
           <button class="btn btn-line btn-sm" data-block="${i.user.id}" data-blocked="${i.user.blocked ? '1' : ''}">${i.user.blocked ? 'Разблокировать' : 'Заблокировать автора'}</button>
         </div>
       </div>`) : html`<div class="empty"><h3>Здесь пусто</h3><p>Нет объявлений в этом разделе.</p></div>`}
     </div>`);
+    if (isMail) { renderMailAdmin($('#mail-box'), mail); return; }
     $('#as').onsubmit = (e) => { e.preventDefault(); go(`/admin?${new URLSearchParams({ status, q: e.target.q.value.trim() })}`); };
-    $$('[data-reject]').forEach((b) => {
-      b.onclick = () => openModal(String(html`<h2>Отклонить объявление</h2><p class="muted" style="margin:0 0 12px">Причину увидит автор. Пишите понятно и вежливо.</p>
-        <div class="reasons">${REASONS.map((r) => html`<button type="button" class="chip" data-r="${r}">${r}</button>`)}</div>
-        <label class="sr" for="rr">Причина</label><textarea id="rr" class="textarea" style="margin-top:12px;min-height:110px" maxlength="500" placeholder="Причина отклонения"></textarea>
-        <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-danger" data-ok>Отклонить</button></div>`), (m, close) => {
-        $$('[data-r]', m).forEach((c) => { c.onclick = () => { $('#rr', m).value = c.dataset.r; }; });
-        $('[data-x]', m).onclick = close;
-        $('[data-ok]', m).onclick = async () => {
-          try { await api('POST', `/api/admin/listings/${b.dataset.reject}/reject`, { reason: $('#rr', m).value }); close(); toast('Отклонено'); render(); } catch (e) { toast(e.message, true); }
-        };
-      });
+    // Одно окно «решение с объяснением» — для отклонения объявления и для отказа по апелляции.
+    const reasonModal = (title, url, okLabel, reasons) => openModal(String(html`<h2>${title}</h2><p class="muted" style="margin:0 0 12px">Текст увидит автор${S.config.mail ? ' — и получит его письмом' : ''}. Пишите понятно и вежливо.</p>
+        ${reasons ? html`<div class="reasons">${reasons.map((r) => html`<button type="button" class="chip" data-r="${r}">${r}</button>`)}</div>` : ''}
+        <label class="sr" for="rr">Объяснение</label><textarea id="rr" class="textarea" style="margin-top:12px;min-height:110px" maxlength="500" placeholder="Объяснение для автора"></textarea>
+        <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-danger" data-ok>${okLabel}</button></div>`), (m, close) => {
+      $$('[data-r]', m).forEach((c) => { c.onclick = () => { $('#rr', m).value = c.dataset.r; }; });
+      $('[data-x]', m).onclick = close;
+      $('[data-ok]', m).onclick = async () => {
+        try { await api('POST', url, { reason: $('#rr', m).value }); close(); toast('Готово'); render(); } catch (e) { toast(e.message, true); }
+      };
     });
+    $$('[data-reject]').forEach((b) => { b.onclick = () => reasonModal('Отклонить объявление', `/api/admin/listings/${b.dataset.reject}/reject`, 'Отклонить', REASONS); });
+    $$('[data-deny]').forEach((b) => { b.onclick = () => reasonModal('Отказать по апелляции', `/api/admin/listings/${b.dataset.deny}/appeal-deny`, 'Отказать'); });
     $$('[data-restore]').forEach((b) => {
       b.onclick = async () => { try { await api('POST', `/api/admin/listings/${b.dataset.restore}/restore`); toast('Восстановлено'); render(); } catch (e) { toast(e.message, true); } };
     });
@@ -1218,6 +1309,70 @@
         try { await api('POST', `/api/admin/users/${b.dataset.block}/block`, { blocked }); toast(blocked ? 'Заблокирован' : 'Разблокирован'); render(); } catch (e) { toast(e.message, true); }
       };
     });
+  }
+
+  // Модерация → Почта: подключение SMTP, проверка письмом, журнал отправки.
+  function renderMailAdmin(box, { config: c, stats: st }) {
+    const SECURITY = [['ssl', 'SSL (обычно порт 465)'], ['starttls', 'STARTTLS (порт 587 или 2525)']];
+    const STATUS = { pending: 'в очереди', sent: 'отправлено', failed: 'не доставлено' };
+    const KIND = { verify: 'Подтверждение email', reset: 'Восстановление пароля', message: 'Новое сообщение', moderation: 'Модерация', test: 'Проверка' };
+    const domain = (c.from || 'no-reply@torgana.ru').split('@')[1];
+    box.innerHTML = String(html`
+      <div class="stats">
+        <div class="stat"><div class="n">${c.ready ? 'Подключена' : 'Нет'}</div><div class="k">${c.ready ? `письма уходят с ${c.from}` : 'письма не отправляются'}</div></div>
+        <div class="stat"><div class="n">${NF.format(st.sent)}</div><div class="k">отправлено за 30 дней</div></div>
+        <div class="stat"><div class="n">${NF.format(st.pending)}</div><div class="k">в очереди</div></div>
+        <div class="stat"><div class="n">${NF.format(st.failed)}</div><div class="k">не доставлено</div></div>
+      </div>
+      ${c.ready ? '' : html`<div class="banner warn" style="margin-bottom:20px"><strong>Почта не подключена.</strong> Пока её нет, на сайте скрыты «Забыли пароль?» и подтверждение email, письма о сообщениях и решениях модерации не уходят.</div>`}
+      <div class="mail-grid">
+        <form class="panel settings" id="mf" style="max-width:none">
+          <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><h2 class="h2" style="margin:0">Подключение</h2>
+            <button type="button" class="btn btn-soft btn-sm" id="preset">Заполнить для SMTP.BZ</button></div>
+          <div class="row stack-m"><div class="field" style="flex:2"><label for="m-host">Сервер SMTP</label><input id="m-host" name="host" class="input" value="${c.host || ''}" placeholder="connect.smtp.bz"></div>
+            <div class="field" style="flex:1"><label for="m-port">Порт</label><input id="m-port" name="port" class="input" inputmode="numeric" value="${c.port || ''}" placeholder="465"></div></div>
+          <div class="field"><label for="m-sec">Шифрование</label><select id="m-sec" name="security" class="select">${SECURITY.map(([v, t]) => html`<option value="${v}" ${c.security === v ? raw('selected') : ''}>${t}</option>`)}</select></div>
+          <div class="field"><label for="m-user">Логин</label><input id="m-user" name="user" class="input" value="${c.user || ''}" autocomplete="off" placeholder="Логин из личного кабинета SMTP.BZ"></div>
+          <div class="field"><label for="m-pass">Пароль</label><input id="m-pass" name="pass" type="password" class="input" autocomplete="new-password" placeholder="${c.hasPass ? 'Сохранён — оставьте пустым, чтобы не менять' : 'Пароль SMTP из личного кабинета'}"></div>
+          <div class="row stack-m"><div class="field" style="flex:1"><label for="m-from">Адрес отправителя</label><input id="m-from" name="from" class="input" value="${c.from || ''}" placeholder="no-reply@torgana.ru"></div>
+            <div class="field" style="flex:1"><label for="m-name">Имя отправителя</label><input id="m-name" name="fromName" class="input" value="${c.fromName || ''}" placeholder="Торгана"></div></div>
+          <div class="form-error hidden" id="m-err" role="alert"></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-dark" type="submit">Сохранить</button></div>
+          <p class="muted" style="margin:0;font-size:13px">Чтобы письма не попадали в спам, домен ${domain} подтверждается в SMTP.BZ, а в DNS домена добавляются записи SPF и DKIM, которые выдаст сервис.</p>
+        </form>
+        <div style="display:flex;flex-direction:column;gap:20px">
+          <form class="panel" id="mt" style="display:flex;flex-direction:column;gap:14px">
+            <h2 class="h2" style="margin:0">Проверка</h2>
+            <p class="muted" style="margin:0;font-size:14px">Отправим тестовое письмо сразу, минуя очередь, и покажем ответ почтового сервиса.</p>
+            <div class="row"><label class="sr" for="mt-to">Кому</label><input id="mt-to" class="input" type="email" value="${S.user.email}">
+              <button class="btn btn-accent" type="submit" ${c.ready ? '' : raw('disabled')}>Отправить</button></div>
+            <div class="form-error hidden" id="mt-err" role="alert"></div>
+          </form>
+          <div class="panel"><h2 class="h2" style="margin:0 0 12px">Последние письма</h2>
+            ${st.recent.length ? html`<div style="display:flex;flex-direction:column;gap:10px">${st.recent.map((r) => html`<div style="display:flex;gap:10px;justify-content:space-between;font-size:14px;border-bottom:1px solid var(--line);padding-bottom:10px">
+              <span style="min-width:0"><strong>${KIND[r.kind] || r.kind}</strong> · ${r.to_email}<br><span class="muted">${when(r.created_at)}${r.last_error ? html` · ${r.last_error}` : ''}</span></span>
+              <span class="tag ${r.status === 'sent' ? 'accent' : ''}" style="flex:none;align-self:flex-start">${STATUS[r.status]}</span></div>`)}</div>` : html`<p class="muted" style="margin:0">Писем пока не было.</p>`}
+          </div>
+        </div>
+      </div>`);
+    const f = $('#mf', box);
+    $('#preset', box).onclick = () => { f.host.value = 'connect.smtp.bz'; f.port.value = '465'; f.security.value = 'ssl'; if (!f.from.value) f.from.value = 'no-reply@torgana.ru'; if (!f.fromName.value) f.fromName.value = 'Торгана'; f.user.focus(); };
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const err = $('#m-err', box); err.classList.add('hidden');
+      try {
+        await api('PUT', '/api/admin/mail', Object.fromEntries(new FormData(f).entries()));
+        S.config = await api('GET', '/api/config');
+        toast('Сохранено. Отправьте тестовое письмо, чтобы проверить.');
+        render();
+      } catch (ex) { err.textContent = ex.message; err.classList.remove('hidden'); }
+    };
+    $('#mt', box).onsubmit = async (e) => {
+      e.preventDefault();
+      const err = $('#mt-err', box); err.classList.add('hidden');
+      const b = $('button', e.target); b.disabled = true; b.textContent = 'Отправляем…';
+      try { const r = await api('POST', '/api/admin/mail/test', { to: $('#mt-to', box).value }); toast(`Письмо отправлено на ${r.to}`); render(); } catch (ex) { err.textContent = ex.message; err.classList.remove('hidden'); b.disabled = false; b.textContent = 'Отправить'; }
+    };
   }
 
   // ================= информационные страницы =================

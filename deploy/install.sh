@@ -80,16 +80,9 @@ EOF
 fi
 
 log "Служба сайта и автообновление"
-install -m 644 "$APP_DIR/deploy/torgana.service" /etc/systemd/system/torgana.service
-install -m 644 "$APP_DIR/deploy/torgana-update.service" /etc/systemd/system/torgana-update.service
-install -m 644 "$APP_DIR/deploy/torgana-update.timer" /etc/systemd/system/torgana-update.timer
-install -m 644 "$APP_DIR/deploy/torgana-backup.service" /etc/systemd/system/torgana-backup.service
-install -m 644 "$APP_DIR/deploy/torgana-backup.timer" /etc/systemd/system/torgana-backup.timer
 echo "$APP_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart torgana, /usr/bin/systemctl is-active torgana" > /etc/sudoers.d/torgana
 chmod 440 /etc/sudoers.d/torgana
-systemctl daemon-reload
-systemctl enable --now torgana
-systemctl enable --now torgana-update.timer torgana-backup.timer
+bash "$APP_DIR/deploy/apply-units.sh"
 
 log "nginx"
 sed "s/__DOMAIN__/$DOMAIN/g" "$APP_DIR/deploy/nginx.conf" > /etc/nginx/sites-available/torgana

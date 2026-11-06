@@ -8,6 +8,6 @@ for f in torgana.service torgana-update.service torgana-update.timer torgana-bac
 done
 chmod 755 "$APP_DIR/deploy/backup.sh" "$APP_DIR/deploy/restore.sh" 2>/dev/null || true
 systemctl daemon-reload
-systemctl enable --now torgana-update.timer torgana-backup.timer >/dev/null
+systemctl enable --now torgana torgana-update.timer torgana-backup.timer >/dev/null
 echo "Службы обновлены:"
 systemctl list-timers 'torgana-*' --no-pager | head -5

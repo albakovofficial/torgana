@@ -14,6 +14,7 @@ const auth = require('./lib/auth');
 const { CATEGORIES, CATEGORY_IDS, CITIES, PRICE_UNITS, CONDITIONS } = require('./lib/constants');
 const { norm, parseQuery } = require('./lib/search');
 const { suggestFromPhoto } = require('./lib/ai');
+const { createMailer } = require('./lib/mailer');
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 3000);
@@ -32,6 +33,13 @@ const PAYMENTS_ENABLED = false; // Безопасная сделка включ�
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const db = openDb(path.join(DATA_DIR, 'torgana.db'));
+const mailer = createMailer({
+  db,
+  baseUrl: PUBLIC_URL || `http://localhost:${PORT}`,
+  tickMs: Number(process.env.MAIL_TICK_MS) || undefined,
+  chatDelayMs: process.env.CHAT_NOTIFY_DELAY_MS ? Number(process.env.CHAT_NOTIFY_DELAY_MS) : undefined,
+  chatGapMs: process.env.CHAT_NOTIFY_GAP_MS ? Number(process.env.CHAT_NOTIFY_GAP_MS) : undefined
+});
 
 // ---------- помощники ----------
 
@@ -59,7 +67,10 @@ function requireAdmin(ctx) {
 }
 
 function publicUser(u) {
-  return u ? { id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, isAdmin: !!u.is_admin, createdAt: u.created_at } : null;
+  return u ? {
+    id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, isAdmin: !!u.is_admin, createdAt: u.created_at,
+    emailVerified: !!u.email_verified, notifyMessages: !!u.notify_messages, notifyModeration: !!u.notify_moderation
+  } : null;
 }
 
 const photoUrl = (file) => (file ? `/uploads/${file}` : null);
@@ -169,6 +180,7 @@ route('GET', '/api/config', () => ({
   priceUnits: PRICE_UNITS,
   ai: !!AI_KEY,
   payments: PAYMENTS_ENABLED,
+  mail: mailer.ready(),
   supportEmail: SUPPORT_EMAIL
 }));
 
@@ -191,9 +203,11 @@ route('POST', '/api/auth/register', async (ctx) => {
   const isAdmin = ADMIN_EMAILS.includes(email) ? 1 : 0;
   const info = db.prepare('INSERT INTO users (email, name, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)')
     .run(email, name, auth.hashPassword(password), isAdmin, now());
-  const s = auth.createSession(db, Number(info.lastInsertRowid));
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
+  const s = auth.createSession(db, user.id);
   ctx.setCookie(auth.sessionCookie(s.token, s.expires, SECURE_COOKIES));
-  return { user: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid)) };
+  mailer.sendAccountLetter(user, 'verify');
+  return { user: publicUser(user) };
 });
 
 route('POST', '/api/auth/login', async (ctx) => {
@@ -218,14 +232,79 @@ route('POST', '/api/auth/logout', (ctx) => {
   return { ok: true };
 });
 
+// ---------- письма: подтверждение email, восстановление пароля, отписка ----------
+
+function requireMail() {
+  if (!mailer.ready()) throw new HttpError(503, 'Отправка писем пока не подключена. Напишите в поддержку.');
+}
+
+route('POST', '/api/auth/forgot', async (ctx) => {
+  requireMail();
+  rateLimit(`forgot:${ctx.ip}`, 5, 60 * 60 * 1000);
+  const email = str((await readJson(ctx.req)).email, 120).toLowerCase();
+  const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_blocked = 0').get(email);
+  // Ответ одинаковый, есть такой аккаунт или нет: по форме нельзя узнать, кто зарегистрирован.
+  if (user) {
+    try { rateLimit(`forgot-mail:${email}`, 3, 60 * 60 * 1000); mailer.sendAccountLetter(user, 'reset'); } catch { /* лимит: молча */ }
+  }
+  return { ok: true };
+});
+
+route('GET', '/api/auth/reset', (ctx) => ({ valid: !!mailer.checkToken(ctx.query.get('token'), 'reset', false) }));
+
+route('POST', '/api/auth/reset', async (ctx) => {
+  rateLimit(`reset:${ctx.ip}`, 20, 60 * 60 * 1000);
+  const body = await readJson(ctx.req);
+  const password = String(body.password || '');
+  if (password.length < 8) throw new HttpError(400, 'Пароль — минимум 8 символов');
+  if (password.length > 200) throw new HttpError(400, 'Слишком длинный пароль');
+  const t = mailer.checkToken(body.token, 'reset');
+  if (!t) throw new HttpError(400, 'Ссылка устарела или уже использована. Запросите новую.');
+  // Ссылка пришла на этот ящик — значит, он подтверждён. Все старые сессии завершаем.
+  db.prepare('UPDATE users SET password_hash = ?, email_verified = 1 WHERE id = ?').run(auth.hashPassword(password), t.user_id);
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(t.user_id);
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(t.user_id);
+  if (user.is_blocked) throw new HttpError(403, 'Аккаунт заблокирован. Напишите в поддержку.');
+  const s = auth.createSession(db, user.id);
+  ctx.setCookie(auth.sessionCookie(s.token, s.expires, SECURE_COOKIES));
+  return { user: publicUser(user) };
+});
+
+route('POST', '/api/auth/verify', async (ctx) => {
+  rateLimit(`verify:${ctx.ip}`, 30, 60 * 60 * 1000);
+  const t = mailer.checkToken((await readJson(ctx.req)).token, 'verify');
+  if (!t) throw new HttpError(400, 'Ссылка устарела или уже использована. Отправьте письмо ещё раз из профиля.');
+  db.prepare('UPDATE users SET email_verified = 1 WHERE id = ?').run(t.user_id);
+  return { ok: true };
+});
+
+route('POST', '/api/me/verify', (ctx) => {
+  const u = requireUser(ctx);
+  requireMail();
+  if (u.email_verified) return { ok: true, already: true };
+  rateLimit(`verify-send:${u.id}`, 3, 60 * 60 * 1000);
+  mailer.sendAccountLetter(u, 'verify');
+  return { ok: true };
+});
+
+// Отписка: со страницы /unsubscribe и «в один клик» из почтового клиента (List-Unsubscribe-Post).
+route('POST', '/api/unsubscribe', async (ctx) => {
+  const body = ctx.req.headers['content-type'] === 'application/json' ? await readJson(ctx.req) : {};
+  const ok = mailer.unsubscribe(body.t || ctx.query.get('t'), body.k || ctx.query.get('k') || 'all');
+  if (!ok) throw new HttpError(400, 'Ссылка для отписки неверная');
+  return { ok: true };
+});
+
 route('PATCH', '/api/me', async (ctx) => {
   const u = requireUser(ctx);
   const body = await readJson(ctx.req);
   const name = body.name !== undefined ? str(body.name, 60) : u.name;
   const city = body.city !== undefined ? str(body.city, 60) : u.city;
   const phone = body.phone !== undefined ? str(body.phone, 30) : u.phone;
+  const flag = (v, cur) => (v === undefined ? cur : v ? 1 : 0);
   if (name.length < 2) throw new HttpError(400, 'Укажите имя');
-  db.prepare('UPDATE users SET name = ?, city = ?, phone = ? WHERE id = ?').run(name, city, phone, u.id);
+  db.prepare('UPDATE users SET name = ?, city = ?, phone = ?, notify_messages = ?, notify_moderation = ? WHERE id = ?')
+    .run(name, city, phone, flag(body.notifyMessages, u.notify_messages), flag(body.notifyModeration, u.notify_moderation), u.id);
   return { user: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id)) };
 });
 
@@ -293,7 +372,8 @@ route('GET', '/api/listings/:id', (ctx) => {
       id: l.id, title: l.title, description: l.description, category: l.category, price: l.price, priceUnit: l.price_unit,
       city: l.city, condition: l.condition, delivery: !!l.delivery, status: l.status, views: l.views,
       createdAt: l.created_at, updatedAt: l.updated_at, photos, isFav, isOwner: !!isOwner,
-      rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : ''
+      rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : '',
+      appealReply: (isOwner || isAdmin) ? l.appeal_reply : ''
     },
     seller: { id: seller.id, name: seller.name, city: seller.city, createdAt: seller.created_at, activeCount: sellerActive },
     similar,
@@ -355,6 +435,7 @@ route('POST', '/api/listings/:id/appeal', async (ctx) => {
   if (l.status !== 'rejected') throw new HttpError(400, 'Апелляция нужна только для отклонённых объявлений');
   const text = str((await readJson(ctx.req)).text, 1000);
   if (text.length < 10) throw new HttpError(400, 'Опишите, почему решение стоит пересмотреть');
+  if (l.appeal_reply) throw new HttpError(400, 'Апелляция уже рассмотрена. Исправьте объявление — после сохранения оно снова появится в поиске.');
   db.prepare('UPDATE listings SET appeal_text = ?, appeal_at = ? WHERE id = ?').run(text, now(), id);
   return { ok: true };
 });
@@ -368,7 +449,7 @@ route('GET', '/api/my/listings', (ctx) => {
   return {
     items: rows.map((r) => ({
       ...cardFromRow(r), views: r.views, favCount: r.fav_count, rejectReason: r.reject_reason,
-      appealText: r.appeal_text, appealAt: r.appeal_at
+      appealText: r.appeal_text, appealAt: r.appeal_at, appealReply: r.appeal_reply
     }))
   };
 });
@@ -560,7 +641,7 @@ route('GET', '/api/admin/listings', (ctx) => {
     ORDER BY ${status === 'appeals' ? 'l.appeal_at DESC' : 'l.created_at DESC'} LIMIT 100`).all(...params);
   return {
     items: rows.map((r) => ({
-      ...cardFromRow(r), description: r.description, rejectReason: r.reject_reason, appealText: r.appeal_text, appealAt: r.appeal_at,
+      ...cardFromRow(r), description: r.description, rejectReason: r.reject_reason, appealText: r.appeal_text, appealAt: r.appeal_at, appealReply: r.appeal_reply,
       user: { id: r.user_id, name: r.user_name, email: r.user_email, blocked: !!r.is_blocked }
     }))
   };
@@ -572,15 +653,30 @@ route('POST', '/api/admin/listings/:id/reject', async (ctx) => {
   const reason = str((await readJson(ctx.req)).reason, 500);
   if (reason.length < 5) throw new HttpError(400, 'Укажите понятную причину — её увидит автор');
   if (!loadListing(id)) throw new HttpError(404, 'Не найдено');
-  db.prepare('UPDATE listings SET status = \'rejected\', reject_reason = ?, appeal_text = \'\', appeal_at = NULL, updated_at = ? WHERE id = ?').run(reason, now(), id);
+  db.prepare('UPDATE listings SET status = \'rejected\', reject_reason = ?, appeal_text = \'\', appeal_at = NULL, appeal_reply = \'\', updated_at = ? WHERE id = ?').run(reason, now(), id);
+  mailer.notifyModeration(id, 'rejected', reason);
+  return { ok: true };
+});
+
+route('POST', '/api/admin/listings/:id/appeal-deny', async (ctx) => {
+  requireAdmin(ctx);
+  const id = parseInt(ctx.params.id, 10);
+  const reason = str((await readJson(ctx.req)).reason, 500);
+  if (reason.length < 5) throw new HttpError(400, 'Объясните решение — ответ увидит автор');
+  const l = loadListing(id);
+  if (!l || l.status !== 'rejected' || !l.appeal_at) throw new HttpError(404, 'Апелляция не найдена');
+  db.prepare('UPDATE listings SET appeal_at = NULL, appeal_reply = ?, updated_at = ? WHERE id = ?').run(reason, now(), id);
+  mailer.notifyModeration(id, 'appeal-denied', reason);
   return { ok: true };
 });
 
 route('POST', '/api/admin/listings/:id/restore', (ctx) => {
   requireAdmin(ctx);
   const id = parseInt(ctx.params.id, 10);
-  if (!loadListing(id)) throw new HttpError(404, 'Не найдено');
-  db.prepare('UPDATE listings SET status = \'active\', appeal_at = NULL, updated_at = ? WHERE id = ?').run(now(), id);
+  const l = loadListing(id);
+  if (!l) throw new HttpError(404, 'Не найдено');
+  db.prepare('UPDATE listings SET status = \'active\', appeal_at = NULL, appeal_reply = \'\', updated_at = ? WHERE id = ?').run(now(), id);
+  if (l.status === 'rejected') mailer.notifyModeration(id, l.appeal_at ? 'appeal-approved' : 'restored');
   return { ok: true };
 });
 
@@ -592,6 +688,25 @@ route('POST', '/api/admin/users/:id/block', async (ctx) => {
   db.prepare('UPDATE users SET is_blocked = ? WHERE id = ?').run(blocked, id);
   if (blocked) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
   return { ok: true };
+});
+
+// Раздел «Почта» в модерации: подключение, проверка, журнал отправки.
+route('GET', '/api/admin/mail', (ctx) => {
+  requireAdmin(ctx);
+  return { config: mailer.publicConfig(), stats: mailer.stats() };
+});
+
+route('PUT', '/api/admin/mail', async (ctx) => {
+  requireAdmin(ctx);
+  try { return { config: mailer.saveConfig(await readJson(ctx.req)) }; } catch (e) { throw new HttpError(400, e.message); }
+});
+
+route('POST', '/api/admin/mail/test', async (ctx) => {
+  const admin = requireAdmin(ctx);
+  rateLimit(`mailtest:${admin.id}`, 10, 10 * 60 * 1000);
+  const to = str((await readJson(ctx.req)).to, 120) || admin.email;
+  try { await mailer.sendTest(to); } catch (e) { throw new HttpError(502, e.message); }
+  return { ok: true, to };
 });
 
 // ---------- статика ----------
@@ -719,6 +834,8 @@ setInterval(() => {
     db.prepare('DELETE FROM uploads WHERE file = ?').run(file);
   }
 }, 60 * 60 * 1000).unref();
+
+mailer.start();
 
 server.listen(PORT, HOST, () => {
   console.log(`Торгана запущена: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
