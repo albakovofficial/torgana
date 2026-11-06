@@ -207,3 +207,31 @@ test('письмо не ушло — повтор, затем «не доста�
   assert.ok(r && r.status === 'pending' && r.attempts >= 1 && /Нет связи/.test(r.last_error), JSON.stringify(r));
   await admin.put('/api/admin/mail', mailCfg());
 });
+
+test('отзывы: продавцу — «Новый отзыв», автору — решение; отдельная отписка от писем об отзывах', async () => {
+  const id = await publish(boris, admin, { title: 'Гитара акустическая', category: 'hobby', city: 'Казань', price: '7000' });
+  const conv = (await anna.post('/api/conversations', { listingId: id })).data.id;
+  await anna.post(`/api/conversations/${conv}/messages`, { body: 'Добрый день! Можно посмотреть?' });
+  await boris.post(`/api/conversations/${conv}/messages`, { body: 'Да, приезжайте.' });
+  const rid = (await anna.post('/api/reviews', { conversationId: conv, rating: 5, received: true, text: 'Гитара отличная, всё честно.' })).data.review.id;
+  let n = smtp.inbox.length;
+  await admin.post(`/api/admin/reviews/${rid}/publish`);
+  const toSeller = await smtp.waitFor((x) => smtp.inbox.indexOf(x) >= n && x.to === 'boris@test.local' && /Новый отзыв о вас/.test(x.subject));
+  assert.match(toSeller.html, /Гитара отличная/);
+  assert.match(toSeller.html, /\/profile\/reviews/);
+  assert.match(toSeller.headers, /k=reviews/);
+  await smtp.waitFor((x) => smtp.inbox.indexOf(x) >= n && x.to === 'anna@test.local' && /Отзыв опубликован/.test(x.subject));
+  // отписка только от отзывов: сообщения и модерация остаются
+  const was = (await boris.get('/api/me')).data.user;
+  const u = new URL(/List-Unsubscribe: <([^>]+)>/.exec(toSeller.headers)[1]);
+  await fetch(`${srv.base}${u.pathname}${u.search}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'List-Unsubscribe=One-Click' });
+  const me = (await boris.get('/api/me')).data.user;
+  assert.equal(me.notifyReviews, false);
+  assert.equal(me.notifyMessages, was.notifyMessages, 'письма о сообщениях не тронуты');
+  assert.equal(me.notifyModeration, was.notifyModeration, 'письма о модерации не тронуты');
+  n = smtp.inbox.length;
+  await boris.post(`/api/reviews/${rid}/complaint`, { reason: 'Другое', text: 'Проверяю, что писем об отзывах больше нет.' });
+  await admin.post(`/api/admin/reviews/${rid}/complaint/keep`, { reason: 'Нарушений нет' });
+  await new Promise((r) => setTimeout(r, 600));
+  assert.ok(!smtp.inbox.slice(n).some((x) => x.to === 'boris@test.local' && /отзыв/i.test(x.subject)), 'после отписки писем об отзывах нет');
+});

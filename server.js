@@ -84,7 +84,8 @@ const photoUrl = (file) => (file ? `/uploads/${file}` : null);
 function publicUser(u) {
   return u ? {
     id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, avatar: photoUrl(u.avatar), isAdmin: !!u.is_admin, isOwner: !!u.is_admin && u.email === OWNER_EMAIL, createdAt: u.created_at,
-    emailVerified: !!u.email_verified, notifyMessages: !!u.notify_messages, notifyModeration: !!u.notify_moderation
+    emailVerified: !!u.email_verified, notifyMessages: !!u.notify_messages, notifyModeration: !!u.notify_moderation, notifyReviews: !!u.notify_reviews,
+    rating: reviews.ratingOf(u.id)
   } : null;
 }
 
@@ -206,6 +207,7 @@ const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loa
 const { logEvent } = require('./lib/moderation')({ route, db, mailer, h: helpers });
 const supportChat = require('./lib/support')({ route, db, mailer, h: helpers });
 const stats = require('./lib/stats')({ route, db, h: helpers });
+const reviews = require('./lib/reviews')({ route, db, mailer, h: helpers });
 
 route('GET', '/api/config', () => ({
   categories: CATEGORIES,
@@ -347,8 +349,8 @@ route('PATCH', '/api/me', async (ctx) => {
       if (!row || row.listing_id !== null) throw new HttpError(400, 'Сначала загрузите фото');
     }
   }
-  db.prepare('UPDATE users SET name = ?, city = ?, phone = ?, notify_messages = ?, notify_moderation = ? WHERE id = ?')
-    .run(name, city, phone, flag(body.notifyMessages, u.notify_messages), flag(body.notifyModeration, u.notify_moderation), u.id);
+  db.prepare('UPDATE users SET name = ?, city = ?, phone = ?, notify_messages = ?, notify_moderation = ?, notify_reviews = ? WHERE id = ?')
+    .run(name, city, phone, flag(body.notifyMessages, u.notify_messages), flag(body.notifyModeration, u.notify_moderation), flag(body.notifyReviews, u.notify_reviews), u.id);
   if (avatar !== null) setAvatar(u.id, avatar);
   return { user: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id)) };
 });
@@ -435,7 +437,7 @@ route('GET', '/api/listings/:id', (ctx) => {
       rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : '',
       appealReply: (isOwner || isAdmin) ? l.appeal_reply : '', flags: (isOwner || isAdmin) ? l.flags : ''
     },
-    seller: { id: seller.id, name: seller.name, city: seller.city, avatar: photoUrl(seller.avatar), createdAt: seller.created_at, activeCount: sellerActive },
+    seller: { id: seller.id, name: seller.name, city: seller.city, avatar: photoUrl(seller.avatar), createdAt: seller.created_at, activeCount: sellerActive, rating: reviews.ratingOf(seller.id) },
     similar,
     market
   };
@@ -656,6 +658,7 @@ route('GET', '/api/conversations/:id', (ctx) => {
   const photo = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position LIMIT 1').get(c.listing_id);
   return {
     conversation: { id: c.id, role: c.buyer_id === u.id ? 'buyer' : 'seller' },
+    review: reviews.chatState(u.id, c),
     listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, photo: photoUrl(photo && photo.file) },
     other: { id: other.id, name: other.name, avatar: photoUrl(other.avatar), createdAt: other.created_at },
     messages
@@ -676,12 +679,12 @@ route('POST', '/api/conversations/:id/messages', async (ctx) => {
 
 route('GET', '/api/users/:id', (ctx) => {
   const id = parseInt(ctx.params.id, 10);
-  const u = db.prepare('SELECT id, name, city, avatar, created_at, is_blocked FROM users WHERE id = ?').get(id);
+  const u = db.prepare('SELECT id, name, city, avatar, created_at, is_blocked, email_verified FROM users WHERE id = ?').get(id);
   if (!u || u.is_blocked) throw new HttpError(404, 'Пользователь не найден');
   const uid = ctx.user ? ctx.user.id : 0;
   const items = db.prepare(`${CARD_SELECT} WHERE l.user_id = ? AND l.status = 'active' ORDER BY l.created_at DESC LIMIT 60`).all(uid, id).map(cardFromRow);
   const sold = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ? AND status = \'sold\'').get(id).n;
-  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length }, items };
+  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rating: reviews.ratingOf(u.id) }, items };
 });
 
 // Юридические документы (реквизиты и раздел «Запрещено» подставляются на сервере).

@@ -100,6 +100,10 @@
     gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
     chart: '<path d="M4 20V11M10 20V5M16 20v-6M22 20H2"/>',
+    star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
+    flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
+    lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    reply: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 6 6v5"/>',
     headset: '<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>'
   };
   const CAT_P = {
@@ -347,7 +351,7 @@
     [/^\/(verify|unsubscribe)$/, viewMailLink],
     [/^\/favorites$/, viewFavorites],
     [/^\/messages(?:\/(\d+|support))?$/, viewMessages],
-    [/^\/profile(?:\/(listings|settings|stats\/\d+))?$/, viewProfile],
+    [/^\/profile(?:\/(listings|settings|reviews|stats\/\d+))?$/, viewProfile],
     [/^\/u\/(\d+)$/, viewUser],
     [/^\/admin$/, viewAdmin],
     [/^\/admin\/l\/(\d+)$/, viewAdminListing],
@@ -674,6 +678,7 @@
           <a href="/u/${seller.id}" class="panel" style="display:flex;align-items:center;gap:14px;color:var(--text)">
             ${ava(seller)}
             <span style="flex:1;min-width:0"><span style="display:block;font-size:17px;font-weight:700">${seller.name}</span>
+            ${ratingLine(seller.rating)}
             <span class="muted" style="display:block;font-size:13px">На Торгане с ${since(seller.createdAt)} · ${seller.activeCount} ${plural(seller.activeCount, 'объявление', 'объявления', 'объявлений')}</span></span>
             ${ic('right', 20)}
           </a>
@@ -1106,7 +1111,7 @@
         html`<a class="btn btn-dark btn-lg btn-block" href="/">На главную</a>`);
       return;
     }
-    const what = { messages: 'о новых сообщениях', moderation: 'о решениях модерации', all: 'с уведомлениями' }[q.get('k')] || 'с уведомлениями';
+    const what = { messages: 'о новых сообщениях', moderation: 'о решениях модерации', reviews: 'об отзывах', all: 'с уведомлениями' }[q.get('k')] || 'с уведомлениями';
     authPage('Отписаться?', `Больше не будем присылать письма ${what}. Включить их снова можно в профиле, в разделе «Настройки».`,
       html`<form id="f"><button class="btn btn-dark btn-lg btn-block" type="submit">Отписаться</button></form>`);
     $('#f').onsubmit = async (e) => {
@@ -1132,12 +1137,13 @@
 
   // Один чат на весь сайт: диалоги по объявлениям, поддержка у пользователя и у модератора.
   // load(after) → { messages }, send(body) → message; сообщения { id, mine, body, createdAt }.
-  function mountChat(box, { head, load, send, scam = false, empty, placeholder = 'Напишите сообщение…', onActivity, back = '/messages' }) {
+  function mountChat(box, { head, below = '', load, send, scam = false, empty, placeholder = 'Напишите сообщение…', onActivity, back = '/messages' }) {
     box.innerHTML = String(html`
       <div class="chat-head">
         <a href="${back}" class="icon-btn chat-back" aria-label="Назад">${ic('left', 20)}</a>
         ${head}
       </div>
+      ${below}
       ${scam ? html`<div class="banner warn chat-warn hidden" data-scam>${ic('warn', 18)} <strong>Осторожно.</strong> Похоже, собеседник предлагает уйти в мессенджер или заплатить вне Торганы. Так действуют мошенники — не переводите деньги и не называйте коды из СМС.</div>` : ''}
       <div class="chat-msgs" data-msgs></div>
       <form class="chat-form" data-send>
@@ -1258,16 +1264,137 @@
     }
     const data = await api('GET', `/api/conversations/${convId}`);
     const { listing: l, other } = data;
+    const reviewBar = (rv) => {
+      if (!rv) return '';
+      if (rv.status) return html`<div class="rv-bar-chat done">${ic('check', 16, 2.4)}<span>${rv.status === 'pending' ? 'Ваш отзыв о продавце на проверке.' : rv.status === 'published' ? 'Ваш отзыв о продавце опубликован.' : 'Вы уже оставили отзыв по этому объявлению.'}</span><a href="/profile/reviews?tab=mine">Мои отзывы</a></div>`;
+      if (!rv.can) return '';
+      return html`<div class="rv-bar-chat">${starSvg(true, 18)}<span><b>Как прошла сделка?</b> Оставьте отзыв о продавце — товар получен или нет.</span><button type="button" class="btn btn-dark btn-sm" data-review>Оставить отзыв</button></div>`;
+    };
     stopChat = mountChat($('#chat'), {
       head: html`<a href="/l/${l.id}" class="conv-img" aria-hidden="true" tabindex="-1">${l.photo ? html`<img src="${l.photo}" alt="">` : svg(P.image, 20, 1.4)}</a>
         <div style="flex:1;min-width:0"><a href="/l/${l.id}" style="display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.title}</a>
           <span class="muted" style="font-size:14px">${price(l.price, l.priceUnit)} · ${other.name}</span></div>
         ${l.status === 'sold' ? html`<span class="tag dark">Продано</span>` : ''}`,
-      load: (after) => api('GET', `/api/conversations/${convId}?after=${after}`),
+      below: html`<div data-review-slot></div>`,
+      load: async (after) => {
+        const r = await api('GET', `/api/conversations/${convId}?after=${after}`);
+        const slot = $('[data-review-slot]');
+        if (slot && JSON.stringify(r.review) !== slot.dataset.state) {
+          slot.dataset.state = JSON.stringify(r.review);
+          slot.innerHTML = String(reviewBar(r.review));
+          const b = $('[data-review]', slot);
+          if (b) b.onclick = () => reviewForm(convId, other.name, l.title, () => { slot.dataset.state = ''; });
+        }
+        return r;
+      },
       send: async (body) => { const r = await api('POST', `/api/conversations/${convId}/messages`, { body }); loadList().catch(() => {}); return r.message; },
       scam: true,
       empty: html`<div class="chat-day">Напишите первое сообщение — например, уточните состояние или договоритесь о встрече.</div>`,
       onActivity: () => refreshMe()
+    });
+  }
+
+  // ================= отзывы: общие части =================
+  const STAR = '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>';
+  const starSvg = (on, size) => raw(`<svg width="${size}" height="${size}" viewBox="0 0 24 24" class="${on ? 'st-on' : 'st-off'}" aria-hidden="true">${STAR}</svg>`);
+  const stars = (n, size = 15) => html`<span class="stars" role="img" aria-label="Оценка ${n} из 5">${[1, 2, 3, 4, 5].map((i) => starSvg(i <= n, size))}</span>`;
+  const fmtAvg = (r) => r.avg.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const reviewsWord = (n) => plural(n, 'отзыв', 'отзыва', 'отзывов');
+  // «★ 4,7 · 23 отзыва» или «Пока нет отзывов».
+  const ratingLine = (r, href = '') => {
+    const inner = r && r.count ? html`${starSvg(true, 16)}<b>${fmtAvg(r)}</b><span>· ${r.count} ${reviewsWord(r.count)}</span>` : html`${starSvg(false, 16)}<span>Пока нет отзывов</span>`;
+    return href ? html`<a class="rating-line" href="${href}">${inner}</a>` : html`<span class="rating-line">${inner}</span>`;
+  };
+  // Крупная оценка и полоски «сколько пятёрок, четвёрок…».
+  const ratingSummary = (r) => html`<div class="rv-sum">
+      <div class="rv-sum-big"><b>${r.count ? fmtAvg(r) : '—'}</b>${stars(Math.round(r.avg), 17)}<span>${r.count ? `${r.count} ${reviewsWord(r.count)}` : 'Пока нет отзывов'}</span></div>
+      <div class="rv-bars">${[5, 4, 3, 2, 1].map((k) => html`<div class="rv-bar"><span>${k}</span><div><i style="width:${r.count ? Math.round((r.dist[k] / r.count) * 100) : 0}%"></i></div><span class="n">${r.dist[k]}</span></div>`)}</div>
+    </div>`;
+  const RV_STATUS = { pending: ['wait', 'На проверке'], published: ['ok', 'Опубликован'], rejected: ['bad', 'Не опубликован'], hidden: ['bad', 'Скрыт по жалобе'] };
+  // Карточка отзыва. mode: public | seller (обо мне — ответить, пожаловаться) | author (мой отзыв — статус).
+  function reviewCard(rv, mode = 'public') {
+    const other = mode === 'author' ? rv.seller : rv.author;
+    const st = mode === 'author' ? RV_STATUS[rv.status] : null;
+    const c = rv.complaint;
+    return html`<article class="rv-card" data-rv="${rv.id}">
+      <div class="rv-head">${ava(other, 'sm')}
+        <div class="rv-who"><b>${mode === 'author' ? html`Продавец ${other.name}` : other.name}</b><span>${when(rv.createdAt).replace(/ в \d\d:\d\d$/, '')}${mode === 'author' ? '' : ' · покупатель'}</span></div>
+        ${stars(rv.rating)}</div>
+      <p class="rv-text">${rv.text}</p>
+      <div class="rv-meta"><span class="rv-item">${ic('tag', 13)}${rv.listing.id ? html`<a href="/l/${rv.listing.id}">${rv.listing.title}</a>` : rv.listing.title}</span>
+        <span class="rv-deal ${rv.received ? 'ok' : 'no'}">${rv.received ? html`${ic('check', 13, 2.6)}Товар получен` : 'Товар не получен'}</span>
+        ${st ? html`<span class="ml-tag ${st[0]}"><i></i>${st[1]}</span>` : ''}</div>
+      ${mode === 'author' && rv.reason && (rv.status === 'rejected' || rv.status === 'hidden') ? html`<div class="ml-note bad"><strong>Причина:</strong> ${rv.reason}</div>` : ''}
+      ${rv.reply ? html`<div class="rv-reply"><b>Ответ продавца</b><p>${rv.reply.text}</p></div>` : ''}
+      ${mode === 'seller' && rv.replyDraft ? html`<div class="ml-note ${rv.replyDraft.status === 'rejected' ? 'bad' : 'warn'}">${rv.replyDraft.status === 'rejected' ? html`<strong>Ответ не опубликован:</strong> ${rv.replyDraft.reason}. Можно написать заново.` : html`<strong>Ваш ответ на проверке:</strong> ${rv.replyDraft.text}`}</div>` : ''}
+      ${mode === 'seller' && c ? html`<div class="ml-note ${c.resolved ? (c.decision === 'hidden' ? 'ok' : 'soft') : 'warn'}">${!c.resolved
+    ? html`<strong>Жалоба на рассмотрении.</strong> Отзыв виден, пока модератор не решит.`
+    : c.decision === 'hidden' ? html`<strong>Жалоба принята — отзыв скрыт.</strong> ${c.comment}` : html`<strong>Жалоба рассмотрена — отзыв остаётся.</strong> ${c.comment || ''}`}</div>` : ''}
+      ${mode === 'seller' && rv.status === 'published' && (rv.canReply || rv.canComplain) ? html`<div class="rv-actions">
+        ${rv.canReply ? html`<button type="button" class="btn btn-soft btn-sm" data-rv-reply="${rv.id}">${ic('reply', 16, 2)}Ответить</button>` : ''}
+        ${rv.canComplain ? html`<button type="button" class="btn btn-soft btn-sm" data-rv-complain="${rv.id}">${ic('flag', 16, 2)}Пожаловаться</button>` : ''}</div>` : ''}
+    </article>`;
+  }
+
+  // Оставить отзыв о продавце: итог сделки, оценка, текст. Изменить потом нельзя.
+  function reviewForm(convId, sellerName, title, done) {
+    const LABELS = ['', 'Очень плохо', 'Плохо', 'Нормально', 'Хорошо', 'Отлично'];
+    openModal(String(html`<h2>Отзыв о продавце</h2>
+      <p class="muted" style="margin:0 0 16px">${sellerName} · «${title}»</p>
+      <fieldset class="rv-f"><legend>Как прошла сделка?</legend>
+        <div class="rv-deal-pick"><label><input type="radio" name="received" value="1"><span>${ic('check', 16, 2.4)}Товар получен</span></label><label><input type="radio" name="received" value="0"><span>Товар не получен</span></label></div></fieldset>
+      <fieldset class="rv-f"><legend>Оценка</legend>
+        <div class="rv-stars-pick" role="radiogroup" aria-label="Оценка">${[1, 2, 3, 4, 5].map((i) => html`<button type="button" role="radio" aria-checked="false" aria-label="${i} из 5 — ${LABELS[i]}" data-star="${i}">${starSvg(false, 38)}</button>`)}</div>
+        <div class="rv-star-label" data-star-label>Выберите от 1 до 5</div></fieldset>
+      <div class="field"><label for="rv-text">Отзыв</label><textarea id="rv-text" class="textarea" maxlength="1000" placeholder="Расскажите по делу: товар, общение, встреча"></textarea>
+        <span class="help">Без оскорблений, телефонов и ссылок.</span></div>
+      <div class="rv-lock">${ic('lock', 18, 1.9)}<span><strong>Изменить или удалить отзыв будет нельзя.</strong> Он появится после проверки модератором.</span></div>
+      <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-dark" data-ok>Отправить отзыв</button></div>`), (m, close) => {
+      let rating = 0;
+      const paint = () => {
+        $$('[data-star]', m).forEach((b) => { const on = Number(b.dataset.star) <= rating; b.innerHTML = String(starSvg(on, 38)); b.setAttribute('aria-checked', Number(b.dataset.star) === rating ? 'true' : 'false'); });
+        $('[data-star-label]', m).textContent = rating ? LABELS[rating] : 'Выберите от 1 до 5';
+      };
+      $$('[data-star]', m).forEach((b) => { b.onclick = () => { rating = Number(b.dataset.star); paint(); }; });
+      $('[data-x]', m).onclick = close;
+      $('[data-ok]', m).onclick = async () => {
+        const rec = $('input[name="received"]:checked', m);
+        if (!rec) { toast('Укажите, получили ли вы товар', true); return; }
+        if (!rating) { toast('Поставьте оценку', true); return; }
+        try {
+          await api('POST', '/api/reviews', { conversationId: convId, rating, received: rec.value === '1', text: $('#rv-text', m).value.trim() });
+          close(); toast('Спасибо! Отзыв появится после проверки'); done();
+        } catch (e) { toast(e.message, true); }
+      };
+    });
+  }
+
+  // Ответ продавца на отзыв — один раз.
+  function replyModal(id, done) {
+    openModal(String(html`<h2>Ответ на отзыв</h2><p class="muted" style="margin:0 0 12px">Ответ увидят все рядом с отзывом. Изменить его потом нельзя, он появится после проверки модератором.</p>
+      <label class="sr" for="rv-reply">Ответ</label><textarea id="rv-reply" class="textarea" style="min-height:120px" maxlength="1000" placeholder="Спокойно объясните, как всё было"></textarea>
+      <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-dark" data-ok>Отправить ответ</button></div>`), (m, close) => {
+      $('[data-x]', m).onclick = close;
+      $('[data-ok]', m).onclick = async () => {
+        try { await api('POST', `/api/reviews/${id}/reply`, { text: $('#rv-reply', m).value.trim() }); close(); toast('Ответ отправлен на проверку'); done(); } catch (e) { toast(e.message, true); }
+      };
+    });
+  }
+
+  // Жалоба на отзыв: причина и обязательное обоснование.
+  function complaintModal(id, reasons, done) {
+    openModal(String(html`<h2>Пожаловаться на отзыв</h2><p class="muted" style="margin:0 0 12px">Отзыв останется на месте, пока модератор не примет решение. Пожаловаться на отзыв можно один раз.</p>
+      <fieldset class="rv-f"><legend>Что не так?</legend><div class="rv-reasons">${reasons.map((r, i) => html`<label><input type="radio" name="reason" value="${r}"${i === 0 ? raw(' checked') : ''}><span>${r}</span></label>`)}</div></fieldset>
+      <div class="field"><label for="rv-why">Обоснуйте жалобу</label><textarea id="rv-why" class="textarea" maxlength="1000" placeholder="Что именно неправда или нарушает правила"></textarea>
+        <span class="help">Минимум 20 символов. Модератор увидит отзыв, объявление и ваше обоснование.</span></div>
+      <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-dark" data-ok>Отправить жалобу</button></div>`), (m, close) => {
+      $('[data-x]', m).onclick = close;
+      $('[data-ok]', m).onclick = async () => {
+        try {
+          await api('POST', `/api/reviews/${id}/complaint`, { reason: $('input[name="reason"]:checked', m).value, text: $('#rv-why', m).value.trim() });
+          close(); toast('Жалоба отправлена — модератор проверит'); done();
+        } catch (e) { toast(e.message, true); }
+      };
     });
   }
 
@@ -1276,13 +1403,14 @@
   const MY_TAG = { active: ['ok', 'Опубликовано'], pending: ['wait', 'На проверке'], rejected: ['bad', 'Нужно исправить'], sold: ['dark', 'Продано'], archived: ['off', 'Снято'] };
 
   // Карточка человека слева в профиле — своя и публичная: фото, имя, город, дата, цифры.
-  function idCard(u, { own = false, stats = [], badges = '', extra = '', foot = '' }) {
+  function idCard(u, { own = false, stats = [], badges = '', extra = '', foot = '', ratingHref = '' }) {
     return html`<div class="pf-card">
       <div class="pf-who">
         <div class="pf-ava">${ava(u, own ? 'lg' : 'xl')}${own ? html`<button class="pf-cam" type="button" data-ava-pick aria-label="${u.avatar ? 'Сменить фото профиля' : 'Добавить фото профиля'}">${ic('camera', 15, 2)}</button>` : ''}</div>
         <div class="pf-who-txt">
           ${own ? html`<div class="pf-name">${u.name}</div>` : html`<h1 class="pf-name">${u.name}</h1>`}
           <div class="pf-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
+          ${u.rating ? ratingLine(u.rating, ratingHref) : ''}
           ${badges ? html`<div class="pf-badges">${badges}</div>` : ''}
         </div>
       </div>
@@ -1298,6 +1426,7 @@
     const item = (href, icon, label, key, right = '') => html`<a href="${href}" class="${active === key ? 'on' : ''}"${active === key ? raw(' aria-current="page"') : ''}>${ic(icon, 20)}<span class="lbl">${label}</span>${right}${chev}</a>`;
     return html`<nav class="pf-nav" aria-label="Разделы профиля">
       ${item('/profile/listings', 'tag', 'Мои объявления', 'listings')}
+      ${item('/profile/reviews', 'star', 'Отзывы', 'reviews', S.user.rating && S.user.rating.count ? html`<span class="nav-rating">${starSvg(true, 14)}${fmtAvg(S.user.rating)}</span>` : '')}
       ${item('/favorites', 'heart', 'Избранное', 'fav')}
       ${item('/messages', 'chat', 'Сообщения', 'msg', html`<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span>`)}
       ${item('/profile/settings', 'gear', 'Настройки', 'settings')}
@@ -1363,7 +1492,7 @@
     const hub = !section;
     const statId = section && section.startsWith('stats/') ? section.slice(6) : null;
     const sec = statId ? 'stats' : section || 'listings';
-    setTitle({ settings: 'Настройки', stats: 'Статистика' }[sec] || 'Профиль');
+    setTitle({ settings: 'Настройки', stats: 'Статистика', reviews: 'Отзывы' }[sec] || 'Профиль');
     const u = S.user;
     const { items } = await api('GET', '/api/my/listings');
     const count = (st) => items.filter((i) => i.status === st).length;
@@ -1394,6 +1523,8 @@
       ? html`<div class="pf-head"><h1>Статистика</h1><div class="seg" role="tablist">${[['7', '7 дней'], ['30', '30 дней'], ['0', 'Всё время']].map(([v, t]) => html`<a role="tab" aria-selected="${v === days ? 'true' : 'false'}" class="${v === days ? 'on' : ''}" href="/profile/stats/${statId}?days=${v}">${t}</a>`)}</div></div>`
       : sec === 'settings'
       ? html`<div class="pf-head"><h1>Настройки</h1></div>`
+      : sec === 'reviews'
+      ? html`<div class="pf-head"><h1>Отзывы</h1><div class="seg" role="tablist">${[['', 'Обо мне'], ['mine', 'Я оставил']].map(([v, t]) => html`<a role="tab" aria-selected="${(q.get('tab') || '') === v ? 'true' : 'false'}" class="${(q.get('tab') || '') === v ? 'on' : ''}" href="/profile/reviews${v ? `?tab=${v}` : ''}">${t}</a>`)}</div></div>`
       : html`<div class="pf-head"><h1>Мои объявления</h1><a class="btn btn-dark" href="/new" aria-label="Разместить объявление">${ic('plus', 18, 2.2)}<span>Разместить</span></a></div>`;
     app.innerHTML = String(html`<div class="wrap pf2 ${hub ? 'is-hub' : 'is-section'}">
       <aside class="pf-side">
@@ -1401,6 +1532,7 @@
         ${idCard(u, {
           own: true,
           badges,
+          ratingHref: '/profile/reviews',
           stats: [[count('active'), plural(count('active'), 'активное', 'активных', 'активных')], [count('sold'), 'продано']],
           extra: progress,
           foot: html`<div class="pf-link-row"><a href="/u/${u.id}">Мой публичный профиль${ic('right', 16, 2)}</a><button type="button" class="icon-btn sm" data-share aria-label="Поделиться профилем">${ic('share', 18)}</button></div>`
@@ -1428,6 +1560,7 @@
       };
     });
     if (sec === 'stats') return renderStats(statId, days);
+    if (sec === 'reviews') return renderMyReviews(q.get('tab') === 'mine' ? 'mine' : 'about', again);
     if (sec === 'settings') return renderSettings(again);
     return renderMyListings(items, q.get('status') || 'active', again);
   }
@@ -1488,6 +1621,20 @@
         actionSheet(i.title, acts);
       };
     });
+  }
+
+  // Отзывы в профиле: обо мне (ответить, пожаловаться) и те, что оставил я (со статусом).
+  async function renderMyReviews(tab, reload) {
+    const d = await api('GET', '/api/my/reviews');
+    const list = tab === 'mine' ? d.mine : d.about;
+    $('#box').innerHTML = String(html`<div class="rv">
+      ${tab === 'about' ? html`<div class="rv-top"><div class="rv-top-sum">${ratingSummary(d.rating)}</div>
+        <div class="rv-rules">${ic('lock', 18, 1.9)}<span>Отзывы нельзя изменить или удалить — ни вам, ни автору. Можно один раз ответить, а если отзыв нарушает правила — пожаловаться и объяснить почему: модератор проверит и решит, оставить его или скрыть.</span></div></div>` : ''}
+      ${list.length ? html`<div class="rv-list">${list.map((rv) => reviewCard(rv, tab === 'mine' ? 'author' : 'seller'))}</div>`
+    : html`<div class="pf-empty sm"><h3>${tab === 'mine' ? 'Вы ещё не оставляли отзывов' : 'Отзывов пока нет'}</h3><p>${tab === 'mine' ? 'Отзыв о продавце можно оставить в чате по объявлению — после переписки.' : 'Отзыв о вас может оставить покупатель, с которым вы переписывались по объявлению. Он появится после проверки модератором.'}</p></div>`}
+    </div>`);
+    $$('[data-rv-reply]').forEach((b) => { b.onclick = () => replyModal(b.dataset.rvReply, reload); });
+    $$('[data-rv-complain]').forEach((b) => { b.onclick = () => complaintModal(b.dataset.rvComplain, d.complaintReasons, reload); });
   }
 
   // Статистика объявления: цифры, переходы по дням, путь покупателя, источники, подсказка.
@@ -1578,6 +1725,7 @@
         <h2>Письма на почту</h2>
         <label class="switch"><span>Новые сообщения в чате<small>Не чаще раза в 15 минут на диалог</small></span><input type="checkbox" name="notifyMessages" ${u.notifyMessages ? raw('checked') : ''}><span class="track"></span></label>
         <label class="switch"><span>Решения модерации<small>Опубликовано, отклонено, ответ на апелляцию</small></span><input type="checkbox" name="notifyModeration" ${u.notifyModeration ? raw('checked') : ''}><span class="track"></span></label>
+        <label class="switch"><span>Отзывы<small>Новый отзыв о вас, решения по отзывам и жалобам, ответ продавца</small></span><input type="checkbox" name="notifyReviews" ${u.notifyReviews ? raw('checked') : ''}><span class="track"></span></label>
       </section>` : ''}
 
       <form class="set-group" id="sp" autocomplete="on">
@@ -1628,7 +1776,8 @@
     if (va) va.onclick = async () => { va.disabled = true; try { await api('POST', '/api/me/verify'); toast(`Письмо отправлено на ${u.email}`); } catch (e) { toast(e.message, true); va.disabled = false; } };
   }
 
-  async function viewUser(id) {
+  async function viewUser(id, q) {
+    const tab = q && q.get('tab') === 'reviews' ? 'reviews' : 'ads';
     const { user: u, items } = await api('GET', `/api/users/${id}`);
     setTitle(u.name);
     const own = S.user && S.user.id === u.id;
@@ -1636,16 +1785,36 @@
       <aside class="pf-side">
         ${idCard(u, {
           badges: S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : '',
+          ratingHref: `/u/${u.id}?tab=reviews`,
           stats: [[u.activeCount, plural(u.activeCount, 'объявление', 'объявления', 'объявлений')], [u.soldCount, 'продано']],
+          extra: u.rating.count ? html`<div class="pf-rv-sum">${ratingSummary(u.rating)}</div>` : '',
           foot: html`<div class="pf-pub-actions"><button type="button" class="btn btn-soft btn-block" data-share>${ic('share', 18)}Поделиться профилем</button>${own ? html`<a class="btn btn-dark btn-block" href="/profile">Мой профиль</a>` : ''}</div>`
         })}
       </aside>
       <section class="pf-main">
-        <div class="pf-head"><h2>Объявления <span class="muted">${u.activeCount}</span></h2></div>
-        ${items.length ? grid(items) : html`<div class="pf-empty sm"><h3>Активных объявлений нет</h3><p>Загляните позже.</p></div>`}
+        <div class="seg seg-lg" role="tablist">
+          <a role="tab" aria-selected="${tab === 'ads' ? 'true' : 'false'}" class="${tab === 'ads' ? 'on' : ''}" href="/u/${u.id}">Объявления <span class="n">${u.activeCount}</span></a>
+          <a role="tab" aria-selected="${tab === 'reviews' ? 'true' : 'false'}" class="${tab === 'reviews' ? 'on' : ''}" href="/u/${u.id}?tab=reviews">${starSvg(true, 15)}Отзывы <span class="n">${u.rating.count}</span></a>
+        </div>
+        <div id="box">${tab === 'ads' ? (items.length ? grid(items) : html`<div class="pf-empty sm"><h3>Активных объявлений нет</h3><p>Загляните позже.</p></div>`) : html`<div class="loader"></div>`}</div>
       </section>
     </div>`);
-    $('[data-share]').onclick = () => shareLink(location.href, `${u.name} на Торгане`);
+    $('[data-share]').onclick = () => shareLink(`${location.origin}/u/${u.id}`, `${u.name} на Торгане`);
+    if (tab !== 'reviews') return;
+    let starsFilter = 0; let offset = 0; let acc = [];
+    const load = async (reset) => {
+      if (reset) { offset = 0; acc = []; }
+      const d = await api('GET', `/api/users/${u.id}/reviews?stars=${starsFilter}&offset=${offset}`);
+      acc = acc.concat(d.items); offset += d.items.length;
+      $('#box').innerHTML = String(html`<div class="rv">
+        ${u.rating.count ? html`<div class="pf-status">${[[0, 'Все', u.rating.count], ...[5, 4, 3, 2, 1].filter((k) => u.rating.dist[k]).map((k) => [k, `${k} ★`, u.rating.dist[k]])].map(([k, t, n]) => html`<button type="button" class="chip ${k === starsFilter ? 'active' : ''}" data-stars="${k}">${t}<span class="cnt">${n}</span></button>`)}</div>` : ''}
+        ${acc.length ? html`<div class="rv-list">${acc.map((rv) => reviewCard(rv))}</div>` : html`<div class="pf-empty sm"><h3>Отзывов пока нет</h3><p>Отзыв о продавце может оставить покупатель после переписки по объявлению.</p></div>`}
+        ${d.more ? html`<div class="more"><button class="btn btn-soft btn-lg" type="button" data-more-rv>Показать ещё</button></div>` : ''}
+      </div>`);
+      $$('[data-stars]').forEach((b) => { b.onclick = () => { starsFilter = Number(b.dataset.stars); load(true).catch((e) => toast(e.message, true)); }; });
+      const mb = $('[data-more-rv]'); if (mb) mb.onclick = () => load(false).catch((e) => toast(e.message, true));
+    };
+    await load(true);
   }
 
   // ================= модерация =================
@@ -1716,7 +1885,7 @@
     setTitle('Модерация');
     const status = q.get('status') || 'pending';
     const search = q.get('q') || '';
-    const special = { mail: 1, support: 1, site: 1 }[status];
+    const special = { mail: 1, support: 1, site: 1, reviews: 1 }[status];
     const extraUrl = { mail: '/api/admin/mail', site: '/api/admin/update' }[status];
     const [stats, list, extra] = await Promise.all([
       api('GET', '/api/admin/stats'),
@@ -1724,7 +1893,7 @@
       extraUrl ? api('GET', extraUrl) : null
     ]);
     const cnt = (n) => (n ? ` · ${n}` : '');
-    const tabs = { pending: `На проверке${cnt(stats.pending)}`, reports: `Жалобы${cnt(stats.reports)}`, support: `Поддержка${cnt(stats.support)}`, appeals: `Апелляции${cnt(stats.appeals)}`,
+    const tabs = { pending: `На проверке${cnt(stats.pending)}`, reports: `Жалобы${cnt(stats.reports)}`, support: `Поддержка${cnt(stats.support)}`, appeals: `Апелляции${cnt(stats.appeals)}`, reviews: `Отзывы${cnt(stats.reviews)}`,
       active: 'Опубликованные', rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые', mail: `Почта${S.config.mail ? '' : ' · не подключена'}`, site: 'Версия сайта' };
     app.innerHTML = String(html`<div class="wrap">
       <div class="profile-head"><h1 style="flex:1">Модерация</h1></div>
@@ -1754,6 +1923,7 @@
     if (status === 'mail') { renderMailAdmin($('#special-box'), extra); return; }
     if (status === 'site') { renderSiteAdmin($('#special-box'), extra.update); return; }
     if (status === 'support') { await renderSupportAdmin($('#special-box'), q.get('t')); return; }
+    if (status === 'reviews') { await renderReviewsAdmin($('#special-box'), q.get('rt') || 'pending'); return; }
     $('#as').onsubmit = (e) => { e.preventDefault(); go(`/admin?${new URLSearchParams({ status, q: e.target.q.value.trim() })}`); };
     bindModActions(app);
   }
@@ -1858,6 +2028,34 @@
   }
 
   // Модерация → Поддержка: диалоги слева, чат и карточка пользователя справа.
+  // Модерация отзывов: новые отзывы и ответы продавцов, жалобы продавцов на отзывы.
+  async function renderReviewsAdmin(box, tab) {
+    const d = await api('GET', `/api/admin/reviews?tab=${tab}`);
+    const tabs = [['pending', `На проверке${d.counts.pending ? ` · ${d.counts.pending}` : ''}`], ['complaints', `Жалобы${d.counts.complaints ? ` · ${d.counts.complaints}` : ''}`], ['all', 'Последние']];
+    const item = (rv) => html`<div class="adm-rv">
+      ${reviewCard(rv, 'public')}
+      <div class="adm-rv-side">
+        <div class="muted" style="font-size:13px">Автор: ${rv.author.name} (${rv.authorEmail}) · о продавце <a href="/u/${rv.seller.id}" target="_blank">${rv.seller.name}</a> · ${RV_STATUS[rv.status][1]}</div>
+        ${rv.status === 'pending' ? html`<div class="adm-rv-act"><button class="btn btn-accent btn-sm" data-rv-ok="${rv.id}">Опубликовать отзыв</button><button class="btn btn-danger btn-sm" data-rv-no="${rv.id}">Не публиковать</button></div>` : ''}
+        ${rv.replyDraft && rv.replyDraft.status === 'pending' ? html`<div class="banner warn" style="font-size:14px"><strong>Ответ продавца на проверке:</strong> ${rv.replyDraft.text}</div>
+          <div class="adm-rv-act"><button class="btn btn-accent btn-sm" data-rp-ok="${rv.id}">Опубликовать ответ</button><button class="btn btn-danger btn-sm" data-rp-no="${rv.id}">Не публиковать ответ</button></div>` : ''}
+        ${rv.complaint && !rv.complaint.resolved ? html`<div class="banner danger" style="font-size:14px"><strong>Жалоба продавца: ${rv.complaint.reason}.</strong> ${rv.complaint.text}</div>
+          <div class="adm-rv-act"><button class="btn btn-soft btn-sm" data-cm-keep="${rv.id}">Оставить отзыв</button><button class="btn btn-danger btn-sm" data-cm-hide="${rv.id}">Скрыть отзыв</button></div>` : ''}
+        ${rv.status === 'hidden' || rv.status === 'rejected' ? html`<div class="adm-rv-act"><button class="btn btn-line btn-sm" data-rv-back="${rv.id}">Вернуть отзыв</button></div>` : ''}
+      </div></div>`;
+    box.innerHTML = String(html`<div class="tabs" style="margin:0 0 16px">${tabs.map(([k, t]) => html`<a class="chip ${k === tab ? 'active' : ''}" href="/admin?status=reviews&rt=${k}">${t}</a>`)}</div>
+      ${d.items.length ? html`<div class="adm-rv-list">${d.items.map(item)}</div>` : html`<div class="empty"><h3>${tab === 'complaints' ? 'Жалоб нет' : 'Очередь пуста'}</h3><p>${tab === 'complaints' ? 'Все жалобы на отзывы рассмотрены.' : 'Все отзывы и ответы проверены.'}</p></div>`}`);
+    const again = () => render();
+    const post = async (url, body) => { try { await api('POST', url, body); toast('Готово'); again(); } catch (e) { toast(e.message, true); } };
+    $$('[data-rv-ok]', box).forEach((b) => { b.onclick = () => post(`/api/admin/reviews/${b.dataset.rvOk}/publish`); });
+    $$('[data-rp-ok]', box).forEach((b) => { b.onclick = () => post(`/api/admin/reviews/${b.dataset.rpOk}/reply/publish`); });
+    $$('[data-rv-back]', box).forEach((b) => { b.onclick = () => post(`/api/admin/reviews/${b.dataset.rvBack}/restore`); });
+    $$('[data-rv-no]', box).forEach((b) => { b.onclick = () => reasonModal({ title: 'Не публиковать отзыв', hint: 'Причину увидит автор. Новый отзыв по этому объявлению он оставить не сможет.', url: `/api/admin/reviews/${b.dataset.rvNo}/reject`, okLabel: 'Не публиковать', reasons: ['Оскорбления или грубость', 'Телефон, ссылки или личные данные', 'Отзыв не о сделке', 'Реклама или спам'], done: again }); });
+    $$('[data-rp-no]', box).forEach((b) => { b.onclick = () => reasonModal({ title: 'Не публиковать ответ', hint: 'Причину увидит продавец, он сможет написать ответ заново.', url: `/api/admin/reviews/${b.dataset.rpNo}/reply/reject`, okLabel: 'Не публиковать', reasons: ['Оскорбления или грубость', 'Телефон, ссылки или личные данные', 'Реклама или спам'], done: again }); });
+    $$('[data-cm-keep]', box).forEach((b) => { b.onclick = () => reasonModal({ title: 'Оставить отзыв', hint: 'Комментарий увидит продавец.', url: `/api/admin/reviews/${b.dataset.cmKeep}/complaint/keep`, okLabel: 'Оставить отзыв', minText: 0, placeholder: 'Например: нарушений правил нет', danger: false, done: again }); });
+    $$('[data-cm-hide]', box).forEach((b) => { b.onclick = () => reasonModal({ title: 'Скрыть отзыв', hint: 'Причину увидят продавец и автор отзыва. Отзыв перестанет учитываться в оценке.', url: `/api/admin/reviews/${b.dataset.cmHide}/complaint/hide`, okLabel: 'Скрыть отзыв', reasons: ['Сделки не было', 'Оскорбления', 'Ложные сведения', 'Отзыв о другом человеке или товаре', 'Личные данные в тексте'], done: again }); });
+  }
+
   async function renderSupportAdmin(box, threadId) {
     const { items } = await api('GET', '/api/admin/support');
     const id = Number(threadId) || (items[0] && items[0].id);

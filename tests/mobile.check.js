@@ -69,7 +69,22 @@ async function seed(base, browser) {
   const thread = (await admin.get('/api/admin/support')).data.items[0].id;
   await admin.post(`/api/admin/support/${thread}/messages`, { body: 'Все объявления проверяются перед публикацией — обычно несколько часов.' });
   await buyer.post(`/api/listings/${ids[1]}/report`, { reason: 'Мошенничество', text: 'Просит предоплату' });
-  return { seller, buyer, admin, ids, pending, thread, conv: conv.data.id };
+  // отзывы: опубликованный с ответом продавца, второй — с жалобой; диалог, где можно оставить отзыв
+  const rv1 = (await buyer.post('/api/reviews', { conversationId: conv.data.id, rating: 5, received: true, text: 'Коляска как в описании, всё проверили на месте. Продавец вежливый, рекомендую!' })).data.review.id;
+  await admin.post(`/api/admin/reviews/${rv1}/publish`);
+  await seller.post(`/api/reviews/${rv1}/reply`, { text: 'Спасибо! Пусть служит долго.' });
+  await admin.post(`/api/admin/reviews/${rv1}/reply/publish`);
+  const critic = await registerUser(base, { name: 'Сергей', email: 'sergey@test.local' });
+  const c2 = (await critic.post('/api/conversations', { listingId: ids[3] })).data.id;
+  await critic.post(`/api/conversations/${c2}/messages`, { body: 'Велосипед ещё продаётся?' });
+  await seller.post(`/api/conversations/${c2}/messages`, { body: 'Да.' });
+  const rv2 = (await critic.post('/api/reviews', { conversationId: c2, rating: 1, received: false, text: 'Договорились о встрече, но продавец не пришёл и перестал отвечать.' })).data.review.id;
+  await admin.post(`/api/admin/reviews/${rv2}/publish`);
+  await seller.post(`/api/reviews/${rv2}/complaint`, { reason: 'Ложные сведения', text: 'Я ждала у метро до семи вечера и писала в чат — покупатель не пришёл.' });
+  const c3 = (await buyer.post('/api/conversations', { listingId: ids[4] })).data.id;
+  await buyer.post(`/api/conversations/${c3}/messages`, { body: 'Добрый день! Можно забрать завтра?' });
+  await seller.post(`/api/conversations/${c3}/messages`, { body: 'Да, после обеда.' });
+  return { seller, buyer, admin, ids, pending, thread, conv: conv.data.id, convReview: c3 };
 }
 
 function pages(d) {
@@ -93,6 +108,12 @@ function pages(d) {
     ['profile-listings', '/profile/listings', d.seller],
     ['profile-rejected', '/profile/listings?status=rejected', d.seller],
     ['settings', '/profile/settings', d.seller],
+    ['reviews-about', '/profile/reviews', d.seller],
+    ['reviews-mine', '/profile/reviews?tab=mine', d.buyer],
+    ['user-reviews', `/u/${d.seller.user.id}?tab=reviews`, null],
+    ['chat-review', `/messages/${d.convReview}`, d.buyer],
+    ['admin-reviews', '/admin?status=reviews', d.admin],
+    ['admin-review-complaints', '/admin?status=reviews&rt=complaints', d.admin],
     ['stats', `/profile/stats/${d.ids[1]}`, d.seller],
     ['stats-week', `/profile/stats/${d.ids[1]}?days=7`, d.seller],
     ['settings-old-link', '/profile?tab=settings', d.seller],
