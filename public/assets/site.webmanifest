@@ -1,0 +1,10 @@
+{
+  "name": "Торгана",
+  "short_name": "Торгана",
+  "description": "Объявления по всей России",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
+  "icons": [{ "src": "/assets/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

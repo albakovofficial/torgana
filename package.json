@@ -1,0 +1,12 @@
+{
+  "name": "torgana",
+  "version": "1.0.0",
+  "description": "Торгана — площадка объявлений по всей России",
+  "private": true,
+  "main": "server.js",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "seed-demo": "node scripts/seed-demo.js http://localhost:3000"
+  }
+}
