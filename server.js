@@ -599,14 +599,15 @@ route('POST', '/api/admin/users/:id/block', async (ctx) => {
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon',
-  '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json'
+  '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json',
+  '.woff2': 'font/woff2'
 };
 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'X-Frame-Options': 'DENY',
-  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 };
 
 function serveFile(res, filePath, cache) {
@@ -636,7 +637,9 @@ function serveStatic(req, res, pathname) {
   if (pathname !== '/' && !pathname.includes('..')) {
     const filePath = path.join(PUBLIC_DIR, pathname);
     if (filePath.startsWith(PUBLIC_DIR) && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-      serveFile(res, filePath, pathname.startsWith('/assets/') ? 'public, max-age=86400' : 'no-cache');
+      const cache = pathname.startsWith('/assets/fonts/') ? 'public, max-age=2592000'
+        : pathname.startsWith('/assets/') ? 'public, max-age=86400' : 'no-cache';
+      serveFile(res, filePath, cache);
       return;
     }
   }

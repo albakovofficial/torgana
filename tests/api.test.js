@@ -46,6 +46,19 @@ describe('конфигурация и главная', () => {
     assert.match(String(r.data), /<main id="app"/);
   });
 
+  test('шрифт Onest отдаётся с нашего сервера, внешних шрифтов нет', async () => {
+    const page = await guest.get('/');
+    assert.doesNotMatch(String(page.data), /fonts\.(googleapis|gstatic)\.com/);
+    assert.doesNotMatch(page.headers.get('content-security-policy'), /fonts\.(googleapis|gstatic)/);
+    for (const subset of ['cyrillic', 'cyrillic-ext', 'latin', 'latin-ext']) {
+      const r = await fetch(`${srv.base}/assets/fonts/onest-${subset}.woff2`);
+      assert.equal(r.status, 200, subset);
+      assert.equal(r.headers.get('content-type'), 'font/woff2');
+      const buf = Buffer.from(await r.arrayBuffer());
+      assert.equal(buf.toString('ascii', 0, 4), 'wOF2', subset);
+    }
+  });
+
   test('неизвестный API — 404', async () => {
     assert.equal((await guest.get('/api/nope')).status, 404);
   });

@@ -120,6 +120,7 @@ async function main() {
             clientW: document.documentElement.clientWidth,
             navVisible: !!st && st.display !== 'none' && st.visibility !== 'hidden',
             appText: (document.querySelector('#app')?.innerText || '').trim().length,
+            onest: [...document.fonts].some((f) => f.family.replace(/['"]/g, '') === 'Onest' && f.status === 'loaded'),
             wide
           };
         });
@@ -127,6 +128,7 @@ async function main() {
         if (vpName === 'mobile' && !m.navVisible) errors.push('нет нижнего меню на телефоне');
         if (vpName === 'desktop' && m.navVisible) errors.push('нижнее меню видно на компьютере');
         if (m.appText < 20) errors.push('страница пустая');
+        if (!m.onest) errors.push('шрифт Onest не загрузился');
         await page.screenshot({ path: path.join(SHOTS, `${vpName}-${name}.png`), fullPage: true });
         checked++;
         if (errors.length) problems.push(`${vpName} ${url}\n   - ${errors.join('\n   - ')}`);
