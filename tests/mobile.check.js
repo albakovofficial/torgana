@@ -150,6 +150,9 @@ function pages(d) {
     ['not-found', '/nope', null],
     ['new', '/new', d.seller],
     ['edit', `/edit/${d.ids[0]}`, d.seller],
+    ['new-errors', '/new', d.buyer, 'submit'],
+    ['confirm', '/confirm', null],
+    ['confirm-code', '/confirm', null, 'code'],
     ['profile', '/profile', d.seller],
     ['profile-listings', '/profile/listings', d.seller],
     ['profile-rejected', '/profile/listings?status=rejected', d.seller],
@@ -270,6 +273,15 @@ async function main() {
           await page.click('[data-menu]');
           await page.waitForTimeout(300);
           if (!(await page.$('.modal.drawer .pf-nav'))) errors.push('меню ≡ не открылось');
+        } else if (open === 'code') {
+          await page.evaluate(() => sessionStorage.setItem('tg_confirm', JSON.stringify({ email: 'new.user@test.local', next: '' })));
+          await page.reload({ waitUntil: 'networkidle' });
+          await page.keyboard.type('12');
+          if ((await page.$$('.code-box')).length !== 6) errors.push('нет шести клеток для кода');
+        } else if (open === 'submit') {
+          await page.click('.ed-dock [data-submit], .ed-panel [data-submit] >> visible=true');
+          await page.waitForTimeout(500);
+          if (!(await page.$('.ed-step.bad'))) errors.push('ошибки формы не подсветились');
         } else if (open) {
           await page.click(open);
           await page.waitForTimeout(400);
@@ -286,13 +298,18 @@ async function main() {
             scrollW: document.documentElement.scrollWidth,
             clientW: document.documentElement.clientWidth,
             navVisible: !!st && st.display !== 'none' && st.visibility !== 'hidden',
+            editor: !!document.querySelector('.ed'),
+            dockVisible: (() => { const e = document.querySelector('.ed-dock'); return !!e && getComputedStyle(e).display !== 'none'; })(),
             appText: (document.querySelector('#app')?.innerText || '').trim().length,
             onest: [...document.fonts].some((f) => f.family.replace(/['"]/g, '') === 'Onest' && f.status === 'loaded'),
             wide
           };
         });
         if (m.scrollW > m.clientW + 1) errors.push(`горизонтальная прокрутка: ${m.scrollW}px при ширине ${m.clientW}px (${m.wide.join(', ')})`);
-        if (vpName === 'mobile' && !m.navVisible) errors.push('нет нижнего меню на телефоне');
+        // На форме объявления на телефоне вместо нижнего меню — закреплённая кнопка отправки.
+        if (vpName === 'mobile' && m.editor && (m.navVisible || !m.dockVisible)) errors.push('на форме объявления должна быть закреплённая кнопка вместо нижнего меню');
+        if (vpName === 'mobile' && !m.editor && !m.navVisible) errors.push('нет нижнего меню на телефоне');
+        if (vpName === 'desktop' && m.dockVisible) errors.push('закреплённая кнопка формы видна на компьютере');
         if (vpName === 'desktop' && m.navVisible) errors.push('нижнее меню видно на компьютере');
         if (m.appText < 20) errors.push('страница пустая');
         if (!m.onest) errors.push('шрифт Onest не загрузился');

@@ -4,7 +4,7 @@
 // уведомления о сообщениях и решениях модерации, отписка, ошибки почтового сервиса.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, startSmtp, client, registerUser, publish } = require('./helpers');
+const { startServer, startSmtp, client, registerUser, publish, codeOf } = require('./helpers');
 
 let srv; let smtp; let admin; let anna; let boris;
 const link = (mail, path) => {
@@ -55,7 +55,8 @@ test('уведомления с no-reply: ответы уходят в подд�
   await admin.post('/api/admin/mail/test', { to: 'reply@test.local' });
   let m = await smtp.waitFor((x) => x.to === 'reply@test.local');
   assert.match(m.headers, /^Reply-To: <support@test\.local>$/m);
-  assert.match(m.html, /<img src="http:\/\/torgana\.test\/assets\/icons\/mail-logo\.png" width="34" height="34" alt="Т"/);
+  assert.match(m.html, /<img src="cid:tg-logo" width="34" height="34" alt="Т"/, 'логотип вложен в письмо');
+  assert.match(m.headers, /^Content-Type: multipart\/related; type="multipart\/alternative"/m);
   assert.match(m.html, /mailto:support@test\.local/);
   assert.match(m.text, /ответьте на это письмо или напишите на support@test\.local/);
   const logo = await fetch(`${srv.base}/assets/icons/mail-logo.png`);
@@ -87,26 +88,51 @@ test('неверный пароль почты — понятная ошибка
   await admin.put('/api/admin/mail', mailCfg());
 });
 
-test('регистрация → письмо с подтверждением → email подтверждён', async () => {
-  anna = await registerUser(srv.base, { name: 'Анна', email: 'anna@test.local' });
-  assert.equal(anna.user.emailVerified, false);
-  const m = await smtp.waitFor((x) => x.to === 'anna@test.local' && /Подтвердите/.test(x.subject));
-  const url = link(m, '/verify');
-  assert.equal(url.origin, 'http://torgana.test');
-  assert.equal((await client(srv.base).post('/api/auth/verify', { token: url.searchParams.get('token') })).status, 200);
-  assert.equal((await anna.get('/api/me')).data.user.emailVerified, true);
-  assert.equal((await client(srv.base).post('/api/auth/verify', { token: url.searchParams.get('token') })).status, 400, 'ссылка одноразовая');
+test('регистрация: без кода из письма войти нельзя; код — 6 цифр, логотип внутри письма, только кнопки', async () => {
+  const c = client(srv.base);
+  const r = await c.post('/api/auth/register', { name: 'Анна', email: 'anna@test.local', password: 'password123', consent: true });
+  assert.deepEqual(r.data, { needCode: true, email: 'anna@test.local' });
+  assert.equal(c.cookie, '', 'сессии нет до кода');
+  assert.equal((await c.get('/api/me')).data.user, null);
+  const m = await smtp.waitFor((x) => x.to === 'anna@test.local' && /код подтверждения/.test(x.subject));
+  const code = codeOf(m);
+  assert.match(m.html, new RegExp(`>${code}<`));
+  assert.match(m.html, /src="cid:tg-logo"/);
+  assert.match(m.headers, /multipart\/related/);
+  assert.ok(!/Если кнопка не нажимается/.test(m.html));
+  assert.equal((await c.post('/api/auth/login', { email: 'anna@test.local', password: 'password123' })).data.needCode, true, 'вход тоже просит код');
+  const wrong = code === '000000' ? '111111' : '000000';
+  assert.equal((await c.post('/api/auth/code', { email: 'anna@test.local', code: wrong })).status, 400);
+  const ok = await c.post('/api/auth/code', { email: 'anna@test.local', code });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.data.user.emailVerified, true);
+  assert.equal((await client(srv.base).post('/api/auth/code', { email: 'anna@test.local', code })).status, 400, 'код одноразовый: почта уже подтверждена');
+  anna = c;
+  const again = client(srv.base);
+  assert.ok((await again.post('/api/auth/login', { email: 'anna@test.local', password: 'password123' })).data.user, 'подтверждённая почта — вход сразу');
 });
 
-test('повторное письмо с подтверждением из профиля', async () => {
-  boris = await registerUser(srv.base, { name: 'Борис', email: 'boris@test.local' });
-  await smtp.waitFor((x) => x.to === 'boris@test.local');
+test('код: 5 неверных попыток, повторная отправка не чаще раза в минуту', async () => {
+  const c = client(srv.base);
+  await c.post('/api/auth/register', { name: 'Борис', email: 'boris@test.local', password: 'password123', consent: true });
+  const m = await smtp.waitFor((x) => x.to === 'boris@test.local' && /код/.test(x.subject));
+  const wait = await c.post('/api/auth/code/resend', { email: 'boris@test.local' });
+  assert.ok(wait.data.wait > 0 && wait.data.wait <= 60);
+  const n = smtp.inbox.filter((x) => x.to === 'boris@test.local').length;
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(smtp.inbox.filter((x) => x.to === 'boris@test.local').length, n, 'раньше минуты новый код не шлём');
+  const wrong = codeOf(m) === '000000' ? '111111' : '000000';
+  for (let i = 0; i < 4; i++) assert.match((await c.post('/api/auth/code', { email: 'boris@test.local', code: wrong })).data.error, /Неверный код/);
+  assert.match((await c.post('/api/auth/code', { email: 'boris@test.local', code: wrong })).data.error, /Слишком много попыток/);
+  assert.equal((await c.post('/api/auth/code', { email: 'boris@test.local', code: codeOf(m) })).status, 400, 'после 5 ошибок верный код тоже не принимается');
+  assert.deepEqual((await c.post('/api/auth/code/resend', { email: 'nobody@test.local' })).data.ok, true, 'ответ не выдаёт, есть ли аккаунт');
+  // Восстановление пароля по ссылке из письма тоже подтверждает почту и открывает вход.
   const before = smtp.inbox.length;
-  assert.equal((await boris.post('/api/me/verify')).status, 200);
-  const m = await smtp.waitFor((x) => smtp.inbox.indexOf(x) >= before && x.to === 'boris@test.local');
-  const url = link(m, '/verify');
-  await client(srv.base).post('/api/auth/verify', { token: url.searchParams.get('token') });
-  assert.equal((await boris.get('/api/me')).data.user.emailVerified, true);
+  await client(srv.base).post('/api/auth/forgot', { email: 'boris@test.local' });
+  const rm = await smtp.waitFor((x) => smtp.inbox.indexOf(x) >= before && x.to === 'boris@test.local' && /пароля/.test(x.subject));
+  boris = client(srv.base);
+  const rr = await boris.post('/api/auth/reset', { token: link(rm, '/reset').searchParams.get('token'), password: 'password123' });
+  assert.equal(rr.data.user.emailVerified, true);
 });
 
 test('восстановление пароля', async () => {

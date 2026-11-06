@@ -93,13 +93,23 @@ function client(base) {
   };
 }
 
-async function registerUser(base, { name, email, password = 'password123' }) {
+// Когда почта подключена, вход — только после кода из письма: передайте smtp (поддельный сервер), код возьмём из письма.
+async function registerUser(base, { name, email, password = 'password123', smtp = null }) {
   const c = client(base);
   const r = await c.post('/api/auth/register', { name, email, password, consent: true });
   if (r.status !== 200) throw new Error(`Регистрация ${email}: ${r.status} ${JSON.stringify(r.data)}`);
+  if (r.data.needCode) {
+    if (!smtp) throw new Error(`Регистрация ${email}: нужен код из письма — передайте smtp`);
+    const m = await smtp.waitFor((x) => x.to === email && /код подтверждения/.test(x.subject));
+    const v = await c.post('/api/auth/code', { email, code: codeOf(m) });
+    if (v.status !== 200) throw new Error(`Код ${email}: ${v.status} ${JSON.stringify(v.data)}`);
+    c.user = v.data.user;
+    return c;
+  }
   c.user = r.data.user;
   return c;
 }
+const codeOf = (m) => /^(\d{6}) — код/.exec(m.subject)[1];
 
 // Поддельный SMTP-сервер: принимает письма как настоящий и складывает их в inbox (тема и HTML уже раскодированы).
 async function startSmtp({ user = 'smtp-user', pass = 'smtp-pass' } = {}) {
@@ -171,4 +181,4 @@ async function publish(seller, admin, body) {
   return r.data.id;
 }
 
-module.exports = { ROOT, PNG_1PX, JPEG_HEAD, startServer, startSmtp, client, registerUser, publish };
+module.exports = { ROOT, PNG_1PX, JPEG_HEAD, startServer, startSmtp, client, registerUser, publish, codeOf };
