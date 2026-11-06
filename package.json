@@ -4,9 +4,14 @@
   "description": "Торгана — площадка объявлений по всей России",
   "private": true,
   "main": "server.js",
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
+    "test": "node --test tests/api.test.js",
+    "test:ui": "node tests/mobile.check.js",
+    "check": "node --check server.js && node --check public/assets/app.js && npm test && npm run test:ui",
     "seed-demo": "node scripts/seed-demo.js http://localhost:3000"
   }
 }
