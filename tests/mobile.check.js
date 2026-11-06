@@ -134,7 +134,11 @@ function pages(d) {
     ['listing-pending', `/l/${d.pending}`, d.seller],
     ['forgot', '/forgot', null],
     ['reset-expired', `/reset?token=${'0'.repeat(64)}`, null],
-    ['unsubscribe', `/unsubscribe?t=${'0'.repeat(32)}&k=messages`, null]
+    ['unsubscribe', `/unsubscribe?t=${'0'.repeat(32)}&k=messages`, null],
+    // Панель ≡ (четвёртый элемент — открыть меню перед снимком).
+    ['menu', '/', d.seller, 'menu'],
+    ['menu-admin', '/profile/settings', d.admin, 'menu'],
+    ['menu-guest', '/', null, 'menu']
   ];
 }
 
@@ -148,7 +152,7 @@ async function main() {
   try {
     const d = await seed(srv.base, browser);
     for (const [vpName, vp] of Object.entries(VIEWPORTS)) {
-      for (const [name, url, who] of pages(d)) {
+      for (const [name, url, who, open] of pages(d)) {
         const ctx = await browser.newContext({ ...vp, locale: 'ru-RU' });
         if (who) {
           const [k, v] = who.cookie.split('=');
@@ -164,6 +168,11 @@ async function main() {
         await page.goto(srv.base + url, { waitUntil: 'networkidle' });
         await page.waitForFunction(() => !document.querySelector('#app > .loader'), null, { timeout: 5000 }).catch(() => errors.push('страница не загрузилась'));
         await page.waitForTimeout(150);
+        if (open) {
+          await page.click('[data-menu]');
+          await page.waitForTimeout(300);
+          if (!(await page.$('.modal.drawer .pf-nav'))) errors.push('меню ≡ не открылось');
+        }
         const m = await page.evaluate(() => {
           const nav = document.querySelector('#bottom-nav');
           const st = nav ? getComputedStyle(nav) : null;
@@ -185,7 +194,7 @@ async function main() {
         if (vpName === 'desktop' && m.navVisible) errors.push('нижнее меню видно на компьютере');
         if (m.appText < 20) errors.push('страница пустая');
         if (!m.onest) errors.push('шрифт Onest не загрузился');
-        await page.screenshot({ path: path.join(SHOTS, `${vpName}-${name}.png`), fullPage: true });
+        await page.screenshot({ path: path.join(SHOTS, `${vpName}-${name}.png`), fullPage: !open });
         checked++;
         if (errors.length) problems.push(`${vpName} ${url}\n   - ${errors.join('\n   - ')}`);
         console.log(`${errors.length ? '✗' : '✓'} ${vpName.padEnd(7)} ${name}`);
