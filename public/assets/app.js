@@ -1845,6 +1845,98 @@
     app.innerHTML = String(html`<div class="wrap"><article class="page"><h1>${p[0]}</h1>${p[1]}</article></div>`);
   }
 
+  // ================= «потянуть вниз — обновить» =================
+  // Только в установленном приложении (значок на экране «Домой»): в браузере телефона у Safari и Chrome
+  // есть свой такой жест. Жест только наблюдает за пальцем (passive) и не мешает прокрутке и нажатиям.
+  // Обновление мягкое: заново берём данные и перерисовываем страницу; вышла новая версия сайта — перезагрузка.
+  async function softRefresh() {
+    const cur = ($('script[src*="/assets/app.js"]') || {}).src || '';
+    try {
+      const page = await fetch('/', { cache: 'no-store' }).then((r) => r.text());
+      const m = /\/assets\/app\.js\?v=([\w-]+)/.exec(page);
+      if (m && !cur.includes(m[1])) { location.reload(); return; }
+    } catch { /* офлайн — обновим то, что получится */ }
+    try { S.config = await api('GET', '/api/config'); } catch { /* офлайн */ }
+    await refreshMe();
+    await render();
+  }
+
+  function setupPullToRefresh() {
+    const installed = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+    if (!installed || !('ontouchstart' in window)) return;
+    const START = 16; const TRIGGER = 96; const MAX = 120;
+    const FIELD = 'input, textarea, select, [contenteditable], label';
+    let typed = [];
+    document.addEventListener('input', (e) => { const t = e.target; if (t && t.matches && t.matches('input, textarea, [contenteditable]') && !typed.includes(t)) typed.push(t); }, true);
+    // Напечатанное и не отправленное (сообщение, объявление) обновлением не стираем
+    const hasDraft = () => { typed = typed.filter((el) => document.contains(el)); return typed.some((el) => String(el.isContentEditable ? el.textContent : el.value || '').trim()); };
+    const typingNow = () => {
+      const a = document.activeElement;
+      if (a && a !== document.body && a.matches && a.matches('input, textarea, select, [contenteditable]')) return true;
+      const vv = window.visualViewport;
+      return !!(vv && (vv.offsetTop > 0 || vv.height < window.innerHeight * 0.8));
+    };
+    // Палец на блоке со своей прокруткой не в самом верху (переписка) — тянут его, а не страницу
+    const innerScrolled = (node) => {
+      for (let el = node; el && el !== document.body; el = el.parentElement) {
+        if (el.scrollTop > 0 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) return true;
+      }
+      return false;
+    };
+    const ind = document.createElement('div');
+    ind.className = 'ptr'; ind.setAttribute('aria-hidden', 'true');
+    ind.innerHTML = `<span class="ptr-ic">${ic('refresh', 20, 1.8)}</span>`;
+    document.body.appendChild(ind);
+    const icn = ind.firstChild;
+    let x0 = 0; let y0 = 0; let dist = 0; let state = 'idle'; // idle → maybe → pull → busy
+    let lastScroll = 0;
+    window.addEventListener('scroll', () => { lastScroll = Date.now(); }, { passive: true });
+    const show = (d) => {
+      const pr = Math.min(1, d / TRIGGER);
+      ind.style.transform = `translate(-50%, ${d - 48}px)`;
+      ind.style.opacity = String(Math.min(1, pr * 1.4));
+      icn.style.transform = `rotate(${pr * 270}deg)`;
+      ind.classList.toggle('ready', d >= TRIGGER);
+    };
+    const hide = () => {
+      ind.classList.add('back'); ind.classList.remove('ready', 'busy');
+      ind.style.transform = ''; ind.style.opacity = ''; icn.style.transform = '';
+      setTimeout(() => ind.classList.remove('back'), 400);
+    };
+    document.addEventListener('touchstart', (e) => {
+      if (state === 'busy' || e.touches.length !== 1) return;
+      state = 'idle';
+      if (typingNow() || (e.target.closest && e.target.closest(FIELD))) return;
+      if (window.scrollY > 0 || Date.now() - lastScroll < 450 || $('.modal-back') || innerScrolled(e.target)) return;
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dist = 0; state = 'maybe';
+    }, { passive: true });
+    document.addEventListener('touchmove', (e) => {
+      if (state !== 'maybe' && state !== 'pull') return;
+      if (e.touches.length !== 1) { state = 'idle'; hide(); return; }
+      const dx = e.touches[0].clientX - x0; const dy = e.touches[0].clientY - y0;
+      if (state === 'maybe') {
+        if (Math.abs(dx) < START && Math.abs(dy) < START) return;
+        if (dy <= 0 || Math.abs(dx) > dy || window.scrollY > 0 || typingNow()) { state = 'idle'; return; }
+        state = 'pull'; ind.classList.remove('back');
+      }
+      dist = Math.min(MAX, Math.max(0, (dy - START) * 0.5));
+      show(dist);
+    }, { passive: true });
+    document.addEventListener('touchend', () => {
+      if (state !== 'pull') { if (state === 'maybe') state = 'idle'; return; }
+      if (dist < TRIGGER || hasDraft()) { state = 'idle'; hide(); return; }
+      state = 'busy';
+      ind.classList.add('busy', 'back'); ind.classList.remove('ready');
+      ind.style.transform = `translate(-50%, ${TRIGGER - 48}px)`; icn.style.transform = '';
+      const t0 = Date.now();
+      softRefresh().catch(() => {}).then(() => {
+        // слишком быстрое обновление выглядит как сбой — значок крутится хотя бы полсекунды
+        setTimeout(() => { hide(); state = 'idle'; }, Math.max(0, 500 - (Date.now() - t0)));
+      });
+    }, { passive: true });
+    document.addEventListener('touchcancel', () => { if (state === 'pull' || state === 'maybe') { state = 'idle'; hide(); } }, { passive: true });
+  }
+
   // ================= запуск =================
   async function refreshMe() {
     try {
@@ -1868,6 +1960,7 @@
     }
     renderFooter();
     await render();
+    setupPullToRefresh();
     setInterval(() => { if (S.user && document.visibilityState === 'visible') refreshMe(); }, 30000);
   }
 
