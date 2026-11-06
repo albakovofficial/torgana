@@ -1,5 +1,5 @@
 # Проверка каждого изменения: синтаксис, сценарии API и вёрстка на телефоне и компьютере.
-# В main и release сливается только то, что прошло эту проверку. Её же запускает «Выпуск» (release.yml).
+# В main и release сливается только то, что прошло эту проверку (pull request main → release тоже проверяется).
 name: Проверка
 
 on:
@@ -7,10 +7,9 @@ on:
     branches-ignore: [main, release]
   pull_request:
   workflow_dispatch:
-  workflow_call:
 
 concurrency:
-  group: check-${{ github.workflow }}-${{ github.ref }}
+  group: check-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
