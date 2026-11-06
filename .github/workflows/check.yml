@@ -1,0 +1,46 @@
+# Проверка каждого изменения: синтаксис, сценарии API и вёрстка на телефоне и компьютере.
+# В main сливается только то, что прошло эту проверку.
+name: Проверка
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Синтаксис
+        run: node --check server.js && node --check public/assets/app.js
+
+      - name: Сценарии API
+        run: npm test
+
+      - name: Браузер для проверки вёрстки
+        run: |
+          npm install --no-save --no-package-lock playwright@1.63.0
+          npx playwright install --with-deps chromium
+
+      - name: Вёрстка (телефон и компьютер)
+        run: npm run test:ui
+
+      - name: Скриншоты
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: tests/screenshots/
+          retention-days: 14

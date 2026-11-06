@@ -23,7 +23,13 @@ healthy() {
   return 1
 }
 
-if node --check server.js && node --check public/assets/app.js; then
+tests_ok() {
+  # Быстрая проверка API на временной базе. Боевую базу тесты не трогают.
+  [ -f tests/api.test.js ] || return 0
+  timeout 180 node --test --test-reporter=dot tests/api.test.js
+}
+
+if node --check server.js && node --check public/assets/app.js && tests_ok; then
   sudo /usr/bin/systemctl restart torgana
   if healthy; then echo "Обновлено до $NEW"; exit 0; fi
 fi

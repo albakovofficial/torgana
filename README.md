@@ -77,6 +77,23 @@ npm run seed-demo
    sudo certbot --nginx -d torgana.ru -d www.torgana.ru
    ```
 
+## Проверка перед выкладкой
+
+```bash
+npm test          # сценарии API на временной базе (боевую не трогает)
+npm run test:ui   # вёрстка на телефоне (375 px) и компьютере, скриншоты в tests/screenshots
+npm run check     # всё сразу
+```
+
+Для `test:ui` нужен Playwright с Chromium (`npm i --no-save playwright && npx playwright install chromium`).
+
+Порядок работы:
+1. Каждая доработка — в отдельной ветке и pull request.
+2. GitHub сам прогоняет проверку (`.github/workflows/check.yml`) и прикладывает скриншоты.
+3. В `main` сливается только то, что прошло проверку. Через ~30 секунд сервер забирает `main`,
+   ещё раз прогоняет `npm test` и только потом перезапускает сайт. Если тесты не прошли или сайт
+   не поднялся — остаётся прошлая версия.
+
 ## Резервные копии
 
 Всё состояние сайта — папки `data/` (база) и `uploads/` (фото). Копируйте их регулярно, например раз в сутки через cron.
