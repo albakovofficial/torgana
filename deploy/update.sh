@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Автообновление Торганы из GitHub, как в ALBAKOV: на сайт попадает только то, что слито в ветку release.
-#   main    — черновики: туда сливаются pull request'ы, сайт от этого не меняется;
-#   release — выпуск: слияние main → release (pull request «main → release» или Actions → «Выпуск»).
+#   main    — рабочая ветка: коммиты «1.1.0: что сделано», сайт от неё не меняется;
+#   release — выпуск: pull request «main → release», владелец нажимает Merge.
 # Служба torgana-update.timer проверяет release каждые 30 секунд. Вручную на сервере:
 #   sudo torgana-autoupdate            — проверить и установить новую версию сейчас
 #   sudo torgana-autoupdate --status   — какая версия работает, журнал последних обновлений

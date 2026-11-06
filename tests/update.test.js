@@ -165,13 +165,3 @@ test('ставятся только версии новее работающей
   assert.equal(git(app, 'log', '-1', '--format=%s'), 'Версия 7');
   assert.equal(status().checkError, '');
 });
-
-test('номер версии: patch, minor, major', () => {
-  const { bump } = require('../scripts/version');
-  assert.equal(bump('1.0.0', 'patch'), '1.0.1');
-  assert.equal(bump('1.0.9', 'patch'), '1.0.10');
-  assert.equal(bump('1.0.5', 'minor'), '1.1.0');
-  assert.equal(bump('1.4.2', 'major'), '2.0.0');
-  assert.throws(() => bump('1.0', 'patch'), /вида 1\.0\.0/);
-  assert.throws(() => bump('1.0.0', 'huge'), /patch, minor или major/);
-});
