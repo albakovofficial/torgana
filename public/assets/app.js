@@ -234,7 +234,7 @@
       <a href="${S.user ? '/profile' : '/login'}" class="${on(p.startsWith('/profile') || p === '/login')}" aria-label="Профиль">${ic('user', 23)}</a>`);
   }
 
-  // Подвал: знак и кнопки связи, разделы (на телефоне раскрываются), контакты, © с реквизитами оператора, документы. Последняя колонка FOOTER_COLS — документы (их же показывает меню ≡).
+  // Подвал: знак и кнопка поддержки, разделы (на телефоне раскрываются), контакты, © с реквизитами оператора, документы. Последняя колонка FOOTER_COLS — документы (их же показывает меню ≡).
   const FOOTER_COLS = [
     ['Покупателям', [['/page/help', 'Как искать'], ['/page/safety', 'Безопасность'], ['/favorites', 'Избранное']]],
     ['Продавцам', [['/new', 'Разместить объявление'], ['/page/business', 'Для бизнеса'], ['/page/rules', 'Правила площадки']]],
@@ -253,15 +253,14 @@
       <div class="f-hero">
         <div class="f-brand">${logo()}<p class="f-tag">Честная площадка объявлений по всей России</p></div>
         <div class="f-cta">
-          <a class="f-pill f-pill-main" href="/messages/support"><span class="f-pill-ic">${ic('headset', 20)}</span><span><b>Написать в поддержку</b><small>Отвечают модераторы, а не бот</small></span></a>
-          ${mail ? html`<a class="f-pill" href="mailto:${mail}"><span class="f-pill-ic">${ic('mail', 20)}</span><span><b>${mail}</b><small>Почта для вопросов</small></span></a>` : ''}
+          <a class="f-support" href="/messages/support"><span class="f-support-ic">${ic('headset', 20)}</span>Написать в поддержку</a>
+          <small>Отвечают модераторы, а не бот</small>
         </div>
       </div>
       <div class="f-grid">
         ${cols.map(([t, ls]) => html`<details class="fcol" open><summary><h4>${t}</h4>${ic('down', 18, 2)}</summary><ul>${ls.map(([href, label]) => html`<li><a href="${href}">${label}</a></li>`)}</ul></details>`)}
         <div class="fcol fcol-contacts"><h4>Контакты</h4><ul class="f-contacts">
           ${mail ? contact('mail', html`<a href="mailto:${mail}">${mail}</a>`) : ''}
-          ${contact('chat', html`<a href="/messages/support">Чат «Поддержка Торганы»</a>`)}
           ${contact('shield', html`<span>Каждое объявление проверяет модератор</span>`)}
         </ul></div>
       </div>
