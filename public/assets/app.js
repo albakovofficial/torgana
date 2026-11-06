@@ -925,6 +925,17 @@
     });
   }
 
+  // ================= новое объявление и правка =================
+  // Пять шагов (фото, что продаёте, цена, где, описание). На компьютере справа — превью карточки,
+  // что осталось заполнить и кнопка; на телефоне кнопка закреплена внизу вместо нижнего меню.
+  // Новое объявление пишется в черновик в браузере (tg_draft) — закрыли страницу, ничего не потеряли.
+  const UNIT_LABEL = { '': 'за всё', мес: 'в месяц', сутки: 'за сутки', час: 'за час', 'м²': 'за м²', шт: 'за штуку' };
+  const DESC_TIPS = ['Состояние', 'Комплектация', 'Причина продажи', 'Дефекты', 'Где можно посмотреть'];
+  const DRAFT_KEY = 'tg_draft';
+  const draftLoad = () => { try { const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); return d && Date.now() - d.at < 20 * 3600 * 1000 ? d : null; } catch { return null; } };
+  const draftSave = (d) => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...d, at: Date.now() })); } catch { /* приватный режим */ } };
+  const draftDrop = () => { try { localStorage.removeItem(DRAFT_KEY); } catch { /* нет хранилища */ } };
+
   async function viewEditor(id) {
     if (!requireAuth()) return;
     let l = null;
@@ -934,88 +945,99 @@
       l = data.listing;
     }
     setTitle(l ? 'Редактирование' : 'Новое объявление');
+    const draft = l ? null : draftLoad();
+    const src = l ? { ...l, photos: l.photos.map((u) => ({ file: u.split('/').pop(), url: u })), negotiable: l.price === null } : draft || {};
     const st = {
-      photos: l ? l.photos.map((u) => ({ file: u.split('/').pop(), url: u })) : [],
-      category: l ? l.category : '',
-      condition: l ? l.condition : '',
-      busy: 0
+      photos: (src.photos || []).filter((p) => p.file),
+      category: src.category || '', condition: src.condition || '', priceUnit: src.priceUnit || '',
+      negotiable: !!src.negotiable, busy: 0, tried: false
     };
     const units = S.config.priceUnits || [''];
+    const step = (n, sid, title, sub, body) => html`<section class="ed-step" id="${sid}"><div class="ed-step-h"><span class="ed-n">${n}</span><div><h2>${title}</h2>${sub ? html`<p>${sub}</p>` : ''}</div></div><div class="ed-err" role="alert" hidden></div>${body}</section>`;
 
-    app.innerHTML = String(html`<div class="wrap"><div class="editor">
-      <h1>${l ? 'Редактирование' : 'Новое объявление'}</h1>
-      <p class="lead">${l ? 'Изменения сразу появятся на сайте.' : 'Бесплатно для частных лиц. Хорошие фото и честное описание — половина продажи.'}</p>
-      <form id="ed" novalidate>
-        <div class="editor-card">
-          <h2>Фото <span class="muted" style="font-weight:500;font-size:14px">до 10, первое — обложка</span></h2>
-          <div class="photos" id="photos"></div>
-          <input type="file" id="file" accept="image/jpeg,image/png,image/webp" multiple class="sr" tabindex="-1">
-          <div id="ai-slot"></div>
-        </div>
-        <div class="editor-card">
-          <h2>Что продаёте</h2>
-          <div class="field"><label for="title">Название</label><input id="title" name="title" class="input" maxlength="80" placeholder="Например: iPhone 15 Pro, 256 ГБ" value="${l ? l.title : ''}" required><span class="help" id="title-count"></span></div>
-          <div class="field"><span class="label">Категория</span><div class="cat-pick" id="cat-pick" role="radiogroup" aria-label="Категория">
-            ${S.config.categories.map((c) => html`<button type="button" role="radio" data-cat="${c.id}">${c.name}</button>`)}</div></div>
-          <div class="field" id="cond-field"><span class="label">Состояние</span><div class="seg seg-wrap" id="cond">
-            <button type="button" data-cond="">Не указано</button><button type="button" data-cond="new">Новое</button><button type="button" data-cond="used">Б/у</button></div></div>
-        </div>
-        <div class="editor-card">
-          <h2>Цена</h2>
-          <div class="row stack-m">
-            <div class="field" style="flex:2"><label for="price">Цена, ₽</label><input id="price" name="price" class="input" inputmode="numeric" placeholder="Оставьте пустым — «Цена договорная»" value="${l && l.price !== null ? l.price : ''}"></div>
-            <div class="field" style="flex:1"><label for="unit">За что</label><select id="unit" name="priceUnit" class="select">
-              ${units.map((u) => html`<option value="${u}" ${l && l.priceUnit === u ? raw('selected') : ''}>${u ? `за ${u}` : 'за всё'}</option>`)}</select></div>
+    app.innerHTML = String(html`<div class="wrap ed">
+      <div class="ed-head">
+        <a class="pf-back always" href="${l ? `/l/${l.id}` : '/profile'}">${ic('left', 18, 2)}${l ? 'К объявлению' : 'Мои объявления'}</a>
+        <h1>${l ? 'Редактирование' : 'Новое объявление'}</h1>
+        <p>${l ? 'После сохранения объявление снова проверит модератор — обычно несколько часов. Пока идёт проверка, его не видно в поиске.' : 'Бесплатно и без лимитов. Каждое объявление проверяет модератор — обычно это несколько часов.'}</p>
+        ${draft ? html`<div class="ed-draft">${ic('refresh', 16, 2)}<span>Восстановили черновик от ${when(draft.at)}</span><button type="button" class="btn btn-soft btn-sm" id="draft-drop">Начать заново</button></div>` : ''}
+      </div>
+      <div class="ed-grid">
+        <form id="ed" class="ed-form" novalidate>
+          ${step(1, 's-photos', 'Фото', 'До 10 фото. Первое — обложка в поиске.', html`<div id="photos"></div>
+            <input type="file" id="file" accept="image/jpeg,image/png,image/webp" multiple class="sr" tabindex="-1">
+            <div id="ai-slot"></div>`)}
+          ${step(2, 's-what', 'Что продаёте', '', html`
+            <div class="field"><label for="title">Название</label>
+              <div class="ed-input"><input id="title" name="title" class="input" maxlength="80" placeholder="Например: iPhone 15 Pro, 256 ГБ" value="${src.title || ''}" autocomplete="off"><span class="ed-count" id="title-count"></span></div>
+              <span class="help">Марка, модель и главное — так объявление легче найти.</span></div>
+            <div class="field"><span class="label">Категория</span><div class="ed-cats" role="radiogroup" aria-label="Категория">
+              ${S.config.categories.map((c) => html`<button type="button" role="radio" aria-checked="false" data-cat="${c.id}"><span class="ed-cat-ic">${catIc(c.id, 24)}</span><span>${c.name}</span></button>`)}</div></div>
+            <div class="field hidden" id="cond-field"><span class="label">Состояние</span><div class="ed-seg" role="radiogroup" aria-label="Состояние">
+              ${[['new', 'Новое'], ['used', 'Б/у'], ['', 'Не указывать']].map(([v, t]) => html`<button type="button" role="radio" data-cond="${v}">${t}</button>`)}</div></div>`)}
+          ${step(3, 's-price', 'Цена', '', html`
+            <div class="ed-price">
+              <div class="ed-money"><label class="sr" for="price">Цена в рублях</label><input id="price" name="price" class="input" inputmode="numeric" autocomplete="off" placeholder="0" value="${src.price !== null && src.price !== undefined && src.price !== '' ? NF.format(Number(String(src.price).replace(/\D/g, ''))) : ''}"><span>₽</span></div>
+              <label class="ed-neg"><input type="checkbox" id="neg" ${st.negotiable ? raw('checked') : ''}><span class="track"></span><span>Договорная</span></label>
+            </div>
+            ${units.length > 1 ? html`<div class="ed-seg ed-units" role="radiogroup" aria-label="За что цена">${units.map((u) => html`<button type="button" role="radio" data-unit="${u}">${UNIT_LABEL[u] || `за ${u}`}</button>`)}</div>` : ''}
+            <div class="ed-hint hidden" id="price-hint"></div>`)}
+          ${step(4, 's-where', 'Где', '', html`
+            <div class="field"><label for="city">Город</label>
+              <div class="ed-icon-input">${ic('pin', 18)}<input id="city" name="city" class="input" list="cities" autocomplete="address-level2" value="${src.city || S.user.city || S.city || ''}" placeholder="Начните вводить город"></div>
+              <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
+            <label class="switch"><span>Отправлю по России<small>Покупатели из других городов увидят «Доставка»</small></span><input type="checkbox" name="delivery" ${src.delivery ? raw('checked') : ''}><span class="track"></span></label>`)}
+          ${step(5, 's-desc', 'Описание', 'Честное описание экономит время и вам, и покупателю.', html`
+            <div class="ed-tips" aria-label="Что написать">${DESC_TIPS.map((t) => html`<button type="button" class="chip" data-tip="${t}">${ic('plus', 14, 2.2)}${t}</button>`)}</div>
+            <div class="ed-input"><label for="desc" class="sr">Описание</label><textarea id="desc" name="description" class="textarea" maxlength="4000" placeholder="Состояние, комплектация, причина продажи, особенности">${src.description || ''}</textarea><span class="ed-count" id="desc-count"></span></div>`)}
+          <p class="ed-rules muted">Нажимая «${l ? 'Сохранить' : 'Отправить на проверку'}», вы соглашаетесь с <a href="/page/rules" style="text-decoration:underline">правилами площадки</a>.</p>
+        </form>
+        <aside class="ed-side">
+          <div class="ed-panel">
+            <div class="ed-preview-h">Так увидят в поиске</div>
+            <div class="ed-preview" id="preview" aria-hidden="true"></div>
+            <div class="ed-ready"><div class="ed-ready-h"><b id="ready-n"></b><span id="ready-t"></span></div><div class="ed-bar-track"><i id="ready-bar"></i></div>
+              <ul class="ed-check" id="check"></ul><small class="ed-req">* обязательно, остальное — по желанию</small></div>
+            <button type="button" class="btn btn-dark btn-lg btn-block" data-submit>${l ? 'Сохранить' : 'Отправить на проверку'}</button>
+            <a class="btn btn-soft btn-block" href="${l ? `/l/${l.id}` : '/profile'}">Отмена</a>
           </div>
-          <div class="price-hint hidden" id="price-hint"></div>
-        </div>
-        <div class="editor-card">
-          <h2>Где и как</h2>
-          <div class="field"><label for="city">Город</label><input id="city" name="city" class="input" list="cities" autocomplete="address-level2" value="${l ? l.city : (S.user.city || S.city || '')}" placeholder="Например: Казань" required>
-            <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
-          <label class="switch"><span><strong style="display:block;font-weight:600">Готов отправить по России</strong><span class="muted" style="font-size:14px">Покупатели из других городов увидят отметку «Доставка»</span></span>
-            <input type="checkbox" name="delivery" ${l && l.delivery ? raw('checked') : ''}><span class="track"></span></label>
-        </div>
-        <div class="editor-card">
-          <h2>Описание</h2>
-          <div class="field"><label for="desc" class="sr">Описание</label><textarea id="desc" name="description" class="textarea" maxlength="4000" placeholder="Состояние, комплектация, причина продажи, особенности. Честное описание экономит время и вам, и покупателю.">${l ? l.description : ''}</textarea></div>
-        </div>
-        <div class="form-error hidden" id="err" role="alert"></div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap">
-          <button class="btn btn-dark btn-lg" type="submit" id="submit">${l ? 'Сохранить изменения' : 'Опубликовать'}</button>
-          <a class="btn btn-soft btn-lg" href="${l ? `/l/${l.id}` : '/'}">Отмена</a>
-        </div>
-        <p class="muted" style="margin:0;font-size:13px">Публикуя объявление, вы соглашаетесь с <a href="/page/rules" style="text-decoration:underline">правилами площадки</a>.</p>
-      </form>
-    </div></div>`);
-
+        </aside>
+      </div>
+      <div class="ed-dock"><div class="ed-dock-txt"><b id="dock-n"></b><span id="dock-t"></span></div><button type="button" class="btn btn-dark" data-submit>${l ? 'Сохранить' : 'На проверку'}</button></div>
+    </div>`);
+    document.body.classList.add('editing');
     const form = $('#ed');
-    const photosBox = $('#photos');
     const fileInput = $('#file');
+    const priceDigits = () => form.price.value.replace(/\D/g, '');
 
+    // ---------- фото ----------
     const renderPhotos = () => {
-      photosBox.innerHTML = String(html`${st.photos.map((p, i) => html`<div class="photo ${p.loading ? 'loading' : ''}">
+      const box = $('#photos');
+      const n = st.photos.length;
+      box.innerHTML = String(n ? html`<div class="ed-photos">${st.photos.map((p, i) => html`<div class="ed-photo ${i === 0 ? 'cover' : ''} ${p.loading ? 'loading' : ''}">
           ${p.url ? html`<img src="${p.url}" alt="Фото ${i + 1}">` : ''}
-          ${p.loading ? '' : html`<button type="button" class="rm" data-rm="${i}" aria-label="Удалить фото">${ic('close', 16, 2)}</button>`}
-          ${i === 0 && !p.loading ? html`<span class="tag dark cover">Обложка</span>` : ''}
-          ${i > 0 && !p.loading ? html`<button type="button" class="make-cover" data-cover="${i}">Сделать обложкой</button>` : ''}
+          ${p.loading ? '' : html`${i === 0 ? html`<span class="ed-cover-tag">Обложка</span>` : ''}
+            <button type="button" class="ed-ph-btn rm" data-rm="${i}" aria-label="Удалить фото ${i + 1}">${ic('close', 15, 2.2)}</button>
+            ${n > 1 ? html`<div class="ed-ph-move">${i > 0 ? html`<button type="button" class="ed-ph-btn" data-mv="${i}" data-d="-1" aria-label="Переместить левее">${ic('left', 15, 2.2)}</button>` : ''}${i > 0 ? html`<button type="button" class="ed-ph-btn txt" data-cover="${i}">Обложка</button>` : ''}${i < n - 1 ? html`<button type="button" class="ed-ph-btn" data-mv="${i}" data-d="1" aria-label="Переместить правее">${ic('right', 15, 2.2)}</button>` : ''}</div>` : ''}`}
         </div>`)}
-        ${st.photos.length < 10 ? html`<button type="button" class="drop" id="drop">${ic('camera', 26, 1.6)}<span>Добавить фото</span><span class="muted" style="font-weight:500">или перетащите сюда</span></button>` : ''}`);
-      const drop = $('#drop');
-      if (drop) {
-        drop.onclick = () => fileInput.click();
-        drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
-        drop.ondragleave = () => drop.classList.remove('over');
-        drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); addFiles([...e.dataTransfer.files]); };
-      }
-      $$('[data-rm]', photosBox).forEach((b) => { b.onclick = () => { st.photos.splice(Number(b.dataset.rm), 1); renderPhotos(); }; });
-      $$('[data-cover]', photosBox).forEach((b) => { b.onclick = () => { const [p] = st.photos.splice(Number(b.dataset.cover), 1); st.photos.unshift(p); renderPhotos(); }; });
+        ${n < 10 ? html`<button type="button" class="ed-add" data-pick>${ic('plus', 24, 2)}<span>Ещё фото</span><small>${n} из 10</small></button>` : ''}</div>`
+        : html`<button type="button" class="ed-drop" data-pick>
+          <span class="ed-drop-ic">${ic('camera', 28, 1.7)}</span><b>Добавьте фото</b><span>Нажмите или перетащите сюда · JPG, PNG, WebP</span></button>
+        <ul class="ed-photo-tips"><li>${ic('sparkle', 16)}Светлое фото при дневном свете</li><li>${ic('image', 16)}Несколько ракурсов и детали</li><li>${ic('check', 16, 2)}Только ваш товар, без надписей</li></ul>`);
+      $$('[data-pick]', box).forEach((b) => { b.onclick = () => fileInput.click(); });
+      $$('[data-rm]', box).forEach((b) => { b.onclick = () => { st.photos.splice(Number(b.dataset.rm), 1); changed(); renderPhotos(); }; });
+      $$('[data-mv]', box).forEach((b) => { b.onclick = () => { const i = Number(b.dataset.mv); const j = i + Number(b.dataset.d); [st.photos[i], st.photos[j]] = [st.photos[j], st.photos[i]]; changed(); renderPhotos(); }; });
+      $$('[data-cover]', box).forEach((b) => { b.onclick = () => { const [p] = st.photos.splice(Number(b.dataset.cover), 1); st.photos.unshift(p); changed(); renderPhotos(); }; });
       renderAi();
     };
+    const zone = $('#s-photos');
+    zone.ondragover = (e) => { e.preventDefault(); zone.classList.add('over'); };
+    zone.ondragleave = (e) => { if (!zone.contains(e.relatedTarget)) zone.classList.remove('over'); };
+    zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove('over'); addFiles([...e.dataTransfer.files]); };
 
     const addFiles = async (files) => {
       const imgs = files.filter((f) => /^image\//.test(f.type)).slice(0, 10 - st.photos.length);
-      if (!imgs.length) return;
+      if (!imgs.length) { if (files.length) toast('Загрузите фото в формате JPG, PNG или WebP', true); return; }
       const slots = imgs.map(() => { const s = { loading: true, url: '' }; st.photos.push(s); return s; });
       renderPhotos();
       st.busy += imgs.length;
@@ -1032,7 +1054,7 @@
           toast(e.message, true);
         } finally {
           st.busy -= 1;
-          renderPhotos();
+          renderPhotos(); changed();
         }
       }));
     };
@@ -1042,7 +1064,7 @@
       const slot = $('#ai-slot');
       if (!S.config.ai) { slot.innerHTML = ''; return; }
       const ready = st.photos.some((p) => p.file && !p.loading);
-      slot.innerHTML = String(html`<div class="ai-box"><p>${ic('sparkle', 18)} ${ready ? 'Заполним название, категорию и описание по первому фото.' : 'Добавьте фото — и мы заполним объявление за вас.'}</p>
+      slot.innerHTML = String(html`<div class="ed-ai"><span class="ed-ai-ic">${ic('sparkle', 20)}</span><p>${ready ? 'Заполним название, категорию и описание по первому фото.' : 'Добавьте фото — и мы заполним объявление за вас.'}</p>
         <button type="button" class="btn btn-accent btn-sm" id="ai-btn" ${ready ? '' : raw('disabled')}>Заполнить по фото</button></div>`);
       const b = $('#ai-btn');
       if (b) b.onclick = async () => {
@@ -1054,35 +1076,40 @@
           if (s.description && !form.description.value.trim()) form.description.value = s.description;
           if (s.category) setCat(s.category);
           if (s.condition) setCond(s.condition);
-          updateCount();
-          if (s.priceHint) showHint(s.priceHint, s.priceHintCount);
-          else fetchHint();
+          if (s.priceHint) showHint(s.priceHint, s.priceHintCount); else fetchHint();
+          changed();
           toast('Готово — проверьте и поправьте при необходимости');
         } catch (e) { toast(e.message, true); }
         b.disabled = false; b.textContent = 'Заполнить по фото';
       };
     };
 
+    // ---------- категория, состояние, цена ----------
     const setCat = (c) => {
       st.category = c;
       $$('[data-cat]').forEach((b) => { const on = b.dataset.cat === c; b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false'); });
       $('#cond-field').classList.toggle('hidden', !CONDITION_CATS.has(c));
-      fetchHint();
+      fetchHint(); changed();
     };
-    const setCond = (c) => { st.condition = c; $$('[data-cond]').forEach((b) => b.classList.toggle('on', b.dataset.cond === c)); };
+    const setCond = (c) => { st.condition = c; $$('[data-cond]').forEach((b) => { const on = b.dataset.cond === c; b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false'); }); changed(); };
+    const setUnit = (u) => { st.priceUnit = u; $$('[data-unit]').forEach((b) => { const on = b.dataset.unit === u; b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false'); }); changed(); };
+    const setNeg = (on) => { st.negotiable = on; $('#neg').checked = on; form.price.disabled = on; if (on) form.price.value = ''; $('.ed-money').classList.toggle('off', on); changed(); };
     $$('[data-cat]').forEach((b) => { b.onclick = () => setCat(b.dataset.cat); });
     $$('[data-cond]').forEach((b) => { b.onclick = () => setCond(b.dataset.cond); });
-    setCat(st.category); setCond(st.condition);
-
-    const updateCount = () => { $('#title-count').textContent = `${form.title.value.length} / 80`; };
-    form.title.oninput = () => { updateCount(); fetchHintSoon(); };
-    form.priceUnit.onchange = () => fetchHint();
-    updateCount();
+    $$('[data-unit]').forEach((b) => { b.onclick = () => { setUnit(b.dataset.unit); fetchHint(); }; });
+    $('#neg').onchange = (e) => setNeg(e.target.checked);
+    form.price.oninput = () => {
+      const d = priceDigits().slice(0, 11);
+      form.price.value = d ? NF.format(Number(d)) : '';
+      changed();
+    };
 
     const showHint = (n, count) => {
       const el = $('#price-hint');
-      el.innerHTML = String(html`<span class="dot"></span>Похожие продаются примерно за <strong style="color:var(--text)">${NF.format(n)} ₽</strong>${count ? html` · ${count} ${plural(count, 'объявление', 'объявления', 'объявлений')}` : ''}`);
+      el.innerHTML = String(html`<span class="ed-hint-txt">${ic('tag', 16, 2)}<span>Похожие продаются примерно за <b>${NF.format(n)} ₽</b>${count ? html` · ${count} ${plural(count, 'объявление', 'объявления', 'объявлений')}` : ''}</span></span>
+        <button type="button" class="btn btn-soft btn-sm" data-use="${n}">Поставить эту цену</button>`);
       el.classList.remove('hidden');
+      $('[data-use]', el).onclick = () => { setNeg(false); form.price.value = NF.format(n); changed(); };
     };
     let hintTimer = null;
     const fetchHintSoon = () => { clearTimeout(hintTimer); hintTimer = setTimeout(fetchHint, 600); };
@@ -1090,46 +1117,104 @@
       const t = form.title.value.trim();
       if (!st.category || t.length < 3) { $('#price-hint').classList.add('hidden'); return; }
       try {
-        const r = await api('GET', `/api/price-hint?${new URLSearchParams({ category: st.category, title: t, unit: form.priceUnit.value })}`);
+        const r = await api('GET', `/api/price-hint?${new URLSearchParams({ category: st.category, title: t, unit: st.priceUnit })}`);
         if (r.hint) showHint(r.hint, r.count); else $('#price-hint').classList.add('hidden');
       } catch { /* необязательно */ }
     }
 
-    form.price.oninput = () => { form.price.value = form.price.value.replace(/[^\d]/g, '').slice(0, 11); };
-
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      const err = $('#err');
-      err.classList.add('hidden');
-      if (st.busy) { err.textContent = 'Подождите, фото ещё загружаются.'; err.classList.remove('hidden'); return; }
-      const body = {
-        title: form.title.value.trim(),
-        category: st.category,
-        condition: CONDITION_CATS.has(st.category) ? st.condition : '',
-        price: form.price.value.trim(),
-        priceUnit: form.priceUnit.value,
-        city: form.city.value.trim(),
-        delivery: form.delivery.checked,
-        description: form.description.value.trim(),
-        photos: st.photos.filter((p) => p.file).map((p) => p.file)
+    // ---------- описание ----------
+    $$('[data-tip]').forEach((b) => {
+      b.onclick = () => {
+        const ta = form.description;
+        const v = ta.value.replace(/\s+$/, '');
+        ta.value = `${v}${v ? '\n' : ''}${b.dataset.tip}: `;
+        ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+        changed();
       };
-      const problem = body.title.length < 3 ? 'Добавьте название — хотя бы пару слов.'
-        : !body.category ? 'Выберите категорию.'
-          : body.city.length < 2 ? 'Укажите город.' : '';
-      if (problem) { err.textContent = problem; err.classList.remove('hidden'); err.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
-      const btn = $('#submit');
-      btn.disabled = true;
+    });
+
+    // ---------- готовность, превью, черновик ----------
+    const body = () => ({
+      title: form.title.value.trim(), category: st.category, condition: CONDITION_CATS.has(st.category) ? st.condition : '',
+      price: st.negotiable ? '' : priceDigits(), priceUnit: st.priceUnit, city: form.city.value.trim(),
+      delivery: form.delivery.checked, description: form.description.value.trim(),
+      photos: st.photos.filter((p) => p.file).map((p) => p.file)
+    });
+    const CHECK = [
+      ['s-photos', 'Фото', (b) => b.photos.length > 0, false],
+      ['s-what', 'Название', (b) => b.title.length >= 3, true],
+      ['s-what', 'Категория', (b) => !!b.category, true],
+      ['s-price', 'Цена', (b) => !!b.price || st.negotiable, false],
+      ['s-where', 'Город', (b) => b.city.length >= 2, true],
+      ['s-desc', 'Описание', (b) => b.description.length >= 20, false]
+    ];
+    const ERR = { 's-what': (b) => (b.title.length < 3 ? 'Напишите название — хотя бы пару слов.' : !b.category ? 'Выберите категорию.' : ''), 's-where': (b) => (b.city.length < 2 ? 'Укажите город.' : '') };
+    let saveTimer = null;
+    function changed() {
+      const b = body();
+      $('#title-count').textContent = `${form.title.value.length}/80`;
+      $('#desc-count').textContent = `${form.description.value.length}/4000`;
+      const done = CHECK.filter((c) => c[2](b)).length;
+      const pct = Math.round((done / CHECK.length) * 100);
+      const missing = CHECK.filter((c) => c[3] && !c[2](b)).map((c) => c[1].toLowerCase());
+      const soft = CHECK.filter((c) => !c[3] && !c[2](b)).map((c) => c[1].toLowerCase());
+      $('#ready-n').textContent = `Заполнено на ${pct}%`;
+      $('#ready-t').textContent = missing.length ? `осталось: ${missing.join(', ')}` : soft.length ? 'можно отправлять' : 'всё готово';
+      $('#ready-bar').style.width = `${pct}%`;
+      $('#dock-n').textContent = missing.length ? `Осталось: ${missing.join(', ')}` : 'Можно отправлять';
+      $('#dock-t').textContent = missing.length ? `заполнено на ${pct}%` : soft.length ? `советуем добавить: ${soft.join(', ')}` : 'модератор проверит за несколько часов';
+      $('#check').innerHTML = String(html`${CHECK.map(([sid, t, ok, req]) => html`<li class="${ok(b) ? 'ok' : ''}"><a href="#${sid}" data-goto="${sid}">${ic(ok(b) ? 'check' : 'plus', 15, 2.4)}${t}${req ? '*' : ''}</a></li>`)}`);
+      $$('[data-goto]').forEach((a) => { a.onclick = (e) => { e.preventDefault(); $(`#${a.dataset.goto}`).scrollIntoView({ behavior: 'smooth', block: 'start' }); }; });
+      const first = st.photos.find((p) => p.url && !p.loading);
+      $('#preview').innerHTML = String(card({ id: 0, title: b.title || 'Название объявления', price: b.price ? Number(b.price) : null, priceUnit: b.priceUnit, city: b.city || 'Город', createdAt: Date.now(), photo: first ? first.url : null, delivery: b.delivery }));
+      if (st.tried) for (const sid of Object.keys(ERR)) showErr(sid, ERR[sid](b));
+      const has = b.title || b.photos.length || b.description || b.price;
+      if (!l && !has) draftDrop();
+      if (!l && has) { clearTimeout(saveTimer); saveTimer = setTimeout(() => draftSave({ ...b, price: b.price, negotiable: st.negotiable, photos: st.photos.filter((p) => p.file).map((p) => ({ file: p.file, url: p.url })) }), 400); }
+    }
+    const showErr = (sid, msg) => { const s = $(`#${sid}`); s.classList.toggle('bad', !!msg); const e = $('.ed-err', s); e.hidden = !msg; e.innerHTML = msg ? String(html`${ic('warn', 16, 2)}${msg}`) : ''; };
+    form.title.oninput = () => { changed(); fetchHintSoon(); };
+    form.city.oninput = changed;
+    form.description.oninput = changed;
+    form.delivery.onchange = changed;
+    const dd = $('#draft-drop');
+    if (dd) dd.onclick = () => { draftDrop(); render(); };
+
+    // ---------- отправка ----------
+    let sending = false;
+    const submit = async () => {
+      if (sending) return;
+      if (st.busy) { toast('Подождите, фото ещё загружаются', true); return; }
+      st.tried = true;
+      const b = body();
+      const bad = Object.keys(ERR).find((sid) => ERR[sid](b));
+      changed();
+      if (bad) {
+        $(`#${bad}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const f = bad === 's-what' && b.title.length < 3 ? form.title : bad === 's-where' ? form.city : null;
+        if (f) setTimeout(() => f.focus({ preventScroll: true }), 350);
+        return;
+      }
+      sending = true;
+      $$('[data-submit]').forEach((x) => { x.disabled = true; });
       try {
-        const r = l ? await api('PATCH', `/api/listings/${l.id}`, body) : await api('POST', '/api/listings', body);
-        toast(r.status === 'pending' ? 'Отправлено на проверку модератору' : l ? 'Изменения сохранены' : 'Объявление опубликовано');
+        const r = l ? await api('PATCH', `/api/listings/${l.id}`, b) : await api('POST', '/api/listings', b);
+        if (!l) draftDrop();
+        toast('Отправлено на проверку модератору');
         go(`/l/${l ? l.id : r.id}`, true);
       } catch (ex) {
-        err.textContent = ex.message; err.classList.remove('hidden');
-        btn.disabled = false;
+        toast(ex.message, true);
+        sending = false;
+        $$('[data-submit]').forEach((x) => { x.disabled = false; });
       }
     };
+    form.onsubmit = (e) => { e.preventDefault(); submit(); };
+    $$('[data-submit]').forEach((x) => { x.onclick = submit; });
 
+    cleanup = () => { document.body.classList.remove('editing'); clearTimeout(saveTimer); };
+    setCat(st.category); setCond(st.condition); setUnit(st.priceUnit); setNeg(st.negotiable);
     renderPhotos();
+    changed();
     if (l) fetchHint();
   }
 
