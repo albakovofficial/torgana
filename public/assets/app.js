@@ -1538,12 +1538,13 @@
     box.innerHTML = String(html`<div class="panel" style="max-width:760px">
       <h2 class="h2" style="margin:0 0 6px">Версия сайта</h2>
       ${u && u.enabled ? html`
-        ${row('Работает', u.commit ? `${u.commit}${u.subject ? ` — ${u.subject}` : ''}` : '—')}
+        ${u.version ? html`<div style="font-size:30px;font-weight:800;letter-spacing:-0.03em;margin:4px 0 6px">V${u.version}</div>` : ''}
+        ${row('Работает', u.commit ? `${u.version ? `V${u.version} · ` : ''}${u.commit}${u.subject ? ` — ${u.subject}` : ''}` : '—')}
         ${row('Установлена', at(u.updatedAt))}
         ${row('Автообновление', u.checkError || (stale ? `нет проверок с ${at(u.checkedAt)} — проверьте службу torgana-update` : `ветка ${u.branch}, проверка каждые 30 секунд · последняя ${at(u.checkedAt)}`), !!(u.checkError || stale))}
         ${u.lastError ? html`<div class="banner danger" style="margin-top:16px">${u.lastError} · ${at(u.failedAt)}. Эта версия больше не ставится — выпустите исправление в ${u.branch}.</div>` : ''}`
       : html`<p class="muted" style="margin:0 0 8px">Автообновление ещё ни разу не запускалось на этом сервере.</p>`}
-      <p class="muted" style="margin:16px 0 0;font-size:14px">Как выпустить: слейте <strong>main → ${u && u.branch ? u.branch : 'release'}</strong> — кнопкой GitHub → Actions → «Выпуск» или pull request'ом. Сервер проверит новую версию на временной базе, сделает копию базы и перезапустит сайт. Если что-то не так — останется прежняя версия.</p>
+      <p class="muted" style="margin:16px 0 0;font-size:14px">Как выпустить: GitHub → Actions → «Выпуск» — номер версии повысится сам (V1.0.0 → V1.0.1), main сольётся в ${u && u.branch ? u.branch : 'release'}, на GitHub появится страница Release со списком изменений. Сервер проверит новую версию на временной базе, сделает копию базы и перезапустит сайт. Если что-то не так — останется прежняя версия.</p>
     </div>`);
   }
 

@@ -34,7 +34,7 @@ lib/legal.js        — юридические документы; реквиз�
 lib/db.js           — схема и миграции SQLite;  lib/auth.js, http.js, search.js, ai.js, constants.js
 public/             — клиент без фреймворков (assets/app.js, app.css, fonts, icons)
 deploy/             — установка, автообновление, бэкапы, восстановление, службы systemd
-scripts/            — db-copy.js (копия базы), make-icons.js, seed-demo.js (только локально)
+scripts/            — db-copy.js (копия базы), make-icons.js, version.js (номер версии), seed-demo.js (только локально)
 tests/              — сценарии API, почты, документов, поддержки, бэкапов + проверка вёрстки
 ```
 
@@ -53,10 +53,10 @@ tests/              — сценарии API, почты, документов, 
 - `npm test` — ~75 сценариев на временной базе; `npm run test:ui` — 34 страницы на телефоне (375 px) и компьютере (68 проверок), скриншоты в `tests/screenshots`.
 - GitHub Actions (`.github/workflows/check.yml`) гоняет обе проверки на каждую ветку и pull request.
 - **Работа только через ветки и pull request**, как в ALBAKOV: `main` — черновики (туда сливаются pull request'ы, сайт не меняется), **`release` — выпуск**.
-- **Выпустить версию** = слить `main → release`: GitHub → Actions → «Выпуск» → Run workflow (проверка + слияние только вперёд) или pull request `main → release`.
+- **Выпустить версию**: GitHub → Actions → «Выпуск» → Run workflow. Проверка → номер версии +1 (**V1.0.0 → V1.0.1**; для крупных обновлений можно выбрать minor — V1.1.0 или major — V2.0.0) → коммит «Версия 1.0.1» в `main` → слияние `main → release` только вперёд → метка `v1.0.1` и страница **Release** на GitHub со списком изменений с прошлого выпуска. Номер хранится в `package.json` (`node scripts/version.js` — показать). Выпускать только через «Выпуск», а не pull request'ом в `release`, иначе номер не повысится.
 - Сервер каждые 30 секунд смотрит `release`. Новую версию он сначала проверяет во временной папке (синтаксис + сценарии API на временной базе), затем делает копию базы (5 последних в `data/update/db`), ставит код и перезапускает сайт. Если сайт не ответил, сервер откатывает версию. Неудачная версия больше не ставится, пока в `release` не появится следующая. Ставятся только версии новее работающей: если `release` откатили назад или в нём «боковая» ветка, сервер её не ставит (в панели — объяснение).
-- Состояние видно в «Модерация → Версия сайта», на сервере: `sudo torgana-autoupdate --status` (журнал `data/update/update.log`), `sudo torgana-autoupdate` — проверить сейчас. Ветку можно сменить через `UPDATE_BRANCH` в `.env`.
-- Защита веток в GitHub **не включена** — включить: Settings → Branches → правила для `main` и `release`, «Require status checks to pass» → `check`.
+- Номер работающей версии и состояние видно в «Модерация → Версия сайта», на сервере: `sudo torgana-autoupdate --status` (журнал `data/update/update.log`), `sudo torgana-autoupdate` — проверить сейчас. Ветку можно сменить через `UPDATE_BRANCH` в `.env`.
+- Защита веток в GitHub **не включена** — включить: Settings → Branches → правила для `main` и `release`, «Require status checks to pass» → `check`. «Выпуск» сам пушит в `main` и `release` коммит с номером версии — в правилах добавьте GitHub Actions в исключения (bypass), иначе выпуск остановится.
 - Pull request сливает владелец (кнопка Merge в GitHub).
 
 ## 5. Сервер
