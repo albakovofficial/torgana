@@ -7,7 +7,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
-const { startServer, registerUser } = require('./helpers');
+const { startServer, registerUser, client } = require('./helpers');
 
 const SHOTS = path.join(__dirname, 'screenshots');
 const VIEWPORTS = {
@@ -54,14 +54,37 @@ async function seed(base, browser) {
   const conv = await buyer.post('/api/conversations', { listingId: ids[0] });
   await buyer.post(`/api/conversations/${conv.data.id}/messages`, { body: 'Здравствуйте! Коляска ещё продаётся?' });
   await seller.post(`/api/conversations/${conv.data.id}/messages`, { body: 'Да, можно посмотреть сегодня вечером.' });
-  await buyer.post(`/api/favorites/${ids[1]}`);
+  // статистика: несколько разных «гостей» видели и открыли объявление
+  const ua = (i) => `Mozilla/5.0 (Linux; Android 14; Pixel ${i}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36`;
+  for (let i = 0; i < 6; i++) {
+    const g = client(base);
+    const h = { origin: base, 'user-agent': ua(i) };
+    await g.post('/api/stats/impressions', { ids: [ids[1], ids[0]] }, h);
+    if (i < 4) await g.post('/api/stats/view', { id: ids[1], src: ['search', 'home', 'search', 'external'][i] }, h);
+  }
+  await buyer.post(`/api/favorites/${ids[1]}`, {}, { origin: base, 'user-agent': ua(9) });
   await admin.post(`/api/admin/listings/${ids[5]}/reject`, { reason: 'Контакты в тексте объявления' });
   const pending = (await seller.post('/api/listings', { title: 'Травматический пистолет', category: 'hobby', city: 'Казань', price: '9000' })).data.id;
   await buyer.post('/api/support/messages', { body: 'Здравствуйте! Почему моё объявление на проверке?' });
   const thread = (await admin.get('/api/admin/support')).data.items[0].id;
   await admin.post(`/api/admin/support/${thread}/messages`, { body: 'Все объявления проверяются перед публикацией — обычно несколько часов.' });
   await buyer.post(`/api/listings/${ids[1]}/report`, { reason: 'Мошенничество', text: 'Просит предоплату' });
-  return { seller, buyer, admin, ids, pending, thread, conv: conv.data.id };
+  // отзывы: опубликованный с ответом продавца, второй — с жалобой; диалог, где можно оставить отзыв
+  const rv1 = (await buyer.post('/api/reviews', { conversationId: conv.data.id, rating: 5, received: true, text: 'Коляска как в описании, всё проверили на месте. Продавец вежливый, рекомендую!' })).data.review.id;
+  await admin.post(`/api/admin/reviews/${rv1}/publish`);
+  await seller.post(`/api/reviews/${rv1}/reply`, { text: 'Спасибо! Пусть служит долго.' });
+  await admin.post(`/api/admin/reviews/${rv1}/reply/publish`);
+  const critic = await registerUser(base, { name: 'Сергей', email: 'sergey@test.local' });
+  const c2 = (await critic.post('/api/conversations', { listingId: ids[3] })).data.id;
+  await critic.post(`/api/conversations/${c2}/messages`, { body: 'Велосипед ещё продаётся?' });
+  await seller.post(`/api/conversations/${c2}/messages`, { body: 'Да.' });
+  const rv2 = (await critic.post('/api/reviews', { conversationId: c2, rating: 1, received: false, text: 'Договорились о встрече, но продавец не пришёл и перестал отвечать.' })).data.review.id;
+  await admin.post(`/api/admin/reviews/${rv2}/publish`);
+  await seller.post(`/api/reviews/${rv2}/complaint`, { reason: 'Ложные сведения', text: 'Я ждала у метро до семи вечера и писала в чат — покупатель не пришёл.' });
+  const c3 = (await buyer.post('/api/conversations', { listingId: ids[4] })).data.id;
+  await buyer.post(`/api/conversations/${c3}/messages`, { body: 'Добрый день! Можно забрать завтра?' });
+  await seller.post(`/api/conversations/${c3}/messages`, { body: 'Да, после обеда.' });
+  return { seller, buyer, admin, ids, pending, thread, conv: conv.data.id, convReview: c3 };
 }
 
 function pages(d) {
@@ -82,8 +105,18 @@ function pages(d) {
     ['new', '/new', d.seller],
     ['edit', `/edit/${d.ids[0]}`, d.seller],
     ['profile', '/profile', d.seller],
-    ['profile-rejected', '/profile?status=rejected', d.seller],
-    ['settings', '/profile?tab=settings', d.seller],
+    ['profile-listings', '/profile/listings', d.seller],
+    ['profile-rejected', '/profile/listings?status=rejected', d.seller],
+    ['settings', '/profile/settings', d.seller],
+    ['reviews-about', '/profile/reviews', d.seller],
+    ['reviews-mine', '/profile/reviews?tab=mine', d.buyer],
+    ['user-reviews', `/u/${d.seller.user.id}?tab=reviews`, null],
+    ['chat-review', `/messages/${d.convReview}`, d.buyer],
+    ['admin-reviews', '/admin?status=reviews', d.admin],
+    ['admin-review-complaints', '/admin?status=reviews&rt=complaints', d.admin],
+    ['stats', `/profile/stats/${d.ids[1]}`, d.seller],
+    ['stats-week', `/profile/stats/${d.ids[1]}?days=7`, d.seller],
+    ['settings-old-link', '/profile?tab=settings', d.seller],
     ['profile-empty', '/profile', d.buyer],
     ['favorites', '/favorites', d.buyer],
     ['messages', '/messages', d.buyer],

@@ -118,3 +118,15 @@ test('модераторы — только из ADMIN_EMAIL: убранный �
   await s.stop();
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('объявление показывает просмотры и сколько раз добавлено в избранное', async () => {
+  const id = await publish(anna, admin, { title: 'Лампа настольная', category: 'home', city: 'Казань', price: '900' });
+  let l = (await boris.get(`/api/listings/${id}`)).data.listing;
+  assert.equal(l.favCount, 0);
+  const r = await boris.post(`/api/favorites/${id}`);
+  assert.deepEqual(r.data, { fav: true, favCount: 1 });
+  l = (await client(srv.base).get(`/api/listings/${id}`)).data.listing;
+  assert.equal(l.favCount, 1);
+  assert.equal(typeof l.views, 'number');
+  assert.deepEqual((await boris.post(`/api/favorites/${id}`)).data, { fav: false, favCount: 0 });
+});

@@ -211,11 +211,15 @@ describe('объявления', () => {
     assert.equal(l.photos.length, 1);
   });
 
-  test('просмотры считаются только для чужих', async () => {
+  test('просмотры считаются только для чужих и только по сигналу открытой страницы', async () => {
+    const browser = { origin: srv.base, 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36' };
     const before = (await seller.get(`/api/listings/${ids.l1}`)).data.listing.views;
     await guest.get(`/api/listings/${ids.l1}`);
-    const afterViews = (await seller.get(`/api/listings/${ids.l1}`)).data.listing.views;
-    assert.equal(afterViews, before + 1);
+    assert.equal((await seller.get(`/api/listings/${ids.l1}`)).data.listing.views, before, 'запрос к API — не просмотр');
+    await seller.post('/api/stats/view', { id: ids.l1, src: 'other' }, browser);
+    // другой браузер: тот же браузер, что у продавца, засчитан бы не был (продавец мог выйти из аккаунта)
+    await guest.post('/api/stats/view', { id: ids.l1, src: 'search' }, { ...browser, 'user-agent': `${browser['user-agent']} Edg/130.0` });
+    assert.equal((await seller.get(`/api/listings/${ids.l1}`)).data.listing.views, before + 1);
   });
 
   test('статусы: продано, снято, снова активно', async () => {
