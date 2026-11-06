@@ -49,6 +49,7 @@ async function seed(base, browser) {
       description: 'Хорошее состояние. Подробности в чате.\nВторая строка описания.', photos: i === 0 ? photos : [photos[i]]
     });
     ids.push(r.data.id);
+    await admin.post(`/api/admin/listings/${r.data.id}/restore`);
   }
   const conv = await buyer.post('/api/conversations', { listingId: ids[0] });
   await buyer.post(`/api/conversations/${conv.data.id}/messages`, { body: 'Здравствуйте! Коляска ещё продаётся?' });
@@ -56,7 +57,11 @@ async function seed(base, browser) {
   await buyer.post(`/api/favorites/${ids[1]}`);
   await admin.post(`/api/admin/listings/${ids[5]}/reject`, { reason: 'Контакты в тексте объявления' });
   const pending = (await seller.post('/api/listings', { title: 'Травматический пистолет', category: 'hobby', city: 'Казань', price: '9000' })).data.id;
-  return { seller, buyer, admin, ids, pending, conv: conv.data.id };
+  await buyer.post('/api/support/messages', { body: 'Здравствуйте! Почему моё объявление на проверке?' });
+  const thread = (await admin.get('/api/admin/support')).data.items[0].id;
+  await admin.post(`/api/admin/support/${thread}/messages`, { body: 'Все объявления проверяются перед публикацией — обычно несколько часов.' });
+  await buyer.post(`/api/listings/${ids[1]}/report`, { reason: 'Мошенничество', text: 'Просит предоплату' });
+  return { seller, buyer, admin, ids, pending, thread, conv: conv.data.id };
 }
 
 function pages(d) {
@@ -85,6 +90,12 @@ function pages(d) {
     ['admin', '/admin', d.admin],
     ['admin-mail', '/admin?status=mail', d.admin],
     ['admin-pending', '/admin?status=pending', d.admin],
+    ['admin-check', `/admin/l/${d.pending}`, d.admin],
+    ['admin-reports', '/admin?status=reports', d.admin],
+    ['admin-support', `/admin?status=support&t=${d.thread}`, d.admin],
+    ['support-chat', '/messages/support', d.buyer],
+    ['support-new', '/messages/support', d.seller],
+    ['contacts', '/page/contacts', null],
     ['listing-pending', `/l/${d.pending}`, d.seller],
     ['forgot', '/forgot', null],
     ['reset-expired', `/reset?token=${'0'.repeat(64)}`, null],

@@ -50,7 +50,6 @@
     return many;
   }
   const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
-  const MONTHS_NOM = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
   function when(ts) {
     const d = new Date(ts);
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -63,7 +62,7 @@
     return `${d.getDate()} ${MONTHS[d.getMonth()]}${d.getFullYear() !== new Date().getFullYear() ? ' ' + d.getFullYear() : ''}`;
   }
   const shortWhen = (ts) => when(ts).replace(/ в \d\d:\d\d$/, '');
-  const since = (ts) => { const d = new Date(ts); return `${MONTHS_NOM[d.getMonth()]} ${d.getFullYear()}`; };
+  const since = (ts) => { const d = new Date(ts); return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
   const hm = (ts) => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   const initial = (name) => (String(name || '?').trim()[0] || '?').toUpperCase();
 
@@ -226,7 +225,7 @@
         <div class="footer-col"><b>Продавцам</b><a href="/new">Разместить объявление</a><a href="/page/business">Для бизнеса</a><a href="/page/rules">Правила площадки</a></div>
         <div class="footer-col"><b>Помощь</b><a href="/page/support">Поддержка</a><a href="/page/terms">Пользовательское соглашение</a><a href="/page/privacy">Конфиденциальность</a><a href="/page/consent">Согласие на обработку данных</a></div>
       </div>
-      <div class="footer-bottom"><span>© ${new Date().getFullYear()} Торгана</span><span>Бесплатно для частных лиц</span></div>
+      <div class="footer-bottom"><span>© ${new Date().getFullYear()} Торгана${S.config.operator ? ` · ${S.config.operator.name} · ИНН ${S.config.operator.inn} · ОГРНИП ${S.config.operator.ogrnip}` : ''}</span><a href="/page/contacts">Реквизиты и контакты</a></div>
     </div>`);
   }
 
@@ -315,10 +314,11 @@
     [/^\/reset$/, viewReset],
     [/^\/(verify|unsubscribe)$/, viewMailLink],
     [/^\/favorites$/, viewFavorites],
-    [/^\/messages(?:\/(\d+))?$/, viewMessages],
+    [/^\/messages(?:\/(\d+|support))?$/, viewMessages],
     [/^\/profile$/, viewProfile],
     [/^\/u\/(\d+)$/, viewUser],
     [/^\/admin$/, viewAdmin],
+    [/^\/admin\/l\/(\d+)$/, viewAdminListing],
     [/^\/page\/([a-z]+)$/, viewPage]
   ];
 
@@ -535,7 +535,8 @@
         ${l.appealReply ? '' : l.appealText ? html`<span class="tag">Апелляция отправлена</span>` : html`<button class="btn btn-line btn-sm" data-appeal>Не согласен — подать апелляцию</button>`}</div>
         ${l.appealReply ? html`<div style="margin-top:10px"><strong>Ответ на апелляцию:</strong> ${l.appealReply}</div>` : ''}</div>`;
     } else if (l.isOwner && l.status === 'pending') {
-      ownerBanner = html`<div class="banner warn"><strong>Объявление на проверке.</strong> Похоже на товар из раздела «${l.flags}» <a href="/page/rules" style="text-decoration:underline">правил</a>, поэтому его сначала посмотрит модератор. Обычно это занимает несколько часов${S.config.mail ? ' — мы напишем на почту' : ''}.</div>`;
+      ownerBanner = html`<div class="banner warn"><strong>Объявление на проверке.</strong> Каждое объявление перед публикацией проверяет модератор — обычно это занимает несколько часов${S.config.mail ? ', о решении напишем на почту' : ''}.
+        ${l.flags ? html`Оно похоже на товар из раздела «${l.flags}» <a href="/page/rules" style="text-decoration:underline">правил</a> — проверим внимательнее.` : ''}</div>`;
     } else if (l.isOwner && l.status === 'archived') {
       ownerBanner = html`<div class="banner soft"><strong>Объявление снято с публикации.</strong> Его не видят покупатели.</div>`;
     }
@@ -552,6 +553,7 @@
     } else if (l.status === 'active') {
       actions = html`<div style="display:flex;flex-direction:column;gap:10px">
         <button class="btn btn-accent btn-lg btn-block" data-write>${ic('chat', 20)}Написать продавцу</button>
+        <button class="btn btn-line btn-block" data-report>${ic('warn', 18)}Пожаловаться</button>
       </div>`;
     } else {
       actions = html`<div class="banner soft">Товар уже продан. Посмотрите похожие объявления ниже.</div>`;
@@ -652,6 +654,14 @@
     }
     const ap = $('[data-appeal]');
     if (ap) ap.onclick = () => appealModal(l.id, () => render());
+    const rp = $('[data-report]');
+    if (rp) {
+      rp.onclick = () => {
+        if (!S.user) { go(`/login?next=${encodeURIComponent(location.pathname)}`); return; }
+        reasonModal({ title: 'Пожаловаться на объявление', hint: 'Жалобу рассмотрит модератор. Продавец не узнает, кто пожаловался.', url: `/api/listings/${l.id}/report`,
+          okLabel: 'Отправить', reasons: REPORT_REASONS, pick: true, placeholder: 'Что не так? Например: просит предоплату на карту', danger: false, done: () => {} });
+      };
+    }
   }
 
   function appealModal(id, done) {
@@ -1035,20 +1045,100 @@
 
   // ================= сообщения =================
   const SCAM_RE = /(telegram|телеграм|телеграмм|\btg\b|whats\s?app|ватсап|вотсап|вацап|viber|вайбер|t\.me|wa\.me|номер карты|данные карты|код из смс|код из sms|cvv|cvc|предоплат|переведите|перевод на карту|ссылк[ауи] на оплату|оплат[аиу] по ссылке)/i;
+  const supportAva = (size = 52) => html`<span class="conv-img support-ava" style="width:${size}px;height:${size}px" aria-hidden="true"><svg width="${Math.round(size * 0.55)}" height="${Math.round(size * 0.55)}" viewBox="0 0 48 48">${raw(MARK)}</svg></span>`;
+  const SUPPORT_NAME = html`Поддержка Торганы <span class="verified" title="Официальный аккаунт">${ic('check', 12, 3)}</span>`;
+  const SUPPORT_TOPICS = ['Почему отклонили объявление?', 'Не приходит письмо', 'Подозреваю мошенника', 'Как удалить аккаунт?'];
+
+  // Один чат на весь сайт: диалоги по объявлениям, поддержка у пользователя и у модератора.
+  // load(after) → { messages }, send(body) → message; сообщения { id, mine, body, createdAt }.
+  function mountChat(box, { head, load, send, scam = false, empty, placeholder = 'Напишите сообщение…', onActivity, back = '/messages' }) {
+    box.innerHTML = String(html`
+      <div class="chat-head">
+        <a href="${back}" class="icon-btn chat-back" aria-label="Назад">${ic('left', 20)}</a>
+        ${head}
+      </div>
+      ${scam ? html`<div class="banner warn chat-warn hidden" data-scam>${ic('warn', 18)} <strong>Осторожно.</strong> Похоже, собеседник предлагает уйти в мессенджер или заплатить вне Торганы. Так действуют мошенники — не переводите деньги и не называйте коды из СМС.</div>` : ''}
+      <div class="chat-msgs" data-msgs></div>
+      <form class="chat-form" data-send>
+        <label class="sr" for="chat-body">Сообщение</label>
+        <textarea id="chat-body" rows="1" maxlength="4000" placeholder="${placeholder}"></textarea>
+        <button class="btn btn-dark" type="submit" aria-label="Отправить" style="height:48px">${ic('right', 20, 2.2)}</button>
+      </form>`);
+    const msgs = $('[data-msgs]', box);
+    const ta = $('#chat-body', box);
+    const form = $('[data-send]', box);
+    let lastId = 0;
+    let lastDay = '';
+    const append = (list) => {
+      if (!list.length) return;
+      const e = $('[data-empty]', msgs); if (e) e.remove();
+      const nearBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 120;
+      let out = '';
+      for (const m of list) {
+        const d = new Date(m.createdAt).toDateString();
+        if (d !== lastDay) { lastDay = d; out += String(html`<div class="chat-day">${shortWhen(m.createdAt)}</div>`); }
+        out += String(html`<div class="msg ${m.mine ? 'out' : 'in'}">${m.body}<span class="t">${hm(m.createdAt)}</span></div>`);
+        if (scam && !m.mine && SCAM_RE.test(m.body)) $('[data-scam]', box).classList.remove('hidden');
+        lastId = Math.max(lastId, m.id);
+      }
+      msgs.insertAdjacentHTML('beforeend', out);
+      if (nearBottom || list.some((m) => m.mine)) msgs.scrollTop = msgs.scrollHeight;
+    };
+    const poll = async () => { const r = await load(lastId); if (r.messages.length) { append(r.messages); if (onActivity) onActivity(); } return r; };
+    ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`; };
+    ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } };
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const body = ta.value.trim();
+      if (!body) return;
+      ta.value = ''; ta.style.height = 'auto';
+      try { append([await send(body)]); if (onActivity) onActivity(); } catch (ex) { ta.value = body; toast(ex.message, true); }
+    };
+    // Быстрые темы в приветствии: подставляют текст в поле.
+    box.addEventListener('click', (e) => { const b = e.target.closest('[data-topic]'); if (b) { ta.value = b.dataset.topic; ta.focus(); ta.oninput(); } });
+    const timer = setInterval(() => poll().catch(() => {}), 4000);
+    (async () => {
+      const r = await load(0);
+      if (!r.messages.length && empty) msgs.innerHTML = String(html`<div data-empty>${empty}</div>`);
+      append(r.messages);
+      msgs.scrollTop = msgs.scrollHeight;
+      if (onActivity) onActivity();
+    })().catch((e) => toast(e.message, true));
+    if (window.matchMedia('(min-width: 901px)').matches) $('.chat-back', box).classList.add('hidden');
+    ta.focus();
+    return () => clearInterval(timer);
+  }
+
+  const supportWelcome = () => html`<div class="msg in support-hello">
+      <strong>Здравствуйте${S.user ? `, ${S.user.name}` : ''}!</strong> Это поддержка Торганы. Напишите вопрос — ответит человек, а не бот.
+      Никогда не сообщайте пароль и коды из СМС — мы их не спрашиваем.
+      <span class="chat-quick">${SUPPORT_TOPICS.map((t) => html`<button type="button" class="chip" data-topic="${t}">${t}</button>`)}</span></div>`;
 
   async function viewMessages(cid) {
     if (!requireAuth()) return;
     setTitle('Сообщения');
-    const convId = cid ? Number(cid) : null;
-    app.innerHTML = String(html`<div class="wrap"><div class="inbox ${convId ? 'has-chat' : ''}">
-      <div class="inbox-list"><h1>Сообщения</h1><div id="convs"><div class="loader"></div></div></div>
-      <section class="chat" id="chat">${convId ? html`<div class="loader" style="flex:1"></div>` : html`<div class="chat-empty"><div>${svg(P.chat, 40, 1.4)}<p>Выберите диалог слева.<br>Чтобы написать продавцу, откройте объявление.</p></div></div>`}</section>
+    const isSupport = cid === 'support';
+    const convId = cid && !isSupport ? Number(cid) : null;
+    app.innerHTML = String(html`<div class="wrap"><div class="inbox ${cid ? 'has-chat' : ''}">
+      <div class="inbox-list"><h1>Сообщения</h1>
+        <a href="/messages/support" class="conv support ${isSupport ? 'on' : ''}" id="support-row">
+          ${supportAva()}
+          <span class="conv-body"><span class="conv-top"><span class="support-name">${SUPPORT_NAME}</span><span class="pin" title="Закреплено">${ic('pin', 14)}</span></span>
+            <span class="conv-last" style="display:block" id="support-last">Поможем с объявлениями, сделками и аккаунтом</span></span>
+          <span class="badge hidden" id="support-badge"></span>
+        </a>
+        <div id="convs"><div class="loader"></div></div></div>
+      <section class="chat" id="chat">${cid ? html`<div class="loader" style="flex:1"></div>` : html`<div class="chat-empty"><div>${svg(P.chat, 40, 1.4)}<p>Выберите диалог слева.<br>Чтобы написать продавцу, откройте объявление.</p></div></div>`}</section>
     </div></div>`);
 
     const loadList = async () => {
-      const { items } = await api('GET', '/api/conversations');
+      const [{ items }, sup] = await Promise.all([api('GET', '/api/conversations'), isSupport ? null : api('GET', '/api/support')]);
       const box = $('#convs');
       if (!box) return;
+      if (sup) {
+        const last = sup.messages[sup.messages.length - 1];
+        if (last) $('#support-last').textContent = `${last.mine ? 'Вы: ' : ''}${last.body}`;
+      }
       box.innerHTML = items.length ? String(html`${items.map((c) => html`<a href="/messages/${c.id}" class="conv ${c.id === convId ? 'on' : ''}">
           <span class="conv-img">${c.photo ? html`<img src="${c.photo}" alt="" loading="lazy">` : svg(P.image, 22, 1.4)}</span>
           <span class="conv-body">
@@ -1060,80 +1150,44 @@
         </a>`)}`)
         : String(html`<div style="padding:8px 22px 22px" class="muted">Здесь появятся переписки с продавцами и покупателями.</div>`);
     };
-
-    let lastId = 0;
-    let timer = null;
-    let listTimer = null;
-    cleanup = () => { clearInterval(timer); clearInterval(listTimer); };
+    // Непрочитанные ответы поддержки — счётчик на закреплённом диалоге.
+    const supportBadge = () => {
+      const other = $$('#convs .badge').reduce((n, b) => n + Number(b.textContent || 0), 0);
+      const n = Math.max(0, S.unread - other);
+      const b = $('#support-badge'); if (b) { b.textContent = n; b.classList.toggle('hidden', !n || isSupport); }
+    };
 
     await loadList();
-    listTimer = setInterval(() => loadList().catch(() => {}), 15000);
-    if (!convId) return;
+    supportBadge();
+    const listTimer = setInterval(() => loadList().then(supportBadge).catch(() => {}), 15000);
+    let stopChat = () => {};
+    cleanup = () => { clearInterval(listTimer); stopChat(); };
+    if (!cid) return;
 
+    if (isSupport) {
+      stopChat = mountChat($('#chat'), {
+        head: html`${supportAva(44)}<div style="flex:1;min-width:0"><div class="support-name">${SUPPORT_NAME}</div><span class="muted" style="font-size:14px">Отвечают люди, а не боты</span></div>`,
+        load: (after) => api('GET', `/api/support?after=${after}`),
+        send: async (body) => (await api('POST', '/api/support/messages', { body })).message,
+        empty: supportWelcome(),
+        placeholder: 'Опишите вопрос…',
+        onActivity: () => refreshMe()
+      });
+      return;
+    }
     const data = await api('GET', `/api/conversations/${convId}`);
     const { listing: l, other } = data;
-    $('#chat').innerHTML = String(html`
-      <div class="chat-head">
-        <a href="/messages" class="icon-btn" aria-label="Назад к диалогам" id="chat-back">${ic('left', 20)}</a>
-        <a href="/l/${l.id}" class="conv-img" aria-hidden="true" tabindex="-1">${l.photo ? html`<img src="${l.photo}" alt="">` : svg(P.image, 20, 1.4)}</a>
+    stopChat = mountChat($('#chat'), {
+      head: html`<a href="/l/${l.id}" class="conv-img" aria-hidden="true" tabindex="-1">${l.photo ? html`<img src="${l.photo}" alt="">` : svg(P.image, 20, 1.4)}</a>
         <div style="flex:1;min-width:0"><a href="/l/${l.id}" style="display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.title}</a>
           <span class="muted" style="font-size:14px">${price(l.price, l.priceUnit)} · ${other.name}</span></div>
-        ${l.status === 'sold' ? html`<span class="tag dark">Продано</span>` : ''}
-      </div>
-      <div class="banner warn chat-warn hidden" id="scam">${ic('warn', 18)} <strong>Осторожно.</strong> Похоже, собеседник предлагает уйти в мессенджер или заплатить вне Торганы. Так действуют мошенники — не переводите деньги и не называйте коды из СМС.</div>
-      <div class="chat-msgs" id="msgs"></div>
-      <form class="chat-form" id="send">
-        <label class="sr" for="body">Сообщение</label>
-        <textarea id="body" rows="1" maxlength="2000" placeholder="Напишите сообщение…"></textarea>
-        <button class="btn btn-dark" type="submit" aria-label="Отправить" style="height:48px">${ic('right', 20, 2.2)}</button>
-      </form>`);
-    if (window.matchMedia('(min-width: 901px)').matches) $('#chat-back').classList.add('hidden');
-
-    const msgs = $('#msgs');
-    let lastDay = '';
-    const append = (list) => {
-      if (!list.length) return;
-      const nearBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 120;
-      let out = '';
-      for (const m of list) {
-        const d = new Date(m.createdAt).toDateString();
-        if (d !== lastDay) { lastDay = d; out += String(html`<div class="chat-day">${shortWhen(m.createdAt)}</div>`); }
-        out += String(html`<div class="msg ${m.mine ? 'out' : 'in'}">${m.body}<span class="t">${hm(m.createdAt)}</span></div>`);
-        if (!m.mine && SCAM_RE.test(m.body)) $('#scam').classList.remove('hidden');
-        lastId = Math.max(lastId, m.id);
-      }
-      msgs.insertAdjacentHTML('beforeend', out);
-      if (nearBottom || list.some((m) => m.mine)) msgs.scrollTop = msgs.scrollHeight;
-    };
-    if (!data.messages.length) msgs.innerHTML = String(html`<div class="chat-day" id="first-hint">Напишите первое сообщение — например, уточните состояние или договоритесь о встрече.</div>`);
-    append(data.messages);
-    msgs.scrollTop = msgs.scrollHeight;
-    refreshMe();
-
-    timer = setInterval(async () => {
-      try {
-        const r = await api('GET', `/api/conversations/${convId}?after=${lastId}`);
-        if (r.messages.length) { const h = $('#first-hint'); if (h) h.remove(); append(r.messages); refreshMe(); }
-      } catch { /* подождём */ }
-    }, 4000);
-
-    const form = $('#send');
-    const ta = $('#body');
-    ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`; };
-    ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } };
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      const body = ta.value.trim();
-      if (!body) return;
-      ta.value = ''; ta.style.height = 'auto';
-      try {
-        const r = await api('POST', `/api/conversations/${convId}/messages`, { body });
-        const h = $('#first-hint'); if (h) h.remove();
-        append([r.message]);
-        loadList().catch(() => {});
-      } catch (ex) { ta.value = body; toast(ex.message, true); }
-    };
-    ta.focus();
+        ${l.status === 'sold' ? html`<span class="tag dark">Продано</span>` : ''}`,
+      load: (after) => api('GET', `/api/conversations/${convId}?after=${after}`),
+      send: async (body) => { const r = await api('POST', `/api/conversations/${convId}/messages`, { body }); loadList().catch(() => {}); return r.message; },
+      scam: true,
+      empty: html`<div class="chat-day">Напишите первое сообщение — например, уточните состояние или договоритесь о встрече.</div>`,
+      onActivity: () => refreshMe()
+    });
   }
 
   // ================= профиль =================
@@ -1249,6 +1303,59 @@
 
   // ================= модерация =================
   const REASONS = ['Запрещённый товар или услуга', 'Фото не соответствует описанию', 'Неверная категория', 'Признаки мошенничества', 'Контакты или ссылки в тексте и на фото', 'Повторное объявление', 'Оскорбительное содержание'];
+  const REPORT_REASONS = ['Запрещённый товар или услуга', 'Мошенничество', 'Неверная цена или описание', 'Товар уже продан', 'Чужие фото или подделка', 'Оскорбления или спам', 'Нарушены мои права (правообладатель)'];
+
+  // Одно окно «выбор причины + текст» — отклонение, отказ по апелляции, закрытие жалоб и жалоба пользователя.
+  // pick: причину нужно выбрать из списка (жалоба); иначе список лишь подставляет текст.
+  function reasonModal({ title, hint, url, okLabel, reasons, pick = false, minText = 5, placeholder = 'Объяснение для автора', danger = true, done = () => render() }) {
+    openModal(String(html`<h2>${title}</h2><p class="muted" style="margin:0 0 12px">${hint}</p>
+        ${reasons ? html`<div class="reasons">${reasons.map((r) => html`<button type="button" class="chip" data-r="${r}">${r}</button>`)}</div>` : ''}
+        <label class="sr" for="rr">Текст</label><textarea id="rr" class="textarea" style="margin-top:12px;min-height:110px" maxlength="1000" placeholder="${placeholder}"></textarea>
+        <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn ${danger ? 'btn-danger' : 'btn-dark'}" data-ok>${okLabel}</button></div>`), (m, close) => {
+      let picked = '';
+      $$('[data-r]', m).forEach((c) => {
+        c.onclick = () => {
+          picked = c.dataset.r;
+          $$('[data-r]', m).forEach((x) => x.classList.toggle('active', x === c));
+          if (!pick) $('#rr', m).value = picked;
+        };
+      });
+      $('[data-x]', m).onclick = close;
+      $('[data-ok]', m).onclick = async () => {
+        const text = $('#rr', m).value.trim();
+        if (pick && !picked) { toast('Выберите причину', true); return; }
+        if (!pick && text.length < minText) { toast('Напишите объяснение — его увидит автор', true); return; }
+        try { await api('POST', url, pick ? { reason: picked, text } : { reason: text }); close(); toast('Готово'); done(); } catch (e) { toast(e.message, true); }
+      };
+    });
+  }
+
+  // Кнопки модератора — одни обработчики для очереди и страницы проверки. after — что делать после решения.
+  function bindModActions(root, after = () => render()) {
+    const mailNote = S.config.mail ? ' и получит письмом' : '';
+    $$('[data-reject]', root).forEach((b) => { b.onclick = () => reasonModal({ title: 'Отклонить объявление', hint: `Причину увидит автор${mailNote}. Пишите понятно и вежливо.`, url: `/api/admin/listings/${b.dataset.reject}/reject`, okLabel: 'Отклонить', reasons: REASONS, done: after }); });
+    $$('[data-deny]', root).forEach((b) => { b.onclick = () => reasonModal({ title: 'Отказать по апелляции', hint: `Ответ увидит автор${mailNote}.`, url: `/api/admin/listings/${b.dataset.deny}/appeal-deny`, okLabel: 'Отказать', done: after }); });
+    $$('[data-dismiss]', root).forEach((b) => { b.onclick = () => reasonModal({ title: 'Закрыть жалобы', hint: 'Объявление останется опубликованным. Комментарий видят только модераторы.', url: `/api/admin/listings/${b.dataset.dismiss}/reports/dismiss`, okLabel: 'Закрыть жалобы', minText: 0, placeholder: 'Например: проверили — нарушений нет', danger: false, done: after }); });
+    $$('[data-restore]', root).forEach((b) => {
+      b.onclick = async () => { try { await api('POST', `/api/admin/listings/${b.dataset.restore}/restore`); toast('Опубликовано'); after(); } catch (e) { toast(e.message, true); } };
+    });
+    $$('[data-block]', root).forEach((b) => {
+      b.onclick = async () => {
+        const blocked = !b.dataset.blocked;
+        if (blocked && !(await confirmModal('Заблокировать автора?', 'Все его объявления скроются, а войти в аккаунт он не сможет.', 'Заблокировать', true))) return;
+        try { await api('POST', `/api/admin/users/${b.dataset.block}/block`, { blocked }); toast(blocked ? 'Заблокирован' : 'Разблокирован'); render(); } catch (e) { toast(e.message, true); }
+      };
+    });
+  }
+
+  // Кнопки решения для объявления в зависимости от состояния.
+  const modButtons = (i) => html`
+    ${i.status === 'pending' ? html`<button class="btn btn-accent btn-sm" data-restore="${i.id}">Опубликовать</button><button class="btn btn-danger btn-sm" data-reject="${i.id}">Отклонить</button>` : ''}
+    ${i.status === 'rejected' ? html`<button class="btn btn-accent btn-sm" data-restore="${i.id}">${i.appealAt ? 'Одобрить апелляцию' : 'Восстановить'}</button>` : ''}
+    ${i.appealAt ? html`<button class="btn btn-line btn-sm" data-deny="${i.id}">Отказать по апелляции</button>` : ''}
+    ${['active', 'sold', 'archived'].includes(i.status) ? html`<button class="btn btn-danger btn-sm" data-reject="${i.id}">Снять с публикации</button>` : ''}
+    ${i.reports ? html`<button class="btn btn-soft btn-sm" data-dismiss="${i.id}">Закрыть жалобы</button>` : ''}`;
+  const STATUS_LABEL = { pending: 'На проверке', active: 'Опубликовано', rejected: 'Отклонено', sold: 'Продано', archived: 'Снято' };
 
   async function viewAdmin(_, q) {
     if (!requireAuth()) return;
@@ -1256,69 +1363,167 @@
     setTitle('Модерация');
     const status = q.get('status') || 'pending';
     const search = q.get('q') || '';
-    const isMail = status === 'mail';
+    const special = { mail: 1, support: 1 }[status];
     const [stats, list, mail] = await Promise.all([
       api('GET', '/api/admin/stats'),
-      isMail ? { items: [] } : api('GET', `/api/admin/listings?${new URLSearchParams({ status, q: search })}`),
-      isMail ? api('GET', '/api/admin/mail') : null
+      special ? { items: [] } : api('GET', `/api/admin/listings?${new URLSearchParams({ status, q: search })}`),
+      status === 'mail' ? api('GET', '/api/admin/mail') : null
     ]);
-    const tabs = { pending: `На проверке${stats.pending ? ` · ${stats.pending}` : ''}`, active: 'Активные', appeals: `Апелляции${stats.appeals ? ` · ${stats.appeals}` : ''}`, rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые', mail: `Почта${S.config.mail ? '' : ' · не подключена'}` };
+    const cnt = (n) => (n ? ` · ${n}` : '');
+    const tabs = { pending: `На проверке${cnt(stats.pending)}`, reports: `Жалобы${cnt(stats.reports)}`, support: `Поддержка${cnt(stats.support)}`, appeals: `Апелляции${cnt(stats.appeals)}`,
+      active: 'Опубликованные', rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые', mail: `Почта${S.config.mail ? '' : ' · не подключена'}` };
     app.innerHTML = String(html`<div class="wrap">
       <div class="profile-head"><h1 style="flex:1">Модерация</h1></div>
-      ${isMail ? '' : html`<div class="stats">
+      ${special ? '' : html`<div class="stats">
+        <div class="stat"><div class="n">${NF.format(stats.pending)}</div><div class="k">ждут проверки</div></div>
+        <div class="stat"><div class="n">${NF.format(stats.active)}</div><div class="k">опубликовано · +${stats.listingsToday} за сутки</div></div>
         <div class="stat"><div class="n">${NF.format(stats.users)}</div><div class="k">пользователей · +${stats.usersToday} за сутки</div></div>
-        <div class="stat"><div class="n">${NF.format(stats.active)}</div><div class="k">активных · +${stats.listingsToday} за сутки</div></div>
         <div class="stat"><div class="n">${NF.format(stats.messagesToday)}</div><div class="k">сообщений за сутки</div></div>
-        <div class="stat"><div class="n">${NF.format(stats.rejected)}</div><div class="k">отклонено</div></div>
       </div>`}
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px">
         <div class="tabs" style="margin:0;flex:1">${Object.entries(tabs).map(([k, v]) => html`<a class="chip ${k === status ? 'active' : ''}" href="/admin?status=${k}">${v}</a>`)}</div>
-        ${isMail ? '' : html`<form id="as" class="search" style="width:320px;max-width:100%">${ic('search', 18)}<label class="sr" for="aq">Поиск</label><input id="aq" name="q" placeholder="Текст или email автора" value="${search}"></form>`}
+        ${special ? '' : html`<form id="as" class="search" style="width:320px;max-width:100%">${ic('search', 18)}<label class="sr" for="aq">Поиск</label><input id="aq" name="q" placeholder="Текст или email автора" value="${search}"></form>`}
       </div>
-      ${isMail ? html`<div id="mail-box"></div>` : list.items.length ? list.items.map((i) => html`<div class="my-row">
-        <a href="/l/${i.id}" class="my-img">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 26, 1.3)}</a>
+      ${special ? html`<div id="special-box"></div>` : list.items.length ? list.items.map((i) => html`<div class="my-row">
+        <a href="/admin/l/${i.id}" class="my-img">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 26, 1.3)}</a>
         <div class="my-info">
-          <a href="/l/${i.id}" class="t" style="display:block">${i.title}</a>
+          <a href="/admin/l/${i.id}" class="t" style="display:block">${i.title}</a>
           <div class="p">${price(i.price, i.priceUnit)} <span class="muted" style="font-weight:500;font-size:14px">· ${catName(i.category)} · ${i.city}</span></div>
-          <div class="m">${i.user.name} (${i.user.email})${i.user.blocked ? ' · заблокирован' : ''} · ${when(i.createdAt)}</div>
-          ${i.description ? html`<div class="m" style="max-width:640px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${i.description}</div>` : ''}
-          ${i.rejectReason && i.status === 'rejected' ? html`<div class="banner danger" style="margin-top:8px;padding:10px 14px;font-size:14px"><strong>Причина:</strong> ${i.rejectReason}</div>` : ''}
-          ${i.flags ? html`<div class="banner warn" style="margin-top:8px;padding:10px 14px;font-size:14px"><strong>Похоже на запрещённое:</strong> ${i.flags}</div>` : ''}
-          ${i.appealAt ? html`<div class="banner warn" style="margin-top:8px;padding:10px 14px;font-size:14px"><strong>Апелляция:</strong> ${i.appealText}</div>` : ''}
-          ${i.appealReply ? html`<div class="banner soft" style="margin-top:8px;padding:10px 14px;font-size:14px"><strong>Ответ на апелляцию:</strong> ${i.appealReply}</div>` : ''}
+          <div class="m">${i.user.name} (${i.user.email})${i.user.blocked ? ' · заблокирован' : ''} · ${when(i.updatedAt)}</div>
+          ${i.flags ? html`<div class="banner danger" style="margin-top:8px;padding:8px 12px;font-size:14px"><strong>Похоже на запрещённое:</strong> ${i.flags}</div>` : ''}
+          ${i.reports ? html`<div class="banner warn" style="margin-top:8px;padding:8px 12px;font-size:14px"><strong>Жалоб:</strong> ${i.reports}</div>` : ''}
+          ${i.appealAt ? html`<div class="banner warn" style="margin-top:8px;padding:8px 12px;font-size:14px"><strong>Апелляция:</strong> ${i.appealText}</div>` : ''}
         </div>
-        <div class="my-actions">
-          ${i.status !== 'rejected' && i.status !== 'pending' ? html`<button class="btn btn-danger btn-sm" data-reject="${i.id}">Отклонить</button>` : html`<button class="btn btn-accent btn-sm" data-restore="${i.id}">${i.status === 'pending' ? 'Опубликовать' : i.appealAt ? 'Одобрить апелляцию' : 'Восстановить'}</button>`}
-          ${i.status === 'pending' ? html`<button class="btn btn-danger btn-sm" data-reject="${i.id}">Отклонить</button>` : ''}
-          ${i.appealAt ? html`<button class="btn btn-line btn-sm" data-deny="${i.id}">Отказать по апелляции</button>` : ''}
-          <button class="btn btn-line btn-sm" data-block="${i.user.id}" data-blocked="${i.user.blocked ? '1' : ''}">${i.user.blocked ? 'Разблокировать' : 'Заблокировать автора'}</button>
-        </div>
-      </div>`) : html`<div class="empty"><h3>Здесь пусто</h3><p>Нет объявлений в этом разделе.</p></div>`}
+        <div class="my-actions"><a class="btn btn-dark btn-sm" href="/admin/l/${i.id}">Проверить</a>${modButtons(i)}</div>
+      </div>`) : html`<div class="empty"><h3>${status === 'pending' ? 'Очередь пуста' : 'Здесь пусто'}</h3><p>${status === 'pending' ? 'Все объявления проверены.' : 'Нет объявлений в этом разделе.'}</p></div>`}
     </div>`);
-    if (isMail) { renderMailAdmin($('#mail-box'), mail); return; }
+    if (status === 'mail') { renderMailAdmin($('#special-box'), mail); return; }
+    if (status === 'support') { await renderSupportAdmin($('#special-box'), q.get('t')); return; }
     $('#as').onsubmit = (e) => { e.preventDefault(); go(`/admin?${new URLSearchParams({ status, q: e.target.q.value.trim() })}`); };
-    // Одно окно «решение с объяснением» — для отклонения объявления и для отказа по апелляции.
-    const reasonModal = (title, url, okLabel, reasons) => openModal(String(html`<h2>${title}</h2><p class="muted" style="margin:0 0 12px">Текст увидит автор${S.config.mail ? ' — и получит его письмом' : ''}. Пишите понятно и вежливо.</p>
-        ${reasons ? html`<div class="reasons">${reasons.map((r) => html`<button type="button" class="chip" data-r="${r}">${r}</button>`)}</div>` : ''}
-        <label class="sr" for="rr">Объяснение</label><textarea id="rr" class="textarea" style="margin-top:12px;min-height:110px" maxlength="500" placeholder="Объяснение для автора"></textarea>
-        <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-danger" data-ok>${okLabel}</button></div>`), (m, close) => {
-      $$('[data-r]', m).forEach((c) => { c.onclick = () => { $('#rr', m).value = c.dataset.r; }; });
-      $('[data-x]', m).onclick = close;
-      $('[data-ok]', m).onclick = async () => {
-        try { await api('POST', url, { reason: $('#rr', m).value }); close(); toast('Готово'); render(); } catch (e) { toast(e.message, true); }
-      };
-    });
-    $$('[data-reject]').forEach((b) => { b.onclick = () => reasonModal('Отклонить объявление', `/api/admin/listings/${b.dataset.reject}/reject`, 'Отклонить', REASONS); });
-    $$('[data-deny]').forEach((b) => { b.onclick = () => reasonModal('Отказать по апелляции', `/api/admin/listings/${b.dataset.deny}/appeal-deny`, 'Отказать'); });
-    $$('[data-restore]').forEach((b) => {
-      b.onclick = async () => { try { await api('POST', `/api/admin/listings/${b.dataset.restore}/restore`); toast('Восстановлено'); render(); } catch (e) { toast(e.message, true); } };
-    });
-    $$('[data-block]').forEach((b) => {
-      b.onclick = async () => {
-        const blocked = !b.dataset.blocked;
-        if (blocked && !(await confirmModal('Заблокировать автора?', 'Все его объявления скроются, а войти в аккаунт он не сможет.', 'Заблокировать', true))) return;
-        try { await api('POST', `/api/admin/users/${b.dataset.block}/block`, { blocked }); toast(blocked ? 'Заблокирован' : 'Разблокирован'); render(); } catch (e) { toast(e.message, true); }
-      };
+    bindModActions(app);
+  }
+
+  // Найденные подозрительные основы слов → целые слова в тексте (ё = е, позиции совпадают).
+  function stemHits(text, stems) {
+    if (!stems.length || !text) return [];
+    const re = new RegExp(`(?<![а-яa-z0-9])(?:${stems.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})[а-яa-z0-9]*`, 'gi');
+    return [...text.toLowerCase().replace(/ё/g, 'е').matchAll(re)].map((m) => [m.index, m.index + m[0].length]);
+  }
+  function highlight(text, stems) {
+    let out = ''; let pos = 0;
+    for (const [a, b] of stemHits(text, stems)) { out += `${esc(text.slice(pos, a))}<mark>${esc(text.slice(a, b))}</mark>`; pos = b; }
+    return raw(out + esc(text.slice(pos)));
+  }
+
+  const FIELD = { title: 'название', description: 'описание', category: 'категория', price: 'цена', priceUnit: 'единица цены', city: 'город', condition: 'состояние', delivery: 'доставка', photos: 'фото' };
+  const fieldVal = (k, v) => (k === 'category' ? catName(v) : k === 'price' ? price(v, '') : k === 'delivery' ? (v ? 'есть' : 'нет') : k === 'condition' ? CONDITION_LABEL[v] : v === '' ? '—' : String(v));
+  function eventText(e) {
+    const d = e.data;
+    switch (e.kind) {
+      case 'created': return html`Создано${d.flags ? html` · <span class="warn-t">похоже на: ${d.flags}</span>` : ''}`;
+      case 'edited': return html`Изменено и отправлено на проверку${Object.keys(d.changes || {}).length ? html`<ul class="tl-changes">${Object.entries(d.changes).map(([k, [a, b]]) => html`<li><strong>${FIELD[k] || k}:</strong> ${k === 'description' ? 'текст изменён' : k === 'photos' ? `${a} → ${b}` : html`${fieldVal(k, a)} → ${fieldVal(k, b)}`}</li>`)}</ul>` : ''}`;
+      case 'status': return html`Автор: ${{ active: 'снова опубликовал', sold: 'отметил «продано»', archived: 'снял с публикации' }[d.status] || d.status}`;
+      case 'approved': return 'Опубликовано после проверки';
+      case 'rejected': return html`<span class="danger-t">Отклонено:</span> ${d.reason}`;
+      case 'appeal': return html`Апелляция: «${d.text}»`;
+      case 'appeal-denied': return html`Отказ по апелляции: ${d.reason}`;
+      case 'appeal-approved': return 'Апелляция одобрена, объявление опубликовано';
+      case 'restored': return 'Восстановлено модератором';
+      case 'report': return html`<span class="warn-t">Жалоба:</span> ${d.reason}${d.text ? html` — «${d.text}»` : ''}`;
+      case 'reports-dismissed': return html`Жалобы закрыты (${d.count}): ${d.comment}`;
+      case 'author-blocked': return html`<span class="danger-t">Автор заблокирован</span>`;
+      case 'author-unblocked': return 'Автор разблокирован';
+      default: return e.kind;
+    }
+  }
+
+  // Модерация → проверка объявления «от и до».
+  async function viewAdminListing(id) {
+    if (!requireAuth()) return;
+    if (!S.user.isAdmin) { viewNotFound(); return; }
+    const { listing: l, seller: u, events, reports, next } = await api('GET', `/api/admin/listings/${id}`);
+    setTitle(`Проверка: ${l.title}`);
+    const words = l.matches.flatMap((m) => m.words);
+    const open = reports.filter((r) => !r.resolvedAt);
+    const specs = [['Категория', catName(l.category)], ['Цена', price(l.price, l.priceUnit)], ['Город', l.city], ['Состояние', CONDITION_LABEL[l.condition]],
+      ['Доставка', l.delivery ? 'Отправит по России' : 'Только встреча'], ['Создано', when(l.createdAt)], ['Изменено', when(l.updatedAt)],
+      ['Просмотры', NF.format(l.views)], ['В избранном', NF.format(l.favCount)], ['Диалогов', NF.format(l.chats)]];
+    const nextUrl = next ? `/admin/l/${next}` : '/admin?status=pending';
+    app.innerHTML = String(html`<div class="wrap mod-page">
+      <div class="mod-top">
+        <a href="/admin?status=${l.status === 'pending' ? 'pending' : open.length ? 'reports' : l.status}" class="btn btn-soft btn-sm">${ic('left', 18)}К списку</a>
+        <span class="tag ${l.status === 'active' ? 'accent' : l.status === 'rejected' ? 'danger' : ''}">${STATUS_LABEL[l.status]}</span>
+        <span class="muted" style="font-size:14px">№ ${l.id}</span>
+        <span style="flex:1"></span>
+        ${l.status === 'active' ? html`<a class="btn btn-line btn-sm" href="/l/${l.id}" target="_blank">Открыть на сайте</a>` : ''}
+        <a class="btn btn-soft btn-sm" href="${nextUrl}">${next ? 'Следующее в очереди' : 'В очередь'}${ic('right', 18)}</a>
+      </div>
+      <div class="mod-grid">
+        <div class="mod-main">
+          ${l.matches.length ? html`<div class="banner danger"><strong>Похоже на запрещённое.</strong> ${l.matches.map((m) => {
+    const found = [...new Set(stemHits(`${l.title} ${l.description}`, m.words).map(([a, b]) => `${l.title} ${l.description}`.slice(a, b)))];
+    return html`<div style="margin-top:6px">${m.title}: ${(found.length ? found : m.words).map((w) => html`<mark>${w}</mark> `)}</div>`;
+  })}
+            <div style="margin-top:8px;font-size:14px">Слова подсвечены в тексте ниже. Проверьте по <a href="/page/rules" target="_blank" style="text-decoration:underline">правилам</a>.</div></div>` : ''}
+          <h1 class="mod-title">${highlight(l.title, words)}</h1>
+          <div class="mod-photos">${l.photos.length ? l.photos.map((p, i) => html`<a href="${p}" target="_blank" class="mod-photo"><img src="${p}" alt="Фото ${i + 1}" loading="lazy"><span>${i + 1}</span></a>`) : html`<div class="empty" style="padding:28px"><p style="margin:0">Без фото</p></div>`}</div>
+          <section><h2 class="h2">Описание</h2><p class="desc">${l.description ? highlight(l.description, words) : html`<span class="muted">Описания нет</span>`}</p></section>
+          <section><h2 class="h2">Все поля</h2><div class="specs">${specs.map(([k, v]) => html`<div class="spec"><div class="k">${k}</div><div class="v">${v}</div></div>`)}</div></section>
+          ${l.rejectReason && l.status === 'rejected' ? html`<div class="banner danger"><strong>Причина отклонения:</strong> ${l.rejectReason}</div>` : ''}
+          ${l.appealAt ? html`<div class="banner warn"><strong>Апелляция автора:</strong> ${l.appealText}</div>` : ''}
+        </div>
+        <aside class="mod-side">
+          <div class="panel mod-actions"><h2 class="h2" style="margin:0">Решение</h2>
+            <div class="mod-btns">${modButtons({ ...l, reports: open.length })}</div>
+            <p class="muted" style="margin:0;font-size:13px">После решения откроется следующее объявление из очереди.</p></div>
+          <div class="panel"><h2 class="h2" style="margin:0 0 12px">Продавец</h2>
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px"><span class="avatar">${initial(u.name)}</span>
+              <div style="min-width:0"><a href="/u/${u.id}" target="_blank" style="font-weight:700">${u.name}</a><div class="muted" style="font-size:13px;word-break:break-all">${u.email}${u.emailVerified ? ' · подтверждён' : ' · не подтверждён'}</div></div></div>
+            <div class="kv">
+              <span>На Торгане</span><b>с ${since(u.createdAt)}</b>
+              <span>Телефон</span><b>${u.phone || '—'}</b>
+              <span>Город</span><b>${u.city || '—'}</b>
+              <span>Объявлений</span><b>${u.counts.total} · опубл. ${u.counts.active} · на проверке ${u.counts.pending}</b>
+              <span>Отклонено ранее</span><b class="${u.counts.rejected ? 'danger-t' : ''}">${u.counts.rejected}</b>
+              <span>Жалоб на него</span><b class="${u.reportsAgainst ? 'warn-t' : ''}">${u.reportsAgainst}</b>
+              <span>Статус</span><b class="${u.blocked ? 'danger-t' : ''}">${u.blocked ? 'заблокирован' : 'активен'}</b>
+            </div>
+            ${u.isAdmin ? '' : html`<button class="btn btn-line btn-sm btn-block" style="margin-top:14px" data-block="${u.id}" data-blocked="${u.blocked ? '1' : ''}">${u.blocked ? 'Разблокировать' : 'Заблокировать автора'}</button>`}
+          </div>
+          ${reports.length ? html`<div class="panel"><h2 class="h2" style="margin:0 0 12px">Жалобы · ${reports.length}</h2>${reports.map((r) => html`<div class="report ${r.resolvedAt ? 'done' : ''}">
+              <b>${r.reason}</b>${r.text ? html`<p>${r.text}</p>` : ''}<span class="muted">${r.user ? r.user.name : 'пользователь'} · ${when(r.at)}${r.resolvedAt ? ` · закрыта: ${r.resolution}` : ''}</span></div>`)}</div>` : ''}
+          <div class="panel"><h2 class="h2" style="margin:0 0 12px">История</h2>
+            <ol class="timeline">${[...events].reverse().map((e) => html`<li><span class="tl-dot"></span><div>${eventText(e)}<div class="muted" style="font-size:12px;margin-top:2px">${when(e.at)}${e.actor ? ` · ${e.actor.name}${e.actor.isAdmin ? ' (модератор)' : ''}` : ''}</div></div></li>`)}</ol></div>
+        </aside>
+      </div>
+    </div>`);
+    // После решения — сразу следующее объявление из очереди.
+    bindModActions(app, () => go(nextUrl, true));
+  }
+
+  // Модерация → Поддержка: диалоги слева, чат и карточка пользователя справа.
+  async function renderSupportAdmin(box, threadId) {
+    const { items } = await api('GET', '/api/admin/support');
+    const id = Number(threadId) || (items[0] && items[0].id);
+    box.innerHTML = String(html`<div class="inbox ${threadId ? 'has-chat' : ''}" style="margin-top:0">
+      <div class="inbox-list">${items.length ? items.map((t) => html`<a href="/admin?status=support&t=${t.id}" class="conv ${t.id === id ? 'on' : ''}">
+          <span class="avatar">${initial(t.user.name)}</span>
+          <span class="conv-body"><span class="conv-top"><span>${t.user.name}</span><span>${shortWhen(t.updatedAt)}</span></span>
+            <span class="conv-title" style="display:block">${t.waiting ? 'Ждёт ответа' : 'Отвечено'}</span>
+            <span class="conv-last" style="display:block">${t.lastBody}</span></span>
+          ${t.unread ? html`<span class="badge">${t.unread}</span>` : ''}</a>`) : html`<div style="padding:22px" class="muted">Обращений пока нет. Пользователи пишут в закреплённый диалог «Поддержка Торганы».</div>`}</div>
+      <section class="chat" id="support-chat">${id ? html`<div class="loader" style="flex:1"></div>` : html`<div class="chat-empty"><div>${supportAva(56)}<p>Выберите обращение слева.</p></div></div>`}</section>
+    </div>`);
+    if (!id) return;
+    const first = await api('GET', `/api/admin/support/${id}`);
+    const u = first.user;
+    cleanup = mountChat($('#support-chat'), {
+      back: '/admin?status=support',
+      head: html`<span class="avatar">${initial(u.name)}</span><div style="flex:1;min-width:0"><div style="font-weight:700">${u.name}</div>
+        <span class="muted" style="font-size:13px;word-break:break-all">${u.email}${u.emailVerified ? '' : ' · не подтверждён'} · с ${since(u.createdAt)} · объявлений ${u.listings}${u.rejected ? ` · отклонено ${u.rejected}` : ''}${u.blocked ? ' · заблокирован' : ''}</span></div>`,
+      load: (after) => api('GET', `/api/admin/support/${id}?after=${after}`),
+      send: async (body) => (await api('POST', `/api/admin/support/${id}/messages`, { body })).message,
+      placeholder: 'Ответ от имени поддержки…'
     });
   }
 
@@ -1387,7 +1592,7 @@
   }
 
   // ================= информационные страницы =================
-  const LEGAL = new Set(['terms', 'rules', 'privacy', 'consent']);
+  const LEGAL = new Set(['terms', 'rules', 'privacy', 'consent', 'contacts']);
   async function viewPage(slug) {
     if (LEGAL.has(slug)) {
       const d = await api('GET', `/api/pages/${slug}`);
@@ -1413,7 +1618,9 @@
         <p>Хотите подключиться одним из первых? Напишите нам: ${contact}.</p>`],
       support: ['Поддержка', html`
         <p>Мы отвечаем людьми, а не шаблонами.</p>
-        <h2>Как связаться</h2><p>Напишите нам: ${contact}. Укажите ссылку на объявление или диалог, если вопрос о них.</p>
+        <h2>Как связаться</h2><p>Быстрее всего — в чате «Поддержка Торганы»: он всегда закреплён первым в разделе «Сообщения».</p>
+        <p><a class="btn btn-accent" href="/messages/support" style="text-decoration:none;color:#fff">${ic('chat', 18)}Написать в поддержку</a></p>
+        <p>Или на почту: ${contact}. Укажите ссылку на объявление или диалог, если вопрос о них. Реквизиты — на странице <a href="/page/contacts" style="text-decoration:underline">«Реквизиты и контакты»</a>.</p>
         <h2>Частые вопросы</h2>
         <p><strong>Почему отклонили объявление?</strong> Причина указана в профиле в разделе «На исправлении». Исправьте объявление или подайте апелляцию.</p>
         <p><strong>Сколько стоит размещение?</strong> Для частных лиц — бесплатно и без лимитов.</p>

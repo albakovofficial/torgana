@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { ROOT, PNG_1PX, startServer, client, registerUser } = require('./helpers');
+const { ROOT, PNG_1PX, startServer, client, registerUser, publish } = require('./helpers');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'torgana-backup-'));
 const data = path.join(root, 'lib');
@@ -37,7 +37,8 @@ test('копия и восстановление базы, фото и наст�
   let srv = await startServer(serverEnv);
   const anna = await registerUser(srv.base, { name: 'Анна', email: 'anna@test.local' });
   const photo = (await anna.post('/api/uploads', { data: `data:image/png;base64,${PNG_1PX}` })).data.file;
-  const id = (await anna.post('/api/listings', { title: 'Велосипед Merida', category: 'hobby', city: 'Казань', price: '20000', photos: [photo] })).data.id;
+  const admin = await registerUser(srv.base, { name: 'Модератор', email: 'admin@test.local' });
+  const id = await publish(anna, admin, { title: 'Велосипед Merida', category: 'hobby', city: 'Казань', price: '20000', photos: [photo] });
 
   // 2. Копия — пока сайт работает
   const out = sh('backup.sh');

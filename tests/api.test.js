@@ -4,7 +4,7 @@
 // Запуск: npm test
 const { test, before, after, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { PNG_1PX, JPEG_HEAD, startServer, client, registerUser } = require('./helpers');
+const { PNG_1PX, JPEG_HEAD, startServer, client, registerUser, publish } = require('./helpers');
 
 let srv;
 let seller; let buyer; let admin; let guest;
@@ -161,21 +161,25 @@ describe('фото', () => {
 });
 
 describe('объявления', () => {
-  test('создание объявления с фото', async () => {
+  test('новое объявление ждёт проверки и не видно, пока модератор не одобрит', async () => {
     const r = await seller.post('/api/listings', listing({ photos: [ids.photo, ids.photo2] }));
     assert.equal(r.status, 200);
+    assert.equal(r.data.status, 'pending');
     ids.l1 = r.data.id;
+    assert.equal((await guest.get(`/api/listings/${ids.l1}`)).status, 404);
+    assert.equal((await seller.get(`/api/listings/${ids.l1}`)).data.listing.status, 'pending');
+    assert.equal((await seller.patch(`/api/listings/${ids.l1}`, { status: 'active' })).status, 400, 'сам опубликовать нельзя');
+    await admin.post(`/api/admin/listings/${ids.l1}/restore`);
     const l = (await guest.get(`/api/listings/${ids.l1}`)).data.listing;
+    assert.equal(l.status, 'active');
     assert.equal(l.price, 12500);
     assert.equal(l.photos.length, 2);
     assert.equal(l.isOwner, false);
   });
 
   test('чужое фото нельзя прикрепить к своему объявлению', async () => {
-    const r = await buyer.post('/api/listings', listing({ title: 'Самокат', photos: [ids.photo] }));
-    assert.equal(r.status, 200);
-    ids.buyerListing = r.data.id;
-    assert.equal((await guest.get(`/api/listings/${r.data.id}`)).data.listing.photos.length, 0);
+    ids.buyerListing = await publish(buyer, admin, listing({ title: 'Самокат', photos: [ids.photo] }));
+    assert.equal((await guest.get(`/api/listings/${ids.buyerListing}`)).data.listing.photos.length, 0);
   });
 
   test('проверка обязательных полей', async () => {
@@ -186,11 +190,9 @@ describe('объявления', () => {
   });
 
   test('цена договорная и цена за месяц', async () => {
-    const a = await seller.post('/api/listings', listing({ title: 'Ремонт квартир под ключ', category: 'services', price: '', condition: '' }));
-    ids.l2 = a.data.id;
+    ids.l2 = await publish(seller, admin, listing({ title: 'Ремонт квартир под ключ', category: 'services', price: '', condition: '' }));
     assert.equal((await guest.get(`/api/listings/${ids.l2}`)).data.listing.price, null);
-    const b = await seller.post('/api/listings', listing({ title: 'Аренда квартиры у метро', category: 'realty', price: '45000', priceUnit: 'мес', condition: '' }));
-    ids.l3 = b.data.id;
+    ids.l3 = await publish(seller, admin, listing({ title: 'Аренда квартиры у метро', category: 'realty', price: '45000', priceUnit: 'мес', condition: '' }));
     assert.equal((await guest.get(`/api/listings/${ids.l3}`)).data.listing.priceUnit, 'мес');
   });
 
@@ -198,6 +200,12 @@ describe('объявления', () => {
     assert.equal((await buyer.patch(`/api/listings/${ids.l1}`, listing({ title: 'Взлом' }))).status, 404);
     const r = await seller.patch(`/api/listings/${ids.l1}`, listing({ title: 'Детская коляска Cybex Priam', photos: [ids.photo] }));
     assert.equal(r.status, 200);
+    assert.equal(r.data.status, 'pending', 'правка — снова на проверку');
+    assert.equal((await guest.get(`/api/listings/${ids.l1}`)).status, 404);
+    const hist = (await admin.get(`/api/admin/listings/${ids.l1}`)).data.events.find((e) => e.kind === 'edited');
+    assert.deepEqual(hist.data.changes.title, ['Детская коляска Cybex', 'Детская коляска Cybex Priam']);
+    assert.deepEqual(hist.data.changes.photos, [2, 1]);
+    await admin.post(`/api/admin/listings/${ids.l1}/restore`);
     const l = (await guest.get(`/api/listings/${ids.l1}`)).data.listing;
     assert.equal(l.title, 'Детская коляска Cybex Priam');
     assert.equal(l.photos.length, 1);
@@ -258,7 +266,7 @@ describe('поиск', () => {
   });
 
   test('подсказка цены по рынку', async () => {
-    for (const p of [10000, 11000, 12000]) await buyer.post('/api/listings', listing({ title: `Детская коляска Cybex ${p}`, price: String(p) }));
+    for (const p of [10000, 11000, 12000]) await publish(buyer, admin, listing({ title: `Детская коляска Cybex ${p}`, price: String(p) }));
     const r = await guest.get(`/api/price-hint?${new URLSearchParams({ category: 'personal', title: 'Детская коляска' })}`);
     assert.equal(r.status, 200);
     assert.ok(r.data.hint > 0);
@@ -326,10 +334,39 @@ describe('модерация', () => {
     assert.equal((await guest.get(`/api/listings/${ids.l2}`)).status, 200);
   });
 
-  test('исправленное отклонённое объявление снова публикуется', async () => {
+  test('исправленное отклонённое объявление снова идёт на проверку', async () => {
     await admin.post(`/api/admin/listings/${ids.l2}/reject`, { reason: 'Неверная категория' });
-    await seller.patch(`/api/listings/${ids.l2}`, listing({ title: 'Ремонт квартир под ключ', category: 'services', price: '', condition: '' }));
+    const r = await seller.patch(`/api/listings/${ids.l2}`, listing({ title: 'Ремонт квартир под ключ', category: 'services', price: '', condition: '' }));
+    assert.equal(r.data.status, 'pending');
+    await admin.post(`/api/admin/listings/${ids.l2}/restore`);
     assert.equal((await guest.get(`/api/listings/${ids.l2}`)).data.listing.status, 'active');
+  });
+
+  test('страница проверки: всё об объявлении, продавце и история', async () => {
+    const d = (await admin.get(`/api/admin/listings/${ids.l2}`)).data;
+    assert.equal(d.listing.title, 'Ремонт квартир под ключ');
+    assert.equal(d.seller.email, 'anna@test.local');
+    assert.ok(d.seller.counts.total >= 3);
+    const kinds = d.events.map((e) => e.kind);
+    for (const k of ['created', 'approved', 'rejected', 'appeal', 'appeal-approved', 'edited']) assert.ok(kinds.includes(k), k);
+    assert.equal(d.events.find((e) => e.kind === 'rejected').actor.name, 'Модератор');
+    assert.equal((await seller.get(`/api/admin/listings/${ids.l2}`)).status, 403);
+  });
+
+  test('жалоба: пользователь жалуется, модератор видит и закрывает', async () => {
+    assert.equal((await seller.post(`/api/listings/${ids.l2}/report`, { reason: 'Мошенничество' })).status, 400, 'на своё нельзя');
+    assert.equal((await buyer.post(`/api/listings/${ids.l2}/report`, { reason: 'что-то своё' })).status, 400);
+    assert.equal((await buyer.post(`/api/listings/${ids.l2}/report`, { reason: 'Мошенничество', text: 'Просит предоплату на карту' })).status, 200);
+    assert.equal((await buyer.post(`/api/listings/${ids.l2}/report`, { reason: 'Мошенничество' })).status, 409, 'повторно — нет');
+    assert.equal((await admin.get('/api/admin/stats')).data.reports, 1);
+    const q = (await admin.get('/api/admin/listings?status=reports')).data.items;
+    assert.equal(q[0].id, ids.l2);
+    assert.equal(q[0].reports, 1);
+    const d = (await admin.get(`/api/admin/listings/${ids.l2}`)).data;
+    assert.equal(d.reports[0].text, 'Просит предоплату на карту');
+    assert.equal(d.reports[0].user.name, 'Борис');
+    assert.equal((await admin.post(`/api/admin/listings/${ids.l2}/reports/dismiss`, { reason: 'Проверили переписку — нарушений нет' })).status, 200);
+    assert.equal((await admin.get('/api/admin/stats')).data.reports, 0);
   });
 
   test('статистика', async () => {

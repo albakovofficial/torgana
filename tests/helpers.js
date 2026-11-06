@@ -162,4 +162,13 @@ async function startSmtp({ user = 'smtp-user', pass = 'smtp-pass' } = {}) {
   };
 }
 
-module.exports = { ROOT, PNG_1PX, JPEG_HEAD, startServer, startSmtp, client, registerUser };
+// Все объявления публикуются после проверки: продавец создаёт, модератор одобряет. Возвращает id.
+async function publish(seller, admin, body) {
+  const r = await seller.post('/api/listings', body);
+  if (r.status !== 200) throw new Error(`Объявление: ${r.status} ${JSON.stringify(r.data)}`);
+  const ok = await admin.post(`/api/admin/listings/${r.data.id}/restore`);
+  if (ok.status !== 200) throw new Error(`Одобрение: ${ok.status} ${JSON.stringify(ok.data)}`);
+  return r.data.id;
+}
+
+module.exports = { ROOT, PNG_1PX, JPEG_HEAD, startServer, startSmtp, client, registerUser, publish };

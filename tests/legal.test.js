@@ -50,18 +50,34 @@ describe('проверка запрещённых товаров', () => {
 
 describe('документы', () => {
   test('соглашение, правила, политика и согласие опубликованы; реквизиты оператора — в соглашении, политике и согласии', async () => {
-    for (const slug of ['terms', 'rules', 'privacy', 'consent']) {
+    for (const slug of ['terms', 'rules', 'privacy', 'consent', 'contacts']) {
       const r = await guest.get(`/api/pages/${slug}`);
       assert.equal(r.status, 200, slug);
       assert.match(r.data.html, /Редакция от/, slug);
-      if (slug !== 'rules') assert.match(r.data.html, /ИП Албаков И\. М\., ИНН 060302809413, ОГРНИП 322060000007916/, slug);
+      if (slug !== 'rules' && slug !== 'contacts') assert.match(r.data.html, /ИП Албаков И\. М\., ИНН 060302809413, ОГРНИП 322060000007916/, slug);
     }
     assert.equal((await guest.get('/api/pages/nope')).status, 404);
   });
 
-  test('раздел «Запрещено» в правилах собран из того же списка, что и проверка', async () => {
+  test('раздел «Запрещено» в правилах собран из того же списка, что и проверка, со ссылками на законы', async () => {
     const html = (await guest.get('/api/pages/rules')).data.html;
-    for (const c of PROHIBITED) assert.ok(html.includes(c.title), c.title);
+    for (const c of PROHIBITED) { assert.ok(html.includes(c.title), c.title); assert.ok(c.law, c.id); }
+    assert.match(html, /Указ Президента РФ от 22\.02\.1992 № 179/);
+    assert.match(html, /ст\. 129 ГК РФ/);
+    assert.match(html, /Разрешено с условиями/);
+  });
+
+  test('реквизиты и контакты по 149-ФЗ: владелец, email для заявлений; соглашение — порядок для правообладателей', async () => {
+    const c = (await guest.get('/api/pages/contacts')).data.html;
+    assert.match(c, /ИП Албаков И\. М\./);
+    assert.match(c, /support@test\.local/, 'email из настроек сервера');
+    assert.equal(require('../lib/legal').operator().email === 'support@torgana.ru' || !!process.env.SUPPORT_EMAIL, true, 'по умолчанию — support@torgana.ru');
+    const t = (await guest.get('/api/pages/terms')).data.html;
+    assert.match(t, /15\.7/);
+    assert.match(t, /24 часов/);
+    assert.match(t, /рекомендательные технологии/);
+    const cfg = (await guest.get('/api/config')).data;
+    assert.deepEqual(cfg.operator, { name: 'ИП Албаков И. М.', inn: '060302809413', ogrnip: '322060000007916' });
   });
 
   test('политика: без функции «по фото» — без трансграничной передачи', async () => {
@@ -112,9 +128,16 @@ describe('объявления, похожие на запрещённые', () 
     assert.equal(l.status, 'active');
   });
 
-  test('обычное объявление публикуется сразу', async () => {
+  test('обычное объявление тоже ждёт модератора, но без пометки «похоже на запрещённое» и в очереди после подозрительных', async () => {
+    const sus = (await anna.post('/api/listings', { title: 'Водка домашняя', category: 'home', city: 'Казань' })).data.id;
     const r = await anna.post('/api/listings', { title: 'Закладка для книг из кожи', category: 'hobby', city: 'Казань', price: '500' });
-    assert.equal(r.data.status, 'active');
+    assert.equal(r.data.status, 'pending');
+    const q = (await admin.get('/api/admin/listings?status=pending')).data.items;
+    assert.equal(q[0].id, sus, 'подозрительные — первыми');
+    assert.equal(q.find((i) => i.id === r.data.id).flags, '');
+    const d = (await admin.get(`/api/admin/listings/${sus}`)).data;
+    assert.deepEqual(d.listing.matches[0].words, ['водка']);
+    assert.ok(d.next, 'есть следующее в очереди');
   });
 });
 
