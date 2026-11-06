@@ -627,24 +627,44 @@ function serveFile(res, filePath, cache) {
   });
 }
 
-function serveStatic(req, res, pathname) {
+// Версия интерфейса: хеш app.js и app.css. Попадает в адреса файлов в index.html (?v=…),
+// поэтому после обновления браузер сразу берёт свежие файлы, а не держит старые из кеша.
+const ASSET_VERSION = crypto.createHash('sha1')
+  .update(fs.readFileSync(path.join(PUBLIC_DIR, 'assets/app.js')))
+  .update(fs.readFileSync(path.join(PUBLIC_DIR, 'assets/app.css')))
+  .digest('hex').slice(0, 10);
+const INDEX_HTML = Buffer.from(fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
+  .replace(/(\/assets\/app\.(?:css|js))"/g, `$1?v=${ASSET_VERSION}"`));
+
+function serveIndex(res) {
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': INDEX_HTML.length,
+    'Cache-Control': 'no-cache',
+    ...SECURITY_HEADERS
+  });
+  res.end(INDEX_HTML);
+}
+
+function serveStatic(req, res, pathname, search) {
   if (pathname.startsWith('/uploads/')) {
     const name = pathname.slice('/uploads/'.length);
     if (!/^[a-f0-9]{32}\.(jpg|png|webp)$/.test(name)) { res.writeHead(404); res.end(); return; }
     serveFile(res, path.join(UPLOAD_DIR, name), 'public, max-age=31536000, immutable');
     return;
   }
-  if (pathname !== '/' && !pathname.includes('..')) {
+  if (pathname !== '/' && pathname !== '/index.html' && !pathname.includes('..')) {
     const filePath = path.join(PUBLIC_DIR, pathname);
     if (filePath.startsWith(PUBLIC_DIR) && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-      const cache = pathname.startsWith('/assets/fonts/') ? 'public, max-age=2592000'
-        : pathname.startsWith('/assets/') ? 'public, max-age=86400' : 'no-cache';
+      const versioned = search === `?v=${ASSET_VERSION}`;
+      const cache = versioned ? 'public, max-age=31536000, immutable'
+        : pathname.startsWith('/assets/fonts/') ? 'public, max-age=2592000' : 'no-cache';
       serveFile(res, filePath, cache);
       return;
     }
   }
   // Все остальные пути — страницы приложения.
-  serveFile(res, path.join(PUBLIC_DIR, 'index.html'), 'no-cache');
+  serveIndex(res);
 }
 
 // ---------- сервер ----------
@@ -655,7 +675,7 @@ const server = http.createServer(async (req, res) => {
 
   if (!pathname.startsWith('/api/')) {
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
-    serveStatic(req, res, pathname);
+    serveStatic(req, res, pathname, url.search);
     return;
   }
 
