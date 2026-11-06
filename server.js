@@ -82,6 +82,8 @@ function requireAdmin(ctx) {
 }
 
 const photoUrl = (file) => (file ? `/uploads/${file}` : null);
+// Значки продавца: доверие (lib/trust.js) и «Магазин» при оплаченном тарифе.
+const badgesOf = (u) => ({ ...trust.badgesOf(u), shop: !!business.planOf(u) });
 
 // Переключатели уведомлений: поле API → колонка users (письма и push по видам).
 const NOTIFY_FIELDS = {
@@ -93,7 +95,8 @@ function publicUser(u) {
   return u ? {
     id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, avatar: photoUrl(u.avatar), isAdmin: !!u.is_admin, isOwner: !!u.is_admin && u.email === OWNER_EMAIL, createdAt: u.created_at,
     emailVerified: !!u.email_verified, ...Object.fromEntries(Object.entries(NOTIFY_FIELDS).map(([k, col]) => [k, !!u[col]])),
-    rating: reviews.ratingOf(u.id), badges: trust.badgesOf(u), business: trust.bizOf(u), phoneVia: u.phone_verified ? u.phone_verified_via : '', oauth: oauth.linkedOf(u.id)
+    rating: reviews.ratingOf(u.id), badges: badgesOf(u), business: trust.bizOf(u), phoneVia: u.phone_verified ? u.phone_verified_via : '', oauth: oauth.linkedOf(u.id),
+    plan: business.planOf(u)
   } : null;
 }
 
@@ -211,6 +214,9 @@ const routes = [];
 // Обработчик может вернуть h.redirect(url) вместо JSON — тогда ответ 302 (нужно для возврата из Яндекс ID и VK ID).
 const REDIRECT = Symbol('redirect');
 const redirect = (url) => ({ [REDIRECT]: url });
+// h.file(...) — ответ файлом (выгрузка CSV), а не JSON.
+const FILE = Symbol('file');
+const fileResponse = (type, body, name) => ({ [FILE]: { type, body, name } });
 function route(method, pattern, handler) {
   const keys = [];
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '$');
@@ -219,7 +225,7 @@ function route(method, pattern, handler) {
 
 // Модерация (очередь, проверка «от и до», жалобы, история) и чат поддержки — в отдельных модулях.
 const autoChecks = require('./lib/checks')({ db, marketEstimate });
-const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, setAvatar, str, now, norm, autoChecks, OWNER_EMAIL, redirect };
+const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, setAvatar, str, now, norm, autoChecks, OWNER_EMAIL, redirect, file: fileResponse, PUBLIC_URL: PUBLIC_URL || `http://localhost:${PORT}` };
 const push = createPush({ db, subject: `mailto:${SUPPORT_EMAIL || 'support@torgana.ru'}`, allowHttp: process.env.PUSH_ALLOW_HTTP === '1' });
 const alerts = require('./lib/alerts')({ route, db, mailer, push, h: helpers, categories: CATEGORIES });
 helpers.alerts = alerts; // push и подборки нужны модерации, поддержке и отзывам
@@ -231,6 +237,25 @@ const reviews = require('./lib/reviews')({ route, db, mailer, h: helpers });
 const trust = require('./lib/trust')({ route, db, h: helpers, mailer }); // «Телефон подтверждён», проверенный бизнес
 require('./lib/admin')({ route, db, h: helpers, reviews, trust }); // сводка, пользователи, журнал, письма модератору
 const oauth = require('./lib/oauth')({ route, db, h: helpers, auth, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, secureCookies: SECURE_COOKIES, adminEmails: ADMIN_EMAILS, testBase: process.env.OAUTH_TEST_BASE || '' });
+// Платные услуги для бизнеса: оплата через ЮKassa, тарифы «Магазин» и «Магазин Про», продвижение, автозагрузка из фида.
+helpers.logEvent = logEvent;
+helpers.categoryIds = CATEGORY_IDS;
+const billing = require('./lib/billing')({ route, db, h: helpers, mailer, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, testBase: process.env.YOOKASSA_TEST_BASE || '' });
+const business = require('./lib/business')({ route, db, h: helpers, billing, mailer, stats });
+const promo = require('./lib/promo')({ route, db, h: helpers, billing, business, stats, mailer, searchSpec, specSql, categoryIds: CATEGORY_IDS });
+const feed = require('./lib/feed')({ route, db, h: helpers, business });
+helpers.business = business; // тариф и витрина — в карточке пользователя в модерации
+helpers.statsExtra = () => ({ ads: promo.awaiting() }); // счётчик «Реклама» в меню модерации
+
+// Раздел «Для бизнеса» в профиле: тариф, цены, витрина, автозагрузка, продвижения, платежи.
+route('GET', '/api/my/business', (ctx) => {
+  const u = requireUser(ctx);
+  return {
+    plan: business.planOf(u), prices: billing.prices(), ready: billing.ready(), biz: trust.bizOf(u),
+    shop: { cover: photoUrl(u.shop_cover), about: u.shop_about, hours: u.shop_hours, address: u.shop_address, site: u.shop_site },
+    feed: feed.publicFeed(u), promotions: promo.listFor(u.id), payments: billing.listFor(u.id)
+  };
+});
 
 route('GET', '/api/config', () => ({
   categories: CATEGORIES,
@@ -241,6 +266,7 @@ route('GET', '/api/config', () => ({
   mail: mailer.ready(),
   supportEmail: SUPPORT_EMAIL,
   oauth: oauth.enabled(),
+  billing: { ready: billing.ready(), prices: billing.prices() },
   operator: (({ name, inn, ogrnip }) => ({ name, inn, ogrnip }))(legal.operator())
 }));
 
@@ -454,28 +480,53 @@ route('GET', '/api/listings/:id', (ctx) => {
       rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : '',
       appealReply: (isOwner || isAdmin) ? l.appeal_reply : '', flags: (isOwner || isAdmin) ? l.flags : ''
     },
-    seller: { id: seller.id, name: seller.name, city: seller.city, avatar: photoUrl(seller.avatar), createdAt: seller.created_at, activeCount: sellerActive, rating: reviews.ratingOf(seller.id), badges: trust.badgesOf(seller) },
+    seller: { id: seller.id, name: seller.name, city: seller.city, avatar: photoUrl(seller.avatar), createdAt: seller.created_at, activeCount: sellerActive, rating: reviews.ratingOf(seller.id), badges: badgesOf(seller) },
     similar,
-    market
+    market,
+    promo: isOwner ? promo.currentOf(id) : null
   };
 });
+
+// Новое объявление и правка — одни функции для формы и для автозагрузки из фида (lib/feed.js).
+// Все объявления публикуются после проверки модератором; любая правка — снова на проверку.
+function createListing(u, v) {
+  const t = now();
+  const info = db.prepare(`INSERT INTO listings (user_id, title, description, category, price, price_unit, city, condition, delivery, search_text, city_lc, status, flags, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`)
+    .run(u.id, v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description), norm(v.city), v.flags, t, t);
+  const id = Number(info.lastInsertRowid);
+  attachPhotos(u.id, id, v.photos);
+  if (!u.city) db.prepare('UPDATE users SET city = ? WHERE id = ?').run(v.city, u.id);
+  logEvent(id, u.id, 'created', { flags: v.flags, ...(v.via ? { via: v.via } : {}) });
+  autoChecks.run(id);
+  return id;
+}
+
+// В историю пишем, что именно изменилось.
+function updateListing(u, l, v) {
+  const before = { title: l.title, description: l.description, category: l.category, price: l.price, priceUnit: l.price_unit, city: l.city, condition: l.condition, delivery: !!l.delivery };
+  const after = { title: v.title, description: v.description, category: v.category, price: v.price, priceUnit: v.priceUnit, city: v.city, condition: v.condition, delivery: !!v.delivery };
+  const changes = Object.fromEntries(Object.keys(before).filter((k) => before[k] !== after[k]).map((k) => [k, [before[k], after[k]]]));
+  const oldPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(l.id).map((r) => r.file);
+  db.prepare(`UPDATE listings SET title = ?, description = ?, category = ?, price = ?, price_unit = ?, city = ?, condition = ?, delivery = ?,
+    search_text = ?, city_lc = ?, status = 'pending', flags = ?, updated_at = ? WHERE id = ?`)
+    .run(v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description), norm(v.city),
+      v.flags || (l.status === 'pending' ? l.flags : ''), now(), l.id);
+  attachPhotos(u.id, l.id, v.photos);
+  const newPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(l.id).map((r) => r.file);
+  if (oldPhotos.join() !== newPhotos.join()) changes.photos = [oldPhotos.length, newPhotos.length];
+  logEvent(l.id, u.id, 'edited', { changes, flags: v.flags, from: l.status, ...(v.via ? { via: v.via } : {}) });
+  autoChecks.run(l.id);
+}
+helpers.createListing = createListing;
+helpers.updateListing = updateListing;
+helpers.validateListing = validateListing;
 
 route('POST', '/api/listings', async (ctx) => {
   const u = requireUser(ctx);
   rateLimit(`create:${u.id}`, 30, 60 * 60 * 1000);
-  const v = validateListing(await readJson(ctx.req));
-  const t = now();
-  // Все объявления публикуются после проверки модератором.
-  const status = 'pending';
-  const info = db.prepare(`INSERT INTO listings (user_id, title, description, category, price, price_unit, city, condition, delivery, search_text, city_lc, status, flags, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(u.id, v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description), norm(v.city), status, v.flags, t, t);
-  const id = Number(info.lastInsertRowid);
-  attachPhotos(u.id, id, v.photos);
-  if (!u.city) db.prepare('UPDATE users SET city = ? WHERE id = ?').run(v.city, u.id);
-  logEvent(id, u.id, 'created', { flags: v.flags });
-  autoChecks.run(id);
-  return { id, status };
+  const id = createListing(u, validateListing(await readJson(ctx.req)));
+  return { id, status: 'pending' };
 });
 
 route('PATCH', '/api/listings/:id', async (ctx) => {
@@ -492,23 +543,8 @@ route('PATCH', '/api/listings/:id', async (ctx) => {
     logEvent(id, u.id, 'status', { status: body.status });
     return { ok: true };
   }
-  const v = validateListing(body);
-  // Любая правка — снова на проверку модератору. В историю пишем, что именно изменилось.
-  const status = 'pending';
-  const before = { title: l.title, description: l.description, category: l.category, price: l.price, priceUnit: l.price_unit, city: l.city, condition: l.condition, delivery: !!l.delivery };
-  const after = { title: v.title, description: v.description, category: v.category, price: v.price, priceUnit: v.priceUnit, city: v.city, condition: v.condition, delivery: !!v.delivery };
-  const changes = Object.fromEntries(Object.keys(before).filter((k) => before[k] !== after[k]).map((k) => [k, [before[k], after[k]]]));
-  const oldPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(id).map((r) => r.file);
-  db.prepare(`UPDATE listings SET title = ?, description = ?, category = ?, price = ?, price_unit = ?, city = ?, condition = ?, delivery = ?,
-    search_text = ?, city_lc = ?, status = ?, flags = ?, updated_at = ? WHERE id = ?`)
-    .run(v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description), norm(v.city), status,
-      v.flags || (l.status === 'pending' ? l.flags : ''), now(), id);
-  attachPhotos(u.id, id, v.photos);
-  const newPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(id).map((r) => r.file);
-  if (oldPhotos.join() !== newPhotos.join()) changes.photos = [oldPhotos.length, newPhotos.length];
-  logEvent(id, u.id, 'edited', { changes, flags: v.flags, from: l.status });
-  autoChecks.run(id);
-  return { ok: true, status };
+  updateListing(u, l, validateListing(body));
+  return { ok: true, status: 'pending' };
 });
 
 route('DELETE', '/api/listings/:id', (ctx) => {
@@ -544,7 +580,7 @@ route('GET', '/api/my/listings', (ctx) => {
   return {
     items: rows.map((r) => ({
       ...cardFromRow(r), views: r.views, favCount: r.fav_count, rejectReason: r.reject_reason,
-      appealText: r.appeal_text, appealAt: r.appeal_at, appealReply: r.appeal_reply, flags: r.flags
+      appealText: r.appeal_text, appealAt: r.appeal_at, appealReply: r.appeal_reply, flags: r.flags, promo: promo.currentOf(r.id)
     }))
   };
 });
@@ -555,21 +591,26 @@ const IMAGE_TYPES = [
   { ext: 'webp', mime: 'image/webp', test: (b) => b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP' }
 ];
 
+// Сохранить фото на диск и в uploads (своё, ещё не привязанное). Возвращает имя файла или бросает 400.
+// hash — отпечаток dHash от браузера (только подсказка модератору о повторах).
+function saveImage(userId, buf, hash = '') {
+  if (buf.length > 6 * 1024 * 1024) throw new HttpError(413, 'Фото больше 6 МБ');
+  const type = IMAGE_TYPES.find((t) => t.test(buf));
+  if (!type) throw new HttpError(400, 'Файл не похож на изображение');
+  const file = `${crypto.randomBytes(16).toString('hex')}.${type.ext}`;
+  fs.writeFileSync(path.join(UPLOAD_DIR, file), buf);
+  db.prepare('INSERT INTO uploads (file, user_id, hash, created_at) VALUES (?, ?, ?, ?)').run(file, userId, /^[0-9a-f]{16}$/.test(String(hash)) ? hash : '', now());
+  return file;
+}
+helpers.saveImage = saveImage;
+
 route('POST', '/api/uploads', async (ctx) => {
   const u = requireUser(ctx);
   rateLimit(`upload:${u.id}`, 120, 60 * 60 * 1000);
   const body = await readJson(ctx.req, 9 * 1024 * 1024);
   const m = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(body.data || ''));
   if (!m) throw new HttpError(400, 'Загрузите фото в формате JPG, PNG или WebP');
-  const buf = Buffer.from(m[2], 'base64');
-  if (buf.length > 6 * 1024 * 1024) throw new HttpError(413, 'Фото больше 6 МБ');
-  const type = IMAGE_TYPES.find((t) => t.test(buf));
-  if (!type) throw new HttpError(400, 'Файл не похож на изображение');
-  const file = `${crypto.randomBytes(16).toString('hex')}.${type.ext}`;
-  fs.writeFileSync(path.join(UPLOAD_DIR, file), buf);
-  // Отпечаток фото от браузера (dHash) — только для подсказки модератору о повторах, не для безопасности.
-  const hash = /^[0-9a-f]{16}$/.test(String(body.hash || '')) ? body.hash : '';
-  db.prepare('INSERT INTO uploads (file, user_id, hash, created_at) VALUES (?, ?, ?, ?)').run(file, u.id, hash, now());
+  const file = saveImage(u.id, Buffer.from(m[2], 'base64'), body.hash);
   return { file, url: photoUrl(file) };
 });
 
@@ -721,7 +762,7 @@ route('GET', '/api/users/:id', (ctx) => {
   const uid = ctx.user ? ctx.user.id : 0;
   const items = db.prepare(`${CARD_SELECT} WHERE l.user_id = ? AND l.status = 'active' ORDER BY l.created_at DESC LIMIT 60`).all(uid, id).map(cardFromRow);
   const sold = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ? AND status = \'sold\'').get(id).n;
-  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rating: reviews.ratingOf(u.id), badges: trust.badgesOf(u) }, items };
+  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rating: reviews.ratingOf(u.id), badges: badgesOf(u), shop: business.shopOf(u) }, items };
 });
 
 // Юридические документы (реквизиты и раздел «Запрещено» подставляются на сервере).
@@ -865,6 +906,11 @@ const server = http.createServer(async (req, res) => {
     r.keys.forEach((k, i) => { ctx.params[k] = m[i + 1]; });
     const result = await r.handler(ctx);
     if (result && result[REDIRECT]) { res.writeHead(302, { ...headers, Location: result[REDIRECT], 'Cache-Control': 'no-store' }); res.end(); return; }
+    if (result && result[FILE]) {
+      const f = result[FILE]; const body = Buffer.from(f.body);
+      res.writeHead(200, { ...headers, 'Content-Type': f.type, 'Content-Length': body.length, 'Cache-Control': 'no-store', 'Content-Disposition': `attachment; filename="${f.name}"` });
+      res.end(body); return;
+    }
     sendJson(res, 200, result, headers);
   } catch (e) {
     const status = e.status || 500;
@@ -877,7 +923,8 @@ const server = http.createServer(async (req, res) => {
 setInterval(() => {
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now());
   const old = db.prepare(`SELECT file FROM uploads WHERE listing_id IS NULL AND created_at < ? AND file NOT IN (SELECT avatar FROM users WHERE avatar != '')
-    AND file NOT IN (SELECT photo FROM messages WHERE photo != '') AND file NOT IN (SELECT photo FROM support_messages WHERE photo != '')`).all(now() - 24 * 3600 * 1000);
+    AND file NOT IN (SELECT photo FROM messages WHERE photo != '') AND file NOT IN (SELECT photo FROM support_messages WHERE photo != '')
+    AND file NOT IN (SELECT shop_cover FROM users WHERE shop_cover != '')`).all(now() - 24 * 3600 * 1000);
   for (const { file } of old) {
     fs.rm(path.join(UPLOAD_DIR, file), { force: true }, () => {});
     db.prepare('DELETE FROM uploads WHERE file = ?').run(file);
