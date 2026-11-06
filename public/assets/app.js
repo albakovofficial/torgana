@@ -751,7 +751,8 @@
             ${ava(seller)}
             <span style="flex:1;min-width:0"><span style="display:block;font-size:17px;font-weight:700">${seller.name}</span>
             ${ratingLine(seller.rating)}
-            <span class="muted" style="display:block;font-size:13px">На Торгане с ${since(seller.createdAt)} · ${seller.activeCount} ${plural(seller.activeCount, 'объявление', 'объявления', 'объявлений')}</span></span>
+            <span class="muted" style="display:block;font-size:13px">На Торгане с ${since(seller.createdAt)} · ${seller.activeCount} ${plural(seller.activeCount, 'объявление', 'объявления', 'объявлений')}</span>
+            ${seller.badges && (seller.badges.phone || seller.badges.biz) ? html`<span class="pf-badges" style="margin-top:8px">${trustBadges(seller.badges)}</span>` : ''}</span>
             ${ic('right', 20)}
           </a>
           <div class="banner soft" style="font-size:14px"><strong style="color:var(--text)">Мы никогда не просим</strong> переходить в мессенджеры, называть код из СМС или платить по ссылке. Если вас об этом просят — это мошенники.</div>
@@ -1084,6 +1085,8 @@
     setTitle('Вход');
     app.innerHTML = String(html`<div class="wrap"><div class="auth">
       <h1>Вход</h1><p class="sub">Рады видеть вас снова.</p>
+      ${q.get('oauth_error') ? html`<div class="banner danger" style="margin-bottom:16px">${q.get('oauth_error')}</div>` : ''}
+      ${oauthButtons()}
       <form id="f" novalidate>
         <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" class="input" autocomplete="email" required></div>
         <div class="field"><label for="password">Пароль</label><input id="password" name="password" type="password" class="input" autocomplete="current-password" required>
@@ -1094,6 +1097,7 @@
       <p class="alt">Нет аккаунта? <a href="/register${q.get('next') ? `?next=${encodeURIComponent(q.get('next'))}` : ''}">Зарегистрироваться</a></p>
     </div></div>`);
     bindAuthForm('/api/auth/login', q.get('next'));
+    bindOauth(app, q.get('next'));
   }
 
   async function viewRegister(_, q) {
@@ -1101,6 +1105,7 @@
     setTitle('Регистрация');
     app.innerHTML = String(html`<div class="wrap"><div class="auth">
       <h1>Регистрация</h1><p class="sub">Размещайте объявления бесплатно и пишите продавцам.</p>
+      ${oauthButtons()}
       <form id="f" novalidate>
         <div class="field"><label for="name">Имя</label><input id="name" name="name" class="input" autocomplete="given-name" maxlength="60" required></div>
         <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" class="input" autocomplete="email" required></div>
@@ -1116,11 +1121,25 @@
       extra: () => ({ consent: $('#f').consent.checked }),
       check: () => ($('#f').consent.checked ? '' : 'Отметьте согласие на обработку персональных данных — без него зарегистрироваться нельзя')
     });
+    bindOauth(app, q.get('next'));
   }
 
   // Отправка формы #f. По умолчанию — вход: запоминаем пользователя и уходим на next.
   // extra — поля сверх формы (объект или функция, вызываемая при отправке);
   // check(body) может вернуть текст ошибки до отправки; done(r) — свой обработчик ответа.
+  // Вход через Яндекс ID и VK ID — кнопки для страниц входа и регистрации (если модератор подключил сервис).
+  const OAUTH = [['yandex', 'Яндекс ID', 'Войти с Яндекс ID'], ['vk', 'VK ID', 'Войти через VK ID']];
+  const oauthOn = () => OAUTH.filter(([k]) => S.config.oauth && S.config.oauth[k]);
+  const oauthButtons = () => (oauthOn().length ? html`<div class="oauth">
+      ${oauthOn().map(([k, , label]) => html`<button type="button" class="btn btn-line btn-lg btn-block oauth-btn oauth-${k}" data-oauth="${k}"><span class="oauth-mark" aria-hidden="true">${k === 'vk' ? 'VK' : 'Я'}</span>${label}</button>`)}
+      <p class="oauth-note">Продолжая, вы принимаете <a href="/page/terms" target="_blank">соглашение</a> и даёте <a href="/page/consent" target="_blank">согласие на обработку данных</a>. Телефон из сервиса отметим как подтверждённый.</p>
+      <div class="or"><span>или по email</span></div></div>` : '');
+  // Начать вход или привязку: сервер даёт адрес страницы сервиса, туда и уходим.
+  async function oauthGo(provider, { next = '/', link = false } = {}) {
+    try { const { url } = await api('POST', `/api/auth/oauth/${provider}/start`, { next, link, consent: !link }); location.href = url; } catch (e) { toast(e.message, true); }
+  }
+  function bindOauth(root, next) { $$('[data-oauth]', root).forEach((b) => { b.onclick = () => oauthGo(b.dataset.oauth, { next: next || '/profile' }); }); }
+
   function bindAuthForm(url, next, { extra = {}, check, done } = {}) {
     const f = $('#f');
     f.onsubmit = async (e) => {
@@ -1526,6 +1545,9 @@
     </div>`;
   }
 
+  // Значки доверия продавца: «Телефон подтверждён», «ИП проверен» / «Компания проверена».
+  const trustBadges = (b) => (b ? html`${b.biz ? html`<span class="pf-badge ok" title="${b.biz.name}">${ic('shield', 13, 2)} ${b.biz.kind === 'ИП' ? 'ИП проверен' : 'Компания проверена'}</span>` : ''}${b.phone ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Телефон подтверждён</span>` : ''}` : '');
+
   // Разделы аккаунта и «Выйти» — одно меню для левой колонки профиля (на компьютере) и для панели ≡ (full).
   // В панели вместо пункта «Настройки» — все группы настроек, публичный профиль и помощь.
   const FOOTER_LABEL = Object.fromEntries(FOOTER_COLS.flatMap((c) => c[1]));
@@ -1566,6 +1588,7 @@
         ${set('s-photo', 'camera', 'Фото профиля')}
         ${set('sf', 'user', 'Имя, город и телефон')}
         ${set('sn', 'bell', 'Уведомления')}
+        ${set('s-biz', 'shield', 'Для бизнеса')}
         ${set('sp', 'lock', 'Пароль')}
         ${set('s-acc', 'gear', 'Аккаунт')}
         ${head('Публичный профиль')}
@@ -1662,7 +1685,7 @@
       ...(S.config.mail ? [[u.emailVerified, 'Подтвердить почту', 'verify']] : [])
     ];
     const pct = Math.round(((todo.filter((t) => t[0]).length + 1) / (todo.length + 1)) * 100); // имя есть всегда
-    const badges = html`${S.config.mail ? (u.emailVerified
+    const badges = html`${trustBadges(u.badges)}${S.config.mail ? (u.emailVerified
       ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>`
       : html`<span class="pf-badge warn">${ic('warn', 13, 2)} Почта не подтверждена</span>`) : ''}
       ${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
@@ -1879,6 +1902,38 @@
     const tst = $('[data-test]', el); if (tst) tst.onclick = () => act(async () => { const r = await api('POST', '/api/push/test'); if (!r.ok) throw new Error('Не получилось отправить — выключите и включите уведомления'); }, 'Отправили проверочное уведомление');
   }
 
+  // Для бизнеса: заявка на проверку ИП или компании (ИНН, ОГРН/ОГРНИП) и её статус.
+  function bizBlock(b) {
+    if (b && b.status === 'verified') return html`<div class="biz-ok">${ic('shield', 22, 2)}<span><b>${b.name} — ${b.kind === 'ip' ? 'ИП проверен' : 'компания проверена'}</b><span>ИНН ${b.inn} · ${b.kind === 'ip' ? 'ОГРНИП' : 'ОГРН'} ${b.ogrn}. Значок видят покупатели у ваших объявлений.</span></span></div>
+      <div><button type="button" class="btn btn-line btn-sm" data-biz-del>Убрать данные бизнеса</button></div>`;
+    return html`${b && b.status === 'pending' ? html`<div class="banner warn">Заявка отправлена ${when(b.at)} — модератор сверит данные по ЕГРЮЛ/ЕГРИП, обычно в течение дня.</div>` : ''}
+      ${b && b.status === 'rejected' ? html`<div class="banner danger"><strong>Проверка не пройдена:</strong> ${b.note}</div>` : ''}
+      <p class="muted" style="margin:0;font-size:14px">ИП и компании получают значок «ИП проверен» или «Компания проверена» — покупатели доверяют таким продавцам больше. Данные сверяет модератор, другие пользователи видят только название.</p>
+      <form id="bf" class="biz-form" novalidate>
+        <div class="field"><label for="b-name">Название</label><input id="b-name" name="name" class="input" maxlength="120" value="${(b && b.name) || ''}" placeholder="ИП Иванов И. И. или ООО «Ромашка»"></div>
+        <div class="row">
+          <div class="field" style="flex:1"><label for="b-inn">ИНН</label><input id="b-inn" name="inn" class="input" inputmode="numeric" maxlength="12" value="${(b && b.inn) || ''}" placeholder="10 или 12 цифр"></div>
+          <div class="field" style="flex:1"><label for="b-ogrn">ОГРН или ОГРНИП</label><input id="b-ogrn" name="ogrn" class="input" inputmode="numeric" maxlength="15" value="${(b && b.ogrn) || ''}" placeholder="13 или 15 цифр"></div>
+        </div>
+        <div class="set-btns"><button class="btn btn-dark" type="submit">${b && b.status === 'pending' ? 'Обновить заявку' : 'Отправить на проверку'}</button>${b ? html`<button type="button" class="btn btn-soft" data-biz-del>Отозвать</button>` : ''}</div>
+      </form>`;
+  }
+  function bindBizForm(reload) {
+    const f = $('#bf');
+    if (f) {
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        try { await api('POST', '/api/me/business', Object.fromEntries(new FormData(f).entries())); toast('Заявка отправлена модератору'); await refreshMe(); reload(); } catch (ex) { toast(ex.message, true); }
+      };
+    }
+    $$('[data-biz-del]').forEach((b) => {
+      b.onclick = async () => {
+        if (!(await confirmModal('Убрать данные бизнеса?', 'Значок проверенного бизнеса пропадёт. Отправить заявку можно будет заново.', 'Убрать', true))) return;
+        try { await api('DELETE', '/api/me/business'); toast('Данные убраны'); await refreshMe(); reload(); } catch (ex) { toast(ex.message, true); }
+      };
+    });
+  }
+
   function renderSettings(reload) {
     const u = S.user;
     const row = (label, value, action = '') => html`<div class="set-row"><div><span class="set-k">${label}</span><span class="set-v">${value}</span></div>${action}</div>`;
@@ -1898,7 +1953,7 @@
         <div class="field"><label for="s-city">Город</label><input id="s-city" name="city" class="input" list="cities" value="${u.city || ''}" placeholder="Подставим в новые объявления">
           <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
         <div class="field"><label for="s-phone">Телефон</label><input id="s-phone" name="phone" class="input" type="tel" inputmode="tel" maxlength="30" value="${u.phone || ''}" placeholder="+7" autocomplete="tel">
-          <span class="help">Другим пользователям не показывается</span></div>
+          <span class="help">${u.phoneVia ? `Подтверждён через ${u.phoneVia === 'vk' ? 'VK ID' : 'Яндекс ID'} · ` : ''}Другим пользователям не показывается</span></div>
         <div><button class="btn btn-dark" type="submit">Сохранить</button></div>
       </form>
 
@@ -1921,10 +1976,17 @@
         <div><button class="btn btn-dark" type="submit">Сменить пароль</button></div>
       </form>
 
+      <section class="set-group" id="s-biz">
+        <h2>Для бизнеса</h2>
+        ${bizBlock(u.business)}
+      </section>
+
       <section class="set-group" id="s-acc">
         <h2>Аккаунт</h2>
         ${row('Email для входа', u.email, S.config.mail ? (u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 14, 2.4)} Подтверждён</span>` : html`<button type="button" class="btn btn-soft btn-sm" id="verify-again">Подтвердить</button>`) : '')}
         ${row('На Торгане', `с ${since(u.createdAt)}`)}
+        ${OAUTH.filter(([k]) => (S.config.oauth && S.config.oauth[k]) || u.oauth.includes(k)).map(([k, name]) => row(`Вход через ${name}`, u.oauth.includes(k) ? 'привязан' : 'не привязан',
+          u.oauth.includes(k) ? html`<button type="button" class="btn btn-line btn-sm" data-unlink="${k}">Отвязать</button>` : html`<button type="button" class="btn btn-soft btn-sm" data-link="${k}">Привязать</button>`))}
         <div class="set-row"><div><span class="set-k">Удалить аккаунт</span><span class="set-v muted">Напишите в поддержку с этого email — удалим аккаунт и данные.</span></div><a class="btn btn-soft btn-sm" href="/messages/support">Поддержка</a></div>
       </section>
     </div>`);
@@ -1947,6 +2009,13 @@
       };
     });
     renderPushDevice($('#push-dev'));
+    $$('[data-link]').forEach((b) => { b.onclick = () => oauthGo(b.dataset.link, { link: true }); });
+    $$('[data-unlink]').forEach((b) => {
+      b.onclick = async () => { try { await api('POST', `/api/auth/oauth/${b.dataset.unlink}/unlink`); toast('Отвязано'); await refreshMe(); reload(); } catch (e) { toast(e.message, true); } };
+    });
+    const q = new URLSearchParams(location.search).get('oauth');
+    if (q) { toast(q === 'linked' ? 'Готово — сервис привязан' : 'Этот аккаунт сервиса уже привязан к другому пользователю', q !== 'linked'); history.replaceState({}, '', location.pathname + location.hash); }
+    bindBizForm(reload);
     $('#sp').onsubmit = async (e) => {
       e.preventDefault();
       const f = e.target; const b = $('button[type=submit]', f); b.disabled = true;
@@ -1969,7 +2038,7 @@
     app.innerHTML = String(html`<div class="wrap pf2 pf-pub">
       <aside class="pf-side">
         ${idCard(u, {
-          badges: S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : '',
+          badges: html`${trustBadges(u.badges)}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}`,
           ratingHref: `/u/${u.id}?tab=reviews`,
           stats: [[u.activeCount, plural(u.activeCount, 'объявление', 'объявления', 'объявлений')], [u.soldCount, 'продано']],
           extra: u.rating.count ? html`<div class="pf-rv-sum">${ratingSummary(u.rating)}</div>` : '',
@@ -2073,10 +2142,10 @@
   // ---------- оболочка модерации: меню слева (на телефоне — лента сверху) ----------
   const ADMIN_NAV = [
     ['', [['dash', 'chart', 'Сводка']]],
-    ['Проверка', [['pending', 'inbox', 'На проверке', 'pending'], ['reports', 'flag', 'Жалобы', 'reports'], ['appeals', 'reply', 'Апелляции', 'appeals'], ['reviews', 'star', 'Отзывы', 'reviews'], ['support', 'headset', 'Поддержка', 'support']]],
+    ['Проверка', [['pending', 'inbox', 'На проверке', 'pending'], ['reports', 'flag', 'Жалобы', 'reports'], ['appeals', 'reply', 'Апелляции', 'appeals'], ['reviews', 'star', 'Отзывы', 'reviews'], ['support', 'headset', 'Поддержка', 'support'], ['biz', 'shield', 'Бизнес', 'biz']]],
     ['Объявления', [['active', 'tag', 'Опубликованные'], ['rejected', 'close', 'Отклонённые'], ['sold', 'check', 'Проданные'], ['archived', 'pause', 'Снятые']]],
     ['Люди', [['users', 'users', 'Пользователи'], ['log', 'list', 'Журнал действий']]],
-    ['Настройки', [['notify', 'bell', 'Мои уведомления'], ['mail', 'mail', 'Почта'], ['site', 'refresh', 'Версия сайта']]]
+    ['Настройки', [['notify', 'bell', 'Мои уведомления'], ['mail', 'mail', 'Почта'], ['oauth', 'lock', 'Вход через сервисы'], ['site', 'refresh', 'Версия сайта']]]
   ];
   const LISTING_TABS = ['pending', 'reports', 'appeals', 'active', 'rejected', 'sold', 'archived'];
   function adminShell(active, stats, body) {
@@ -2118,6 +2187,8 @@
     const R = {
       dash: () => renderDashboard(box, stats),
       users: () => renderUsersAdmin(box, q),
+      biz: () => renderUsersAdmin(box, new URLSearchParams({ f: 'biz' }), 'Проверка бизнеса'),
+      oauth: () => renderOauthAdmin(box),
       log: () => renderLogAdmin(box, q),
       notify: () => renderNotifyAdmin(box),
       mail: () => { box.innerHTML = String(head('Почта')); box.insertAdjacentHTML('beforeend', '<div id="special-box"></div>'); renderMailAdmin($('#special-box'), extra); },
@@ -2209,13 +2280,14 @@
   }
 
   // ---------- пользователи ----------
-  const USER_FILTERS = [['all', 'Все'], ['new', 'Новые за неделю'], ['reported', 'С жалобами'], ['blocked', 'Заблокированные'], ['admins', 'Модераторы']];
+  const USER_FILTERS = [['all', 'Все'], ['new', 'Новые за неделю'], ['reported', 'С жалобами'], ['biz', 'Заявки бизнеса'], ['blocked', 'Заблокированные'], ['admins', 'Модераторы']];
   const userBadges = (u) => html`${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}
     ${u.blocked ? html`<span class="pf-badge bad">${ic('lock', 13, 2)} Заблокирован</span>` : ''}
     ${u.reports ? html`<span class="pf-badge warn">${ic('flag', 13, 2)} Жалоб: ${u.reports}</span>` : ''}
+    ${u.bizPending ? html`<span class="pf-badge warn">${ic('shield', 13, 2)} Заявка бизнеса</span>` : ''}
     ${S.config.mail && !u.emailVerified ? html`<span class="pf-badge">Почта не подтверждена</span>` : ''}`;
 
-  async function renderUsersAdmin(box, q) {
+  async function renderUsersAdmin(box, q, title = 'Пользователи') {
     const f = q.get('f') || 'all';
     const search = q.get('q') || '';
     const url = (over) => `/admin?${new URLSearchParams({ status: 'users', ...(search ? { q: search } : {}), ...(f !== 'all' ? { f } : {}), ...over })}`;
@@ -2229,7 +2301,7 @@
         <span class="adm-user-badges">${userBadges(u)}</span>
         <span class="chev">${ic('right', 18, 2)}</span>
       </a>`;
-    box.innerHTML = String(html`<div class="adm-head"><h1>Пользователи</h1><span class="muted">${NF.format(d.total)}</span></div>
+    box.innerHTML = String(html`<div class="adm-head"><h1>${title}</h1><span class="muted">${NF.format(d.total)}</span></div>
       <form id="us" class="search adm-search">${ic('search', 18)}<label class="sr" for="uq">Поиск</label><input id="uq" name="q" placeholder="Имя, email, телефон или № пользователя" value="${search}"></form>
       <div class="tabs adm-chips">${USER_FILTERS.map(([k, t]) => html`<a class="chip ${k === f ? 'active' : ''}" href="${url({ f: k === 'all' ? '' : k })}">${t}<span class="cnt">${d.counts[k]}</span></a>`)}</div>
       ${d.items.length ? html`<div class="adm-users" id="ul">${d.items.map(row)}</div>` : html`<div class="empty"><h3>Никого не нашли</h3><p>Проверьте написание или уберите фильтр.</p></div>`}
@@ -2277,9 +2349,20 @@
           <div class="adm-person-txt"><h1>${u.name}</h1>
             <div class="muted">№ ${u.id} · на Торгане с ${since(u.createdAt)}</div>
             ${u.rating && u.rating.count ? ratingLine(u.rating, `/u/${u.id}`) : ''}
-            <div class="pf-badges">${userBadges({ ...u, reports: d.reports.against.filter((r) => !r.resolvedAt).length })}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}</div>
+            <div class="pf-badges">${userBadges({ ...u, reports: d.reports.against.filter((r) => !r.resolvedAt).length })}${trustBadges({ phone: u.phoneVerified, biz: u.business && u.business.status === 'verified' ? { kind: u.business.kind === 'ip' ? 'ИП' : 'Компания', name: u.business.name } : null })}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}</div>
           </div>
         </div>
+        ${u.business ? html`<div class="adm-biz ${u.business.status}">
+          <div class="adm-biz-head"><b>${u.business.name}</b><span class="pf-badge ${u.business.status === 'verified' ? 'ok' : u.business.status === 'rejected' ? 'bad' : 'warn'}">${{ pending: 'ждёт проверки', verified: 'подтверждён', rejected: 'отклонён' }[u.business.status]}</span></div>
+          <div class="adm-facts"><div><span>ИНН</span><b>${u.business.inn}</b></div><div><span>${u.business.kind === 'ip' ? 'ОГРНИП' : 'ОГРН'}</span><b>${u.business.ogrn}</b></div><div><span>Отправлено</span><b>${when(u.business.at)}</b></div></div>
+          ${u.business.note ? html`<div class="muted" style="font-size:14px">Причина отказа: ${u.business.note}</div>` : ''}
+          <div class="adm-person-act">
+            <a class="btn btn-soft btn-sm" href="https://egrul.nalog.ru/index.html" target="_blank" rel="noopener">${ic('search', 16)}Проверить в ЕГРЮЛ/ЕГРИП</a>
+            ${u.business.status !== 'verified' ? html`<button class="btn btn-accent btn-sm" data-biz-ok="${u.id}">Подтвердить</button>` : ''}
+            ${u.business.status !== 'rejected' ? html`<button class="btn btn-line btn-sm" data-biz-no="${u.id}">${u.business.status === 'verified' ? 'Снять подтверждение' : 'Отказать'}</button>` : ''}
+          </div>
+          <p class="muted" style="margin:0;font-size:13px">Найдите ИНН в выписке ФНС и сверьте название, ОГРН(ИП) и что организация или ИП действуют.</p>
+        </div>` : ''}
         ${u.blocked ? html`<div class="banner danger"><strong>Заблокирован${u.blockedAt ? ` ${when(u.blockedAt)}` : ''}${blockedBy && blockedBy.admin ? ` · ${blockedBy.admin.name}` : ''}.</strong> ${u.blockReason || 'Причина не указана.'}</div>` : ''}
         <div class="adm-facts">${[
           ['Email', u.email], ['Телефон', u.phone || '—'], ['Город', u.city || '—'],
@@ -2302,6 +2385,10 @@
         $('#pane').innerHTML = String(panes[a.dataset.pane]);
       };
     });
+    const bizOk = $('[data-biz-ok]');
+    if (bizOk) bizOk.onclick = async () => { try { await api('POST', `/api/admin/users/${u.id}/business`, { decision: 'approve' }); toast('Бизнес подтверждён'); render(); } catch (e) { toast(e.message, true); } };
+    const bizNo = $('[data-biz-no]');
+    if (bizNo) bizNo.onclick = () => reasonModal({ title: 'Отказать в подтверждении', hint: 'Причину увидит пользователь — он сможет исправить данные и отправить заявку снова.', url: `/api/admin/users/${u.id}/business`, okLabel: 'Отказать', extra: { decision: 'reject' }, reasons: ['ИНН не найден в ЕГРЮЛ/ЕГРИП', 'Название не совпадает с выпиской', 'ИП или организация прекратили деятельность', 'ОГРН не совпадает с ИНН'], placeholder: 'Что не так — для пользователя' });
     $('[data-support]').onclick = async () => {
       try { const r = await api('POST', `/api/admin/users/${u.id}/support`); go(`/admin?status=support&t=${r.thread}`); } catch (e) { toast(e.message, true); }
     };
@@ -2313,9 +2400,9 @@
     approved: 'Опубликовал объявление', restored: 'Восстановил объявление', 'appeal-approved': 'Одобрил апелляцию', 'appeal-denied': 'Отказал по апелляции',
     'reports-dismissed': 'Закрыл жалобы на объявление', 'avatar-removed': 'Убрал фото профиля', 'user-blocked': 'Заблокировал пользователя', 'user-unblocked': 'Разблокировал пользователя',
     'review-published': 'Опубликовал отзыв', 'review-rejected': 'Не опубликовал отзыв', 'review-hidden': 'Скрыл отзыв по жалобе', 'review-kept': 'Оставил отзыв после жалобы',
-    'review-restored': 'Вернул отзыв', 'reply-published': 'Опубликовал ответ продавца', 'reply-rejected': 'Не опубликовал ответ продавца', 'support-reply': 'Ответил в поддержке'
+    'review-restored': 'Вернул отзыв', 'biz-verified': 'Подтвердил бизнес', 'biz-rejected': 'Отказал в подтверждении бизнеса', 'reply-published': 'Опубликовал ответ продавца', 'reply-rejected': 'Не опубликовал ответ продавца', 'support-reply': 'Ответил в поддержке'
   };
-  const LOG_TONE = { rejected: 'bad', 'appeal-denied': 'bad', 'user-blocked': 'bad', 'review-rejected': 'bad', 'review-hidden': 'bad', 'reply-rejected': 'bad', approved: 'ok', restored: 'ok', 'appeal-approved': 'ok', 'user-unblocked': 'ok', 'review-published': 'ok', 'reply-published': 'ok', 'review-restored': 'ok' };
+  const LOG_TONE = { 'biz-verified': 'ok', 'biz-rejected': 'bad', rejected: 'bad', 'appeal-denied': 'bad', 'user-blocked': 'bad', 'review-rejected': 'bad', 'review-hidden': 'bad', 'reply-rejected': 'bad', approved: 'ok', restored: 'ok', 'appeal-approved': 'ok', 'user-unblocked': 'ok', 'review-published': 'ok', 'reply-published': 'ok', 'review-restored': 'ok' };
   function logRow(e) {
     const act = e.action === 'rejected' ? (e.data.from === 'pending' ? 'Отклонил объявление' : 'Снял с публикации') : LOG_TEXT[e.action] || e.action;
     const target = e.listing ? html`<a href="/admin/l/${e.listing.id}">«${e.listing.title}»</a>`
@@ -2352,6 +2439,33 @@
       const n = await load();
       $('#ll').insertAdjacentHTML('beforeend', n.items.map((e) => String(logRow(e))).join(''));
       more.parentElement.classList.toggle('hidden', !n.more);
+    };
+  }
+
+  // ---------- вход через Яндекс ID и VK ID ----------
+  async function renderOauthAdmin(box) {
+    const { providers: p } = await api('GET', '/api/admin/oauth');
+    const INFO = {
+      yandex: ['Яндекс ID', 'https://oauth.yandex.ru/client/new', 'Создайте приложение «Для авторизации пользователей» (веб-сервисы), права: почта, имя, телефон. В «Redirect URI» вставьте адрес ниже.', true],
+      vk: ['VK ID', 'https://id.vk.ru/business/go', 'Создайте веб-приложение в кабинете VK ID, доступы: почта и телефон. Доверенный Redirect URL — адрес ниже, базовый домен — ваш сайт.', false]
+    };
+    box.innerHTML = String(html`<div class="adm-head"><h1>Вход через сервисы</h1></div>
+      <p class="muted" style="margin:0;max-width:720px">Кнопки «Войти с Яндекс ID» и «Войти через VK ID» появятся на страницах входа и регистрации, когда вы вставите ключи. Телефон, который передал сервис, отмечается как подтверждённый — у продавца появляется значок.</p>
+      <form id="oa" class="oa-grid">${Object.entries(INFO).map(([k, [name, url, hint, secret]]) => html`<section class="panel oa-card">
+          <div class="oa-head"><h2 class="h2">${name}</h2><span class="pf-badge ${p[k].ready ? 'ok' : ''}">${p[k].ready ? 'подключён' : 'не подключён'}</span></div>
+          <p class="muted" style="margin:0;font-size:14px">${hint} <a href="${url}" target="_blank" rel="noopener" style="text-decoration:underline">Открыть кабинет</a></p>
+          <div class="field"><span class="label">Redirect URI</span><div class="oa-copy"><code>${p[k].callback}</code><button type="button" class="btn btn-soft btn-sm" data-copy="${p[k].callback}">Скопировать</button></div></div>
+          <div class="field"><label for="oa-${k}-id">${k === 'vk' ? 'ID приложения' : 'ClientID'}</label><input id="oa-${k}-id" name="${k}.id" class="input" value="${p[k].id}" autocomplete="off"></div>
+          ${secret ? html`<div class="field"><label for="oa-${k}-s">Client secret</label><input id="oa-${k}-s" name="${k}.secret" class="input" type="password" autocomplete="new-password" placeholder="${p[k].hasSecret ? 'сохранён — оставьте пустым, чтобы не менять' : ''}"></div>` : ''}
+        </section>`)}
+        <div><button class="btn btn-dark" type="submit">Сохранить</button></div>
+      </form>`);
+    $$('[data-copy]', box).forEach((b) => { b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Скопировано'); } catch { toast(b.dataset.copy); } }; });
+    $('#oa').onsubmit = async (e) => {
+      e.preventDefault();
+      const body = {};
+      for (const [k, v] of new FormData(e.target).entries()) { const [pr, f] = k.split('.'); (body[pr] = body[pr] || {})[f] = v.trim(); }
+      try { const r = await api('PUT', '/api/admin/oauth', body); S.config.oauth = r.enabled; toast('Сохранено'); renderOauthAdmin(box); } catch (ex) { toast(ex.message, true); }
     };
   }
 

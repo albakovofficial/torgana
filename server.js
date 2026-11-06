@@ -93,7 +93,7 @@ function publicUser(u) {
   return u ? {
     id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, avatar: photoUrl(u.avatar), isAdmin: !!u.is_admin, isOwner: !!u.is_admin && u.email === OWNER_EMAIL, createdAt: u.created_at,
     emailVerified: !!u.email_verified, ...Object.fromEntries(Object.entries(NOTIFY_FIELDS).map(([k, col]) => [k, !!u[col]])),
-    rating: reviews.ratingOf(u.id)
+    rating: reviews.ratingOf(u.id), badges: trust.badgesOf(u), business: trust.bizOf(u), phoneVia: u.phone_verified ? u.phone_verified_via : '', oauth: oauth.linkedOf(u.id)
   } : null;
 }
 
@@ -208,6 +208,9 @@ function loadListing(id) {
 // ---------- обработчики API ----------
 
 const routes = [];
+// Обработчик может вернуть h.redirect(url) вместо JSON — тогда ответ 302 (нужно для возврата из Яндекс ID и VK ID).
+const REDIRECT = Symbol('redirect');
+const redirect = (url) => ({ [REDIRECT]: url });
 function route(method, pattern, handler) {
   const keys = [];
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '$');
@@ -216,7 +219,7 @@ function route(method, pattern, handler) {
 
 // Модерация (очередь, проверка «от и до», жалобы, история) и чат поддержки — в отдельных модулях.
 const autoChecks = require('./lib/checks')({ db, marketEstimate });
-const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, setAvatar, str, now, norm, autoChecks, OWNER_EMAIL };
+const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, setAvatar, str, now, norm, autoChecks, OWNER_EMAIL, redirect };
 const push = createPush({ db, subject: `mailto:${SUPPORT_EMAIL || 'support@torgana.ru'}`, allowHttp: process.env.PUSH_ALLOW_HTTP === '1' });
 const alerts = require('./lib/alerts')({ route, db, mailer, push, h: helpers, categories: CATEGORIES });
 helpers.alerts = alerts; // push и подборки нужны модерации, поддержке и отзывам
@@ -225,7 +228,9 @@ helpers.audit = audit; // журнал модерации нужен и отзы
 const supportChat = require('./lib/support')({ route, db, mailer, h: helpers });
 const stats = require('./lib/stats')({ route, db, h: helpers });
 const reviews = require('./lib/reviews')({ route, db, mailer, h: helpers });
-require('./lib/admin')({ route, db, h: helpers, reviews }); // сводка, пользователи, журнал, письма модератору
+const trust = require('./lib/trust')({ route, db, h: helpers, mailer }); // «Телефон подтверждён», проверенный бизнес
+require('./lib/admin')({ route, db, h: helpers, reviews, trust }); // сводка, пользователи, журнал, письма модератору
+const oauth = require('./lib/oauth')({ route, db, h: helpers, auth, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, secureCookies: SECURE_COOKIES, adminEmails: ADMIN_EMAILS, testBase: process.env.OAUTH_TEST_BASE || '' });
 
 route('GET', '/api/config', () => ({
   categories: CATEGORIES,
@@ -235,6 +240,7 @@ route('GET', '/api/config', () => ({
   payments: PAYMENTS_ENABLED,
   mail: mailer.ready(),
   supportEmail: SUPPORT_EMAIL,
+  oauth: oauth.enabled(),
   operator: (({ name, inn, ogrnip }) => ({ name, inn, ogrnip }))(legal.operator())
 }));
 
@@ -368,8 +374,10 @@ route('PATCH', '/api/me', async (ctx) => {
     }
   }
   const cols = Object.entries(NOTIFY_FIELDS);
-  db.prepare(`UPDATE users SET name = ?, city = ?, phone = ?, ${cols.map(([, c]) => `${c} = ?`).join(', ')} WHERE id = ?`)
-    .run(name, city, phone, ...cols.map(([k, c]) => flag(body[k], u[c])), u.id);
+  // Другой номер — уже не подтверждённый (подтверждается входом через Яндекс ID или VK ID).
+  const phoneVerified = phone.replace(/\D/g, '') === String(u.phone || '').replace(/\D/g, '') ? u.phone_verified : 0;
+  db.prepare(`UPDATE users SET name = ?, city = ?, phone = ?, phone_verified = ?, ${cols.map(([, c]) => `${c} = ?`).join(', ')} WHERE id = ?`)
+    .run(name, city, phone, phoneVerified, ...cols.map(([k, c]) => flag(body[k], u[c])), u.id);
   if (avatar !== null) setAvatar(u.id, avatar);
   return { user: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id)) };
 });
@@ -417,7 +425,7 @@ route('GET', '/api/listings/:id', (ctx) => {
   const id = parseInt(ctx.params.id, 10);
   const l = loadListing(id);
   if (!l) throw new HttpError(404, 'Объявление не найдено');
-  const seller = db.prepare('SELECT id, name, city, avatar, created_at, is_blocked FROM users WHERE id = ?').get(l.user_id);
+  const seller = db.prepare('SELECT * FROM users WHERE id = ?').get(l.user_id);
   const isOwner = ctx.user && ctx.user.id === l.user_id;
   const isAdmin = ctx.user && ctx.user.is_admin;
   if ((l.status !== 'active' && l.status !== 'sold') || seller.is_blocked) {
@@ -446,7 +454,7 @@ route('GET', '/api/listings/:id', (ctx) => {
       rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : '',
       appealReply: (isOwner || isAdmin) ? l.appeal_reply : '', flags: (isOwner || isAdmin) ? l.flags : ''
     },
-    seller: { id: seller.id, name: seller.name, city: seller.city, avatar: photoUrl(seller.avatar), createdAt: seller.created_at, activeCount: sellerActive, rating: reviews.ratingOf(seller.id) },
+    seller: { id: seller.id, name: seller.name, city: seller.city, avatar: photoUrl(seller.avatar), createdAt: seller.created_at, activeCount: sellerActive, rating: reviews.ratingOf(seller.id), badges: trust.badgesOf(seller) },
     similar,
     market
   };
@@ -708,12 +716,12 @@ route('POST', '/api/conversations/:id/messages', async (ctx) => {
 
 route('GET', '/api/users/:id', (ctx) => {
   const id = parseInt(ctx.params.id, 10);
-  const u = db.prepare('SELECT id, name, city, avatar, created_at, is_blocked, email_verified FROM users WHERE id = ?').get(id);
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   if (!u || u.is_blocked) throw new HttpError(404, 'Пользователь не найден');
   const uid = ctx.user ? ctx.user.id : 0;
   const items = db.prepare(`${CARD_SELECT} WHERE l.user_id = ? AND l.status = 'active' ORDER BY l.created_at DESC LIMIT 60`).all(uid, id).map(cardFromRow);
   const sold = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ? AND status = \'sold\'').get(id).n;
-  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rating: reviews.ratingOf(u.id) }, items };
+  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rating: reviews.ratingOf(u.id), badges: trust.badgesOf(u) }, items };
 });
 
 // Юридические документы (реквизиты и раздел «Запрещено» подставляются на сервере).
@@ -856,6 +864,7 @@ const server = http.createServer(async (req, res) => {
     const m = r.re.exec(pathname);
     r.keys.forEach((k, i) => { ctx.params[k] = m[i + 1]; });
     const result = await r.handler(ctx);
+    if (result && result[REDIRECT]) { res.writeHead(302, { ...headers, Location: result[REDIRECT], 'Cache-Control': 'no-store' }); res.end(); return; }
     sendJson(res, 200, result, headers);
   } catch (e) {
     const status = e.status || 500;
