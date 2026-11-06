@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
-    "test": "node --test tests/api.test.js tests/mail.test.js tests/legal.test.js tests/support.test.js tests/backup.test.js",
+    "test": "node --test tests/api.test.js tests/mail.test.js tests/legal.test.js tests/support.test.js tests/backup.test.js tests/update.test.js",
     "test:ui": "node tests/mobile.check.js",
     "check": "node --check server.js && node --check public/assets/app.js && npm test && npm run test:ui",
     "seed-demo": "node scripts/seed-demo.js http://localhost:3000"

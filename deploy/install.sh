@@ -103,7 +103,7 @@ fi
 
 sleep 2
 if curl -fsS http://127.0.0.1:3000/api/config >/dev/null; then
-  log "Готово! Торгана работает. Автообновление с GitHub — каждые 30 секунд."
+  log "Готово! Торгана работает. Автообновление из ветки release — каждые 30 секунд (sudo torgana-autoupdate --status)."
 else
   echo "Сайт не ответил. Логи: journalctl -u torgana -n 50"; exit 1
 fi

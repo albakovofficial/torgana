@@ -1363,15 +1363,16 @@
     setTitle('Модерация');
     const status = q.get('status') || 'pending';
     const search = q.get('q') || '';
-    const special = { mail: 1, support: 1 }[status];
-    const [stats, list, mail] = await Promise.all([
+    const special = { mail: 1, support: 1, site: 1 }[status];
+    const extraUrl = { mail: '/api/admin/mail', site: '/api/admin/update' }[status];
+    const [stats, list, extra] = await Promise.all([
       api('GET', '/api/admin/stats'),
       special ? { items: [] } : api('GET', `/api/admin/listings?${new URLSearchParams({ status, q: search })}`),
-      status === 'mail' ? api('GET', '/api/admin/mail') : null
+      extraUrl ? api('GET', extraUrl) : null
     ]);
     const cnt = (n) => (n ? ` · ${n}` : '');
     const tabs = { pending: `На проверке${cnt(stats.pending)}`, reports: `Жалобы${cnt(stats.reports)}`, support: `Поддержка${cnt(stats.support)}`, appeals: `Апелляции${cnt(stats.appeals)}`,
-      active: 'Опубликованные', rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые', mail: `Почта${S.config.mail ? '' : ' · не подключена'}` };
+      active: 'Опубликованные', rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые', mail: `Почта${S.config.mail ? '' : ' · не подключена'}`, site: 'Версия сайта' };
     app.innerHTML = String(html`<div class="wrap">
       <div class="profile-head"><h1 style="flex:1">Модерация</h1></div>
       ${special ? '' : html`<div class="stats">
@@ -1397,7 +1398,8 @@
         <div class="my-actions"><a class="btn btn-dark btn-sm" href="/admin/l/${i.id}">Проверить</a>${modButtons(i)}</div>
       </div>`) : html`<div class="empty"><h3>${status === 'pending' ? 'Очередь пуста' : 'Здесь пусто'}</h3><p>${status === 'pending' ? 'Все объявления проверены.' : 'Нет объявлений в этом разделе.'}</p></div>`}
     </div>`);
-    if (status === 'mail') { renderMailAdmin($('#special-box'), mail); return; }
+    if (status === 'mail') { renderMailAdmin($('#special-box'), extra); return; }
+    if (status === 'site') { renderSiteAdmin($('#special-box'), extra.update); return; }
     if (status === 'support') { await renderSupportAdmin($('#special-box'), q.get('t')); return; }
     $('#as').onsubmit = (e) => { e.preventDefault(); go(`/admin?${new URLSearchParams({ status, q: e.target.q.value.trim() })}`); };
     bindModActions(app);
@@ -1527,6 +1529,24 @@
     });
   }
 
+  // Модерация → Версия сайта: что работает сейчас и как прошло последнее автообновление из ветки release.
+  function renderSiteAdmin(box, u) {
+    const at = (iso) => (iso ? when(Date.parse(iso)) : '—');
+    const stale = u && u.checkedAt && Date.now() - Date.parse(u.checkedAt) > 10 * 60 * 1000;
+    const row = (k, v, bad) => html`<div style="display:flex;gap:16px;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line);font-size:15px">
+      <span class="muted" style="flex:none">${k}</span><span style="text-align:right;min-width:0;overflow-wrap:anywhere;${bad ? 'color:var(--danger);font-weight:600' : ''}">${v}</span></div>`;
+    box.innerHTML = String(html`<div class="panel" style="max-width:760px">
+      <h2 class="h2" style="margin:0 0 6px">Версия сайта</h2>
+      ${u && u.enabled ? html`
+        ${row('Работает', u.commit ? `${u.commit}${u.subject ? ` — ${u.subject}` : ''}` : '—')}
+        ${row('Установлена', at(u.updatedAt))}
+        ${row('Автообновление', u.checkError || (stale ? `нет проверок с ${at(u.checkedAt)} — проверьте службу torgana-update` : `ветка ${u.branch}, проверка каждые 30 секунд · последняя ${at(u.checkedAt)}`), !!(u.checkError || stale))}
+        ${u.lastError ? html`<div class="banner danger" style="margin-top:16px">${u.lastError} · ${at(u.failedAt)}. Эта версия больше не ставится — выпустите исправление в ${u.branch}.</div>` : ''}`
+      : html`<p class="muted" style="margin:0 0 8px">Автообновление ещё ни разу не запускалось на этом сервере.</p>`}
+      <p class="muted" style="margin:16px 0 0;font-size:14px">Как выпустить: слейте <strong>main → ${u && u.branch ? u.branch : 'release'}</strong> — кнопкой GitHub → Actions → «Выпуск» или pull request'ом. Сервер проверит новую версию на временной базе, сделает копию базы и перезапустит сайт. Если что-то не так — останется прежняя версия.</p>
+    </div>`);
+  }
+
   // Модерация → Почта: подключение SMTP, проверка письмом, журнал отправки.
   function renderMailAdmin(box, { config: c, stats: st }) {
     const SECURITY = [['ssl', 'SSL (обычно порт 465)'], ['starttls', 'STARTTLS (порт 587 или 2525)']];
@@ -1552,6 +1572,8 @@
           <div class="field"><label for="m-pass">Пароль</label><input id="m-pass" name="pass" type="password" class="input" autocomplete="new-password" placeholder="${c.hasPass ? 'Сохранён — оставьте пустым, чтобы не менять' : 'Пароль SMTP из личного кабинета'}"></div>
           <div class="row stack-m"><div class="field" style="flex:1"><label for="m-from">Адрес отправителя</label><input id="m-from" name="from" class="input" value="${c.from || ''}" placeholder="no-reply@torgana.ru"></div>
             <div class="field" style="flex:1"><label for="m-name">Имя отправителя</label><input id="m-name" name="fromName" class="input" value="${c.fromName || ''}" placeholder="Торгана"></div></div>
+          <div class="field"><label for="m-reply">Ответы на письма — на адрес</label><input id="m-reply" name="replyTo" class="input" type="email" value="${c.replyTo || ''}" placeholder="${S.config.supportEmail || 'support@torgana.ru'}">
+            <span class="help">Если человек ответит на уведомление, письмо придёт сюда, а не на адрес отправителя. По умолчанию — адрес поддержки.</span></div>
           <div class="form-error hidden" id="m-err" role="alert"></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-dark" type="submit">Сохранить</button></div>
           <p class="muted" style="margin:0;font-size:13px">Чтобы письма не попадали в спам, домен ${domain} подтверждается в SMTP.BZ, а в DNS домена добавляются записи SPF и DKIM, которые выдаст сервис.</p>
@@ -1564,6 +1586,14 @@
               <button class="btn btn-accent" type="submit" ${c.ready ? '' : raw('disabled')}>Отправить</button></div>
             <div class="form-error hidden" id="mt-err" role="alert"></div>
           </form>
+          <div class="panel" id="avatar"><h2 class="h2" style="margin:0">Аватарка отправителя</h2>
+            <p class="muted" style="margin:0;font-size:14px">Картинку рядом с письмом каждая почта берёт из своего источника. Сайт сам её не передаёт: подключите один раз в каждой почте, затем проверьте тестовым письмом.</p>
+            <ol class="avatar-steps">
+              <li><strong>Mail.ru</strong> — <a href="https://postmaster.mail.ru/" target="_blank" rel="noopener">postmaster.mail.ru</a>: добавить домен ${domain}, «Настройки» → «Изменить аватар», загрузить <a href="/assets/icons/apple-touch-icon.png" download="torgana-avatar-180.png">картинку 180×180</a>. Действует на весь домен после модерации Mail.ru.</li>
+              <li><strong>Яндекс Почта</strong> — портрет Яндекс ID ящика ${c.from || `no-reply@${domain}`} в Яндекс 360: <a href="https://id.yandex.ru/" target="_blank" rel="noopener">id.yandex.ru</a> → фото, <a href="/assets/icons/icon-512.png" download="torgana-avatar-512.png">картинка 512×512</a>. Яндекс не обещает показ для писем через сторонний сервис отправки — проверьте письмом.</li>
+              <li><strong>Gmail</strong> — Google-аккаунт на адрес ${c.from || `no-reply@${domain}`} («Использовать существующий адрес» при регистрации), фото профиля — <a href="/assets/icons/icon-512.png" download="torgana-avatar-512.png">та же картинка</a>. Появляется через несколько дней.</li>
+            </ol>
+          </div>
           <div class="panel"><h2 class="h2" style="margin:0 0 12px">Последние письма</h2>
             ${st.recent.length ? html`<div style="display:flex;flex-direction:column;gap:10px">${st.recent.map((r) => html`<div style="display:flex;gap:10px;justify-content:space-between;font-size:14px;border-bottom:1px solid var(--line);padding-bottom:10px">
               <span style="min-width:0"><strong>${KIND[r.kind] || r.kind}</strong> · ${r.to_email}<br><span class="muted">${when(r.created_at)}${r.last_error ? html` · ${r.last_error}` : ''}</span></span>

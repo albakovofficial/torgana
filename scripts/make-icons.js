@@ -3,7 +3,10 @@
 // Иконки Торганы из одного описания знака «Т-ценник».
 //   node scripts/make-icons.js
 // Создаёт: assets/favicon.svg (вкладка браузера, круг) и assets/icons/*.png (экран «Домой»: квадрат на весь
-// размер — iOS и Android сами скругляют углы; знак в безопасной зоне, поэтому подходит и для maskable).
+// размер — iOS и Android сами скругляют углы; знак в безопасной зоне, поэтому подходит и для maskable)
+// и assets/icons/mail-logo.png (логотип в шапке писем: круг, как favicon).
+// apple-touch-icon.png (180×180, без прозрачности) — она же аватарка отправителя для Mail.ru Postmaster,
+// icon-512.png — для портрета Яндекс ID и фото Google-аккаунта no-reply@.
 // Нужен Playwright с Chromium (как для npm run test:ui).
 const fs = require('node:fs');
 const path = require('node:path');
@@ -30,6 +33,7 @@ const appIcon = (size) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size
 </svg>`;
 
 const PNG = { 'apple-touch-icon.png': 180, 'icon-192.png': 192, 'icon-512.png': 512 };
+const MAIL_LOGO = 102; // показывается 34×34, запас на экраны с высокой плотностью
 
 async function main() {
   fs.writeFileSync(path.join(ASSETS, 'favicon.svg'), favicon);
@@ -44,6 +48,11 @@ async function main() {
       await page.close();
       console.log(`icons/${file} — ${size}×${size}`);
     }
+    const page = await browser.newPage({ viewport: { width: MAIL_LOGO, height: MAIL_LOGO }, deviceScaleFactor: 1 });
+    await page.setContent(`<html><body style="margin:0;background:transparent">${favicon.replace('<svg ', `<svg width="${MAIL_LOGO}" height="${MAIL_LOGO}" `)}</body></html>`);
+    await page.screenshot({ path: path.join(ASSETS, 'icons', 'mail-logo.png'), clip: { x: 0, y: 0, width: MAIL_LOGO, height: MAIL_LOGO }, omitBackground: true });
+    await page.close();
+    console.log(`icons/mail-logo.png — ${MAIL_LOGO}×${MAIL_LOGO}`);
   } finally {
     await browser.close();
   }

@@ -38,6 +38,7 @@ const db = openDb(path.join(DATA_DIR, 'torgana.db'));
 const mailer = createMailer({
   db,
   baseUrl: PUBLIC_URL || `http://localhost:${PORT}`,
+  supportEmail: SUPPORT_EMAIL,
   tickMs: Number(process.env.MAIL_TICK_MS) || undefined,
   chatDelayMs: process.env.CHAT_NOTIFY_DELAY_MS ? Number(process.env.CHAT_NOTIFY_DELAY_MS) : undefined,
   chatGapMs: process.env.CHAT_NOTIFY_GAP_MS ? Number(process.env.CHAT_NOTIFY_GAP_MS) : undefined
@@ -656,6 +657,12 @@ route('POST', '/api/admin/mail/test', async (ctx) => {
   const to = str((await readJson(ctx.req)).to, 120) || admin.email;
   try { await mailer.sendTest(to); } catch (e) { throw new HttpError(502, e.message); }
   return { ok: true, to };
+});
+
+// Раздел «Версия сайта»: состояние автообновления из ветки release (файл пишет deploy/update.sh).
+route('GET', '/api/admin/update', (ctx) => {
+  requireAdmin(ctx);
+  try { return { update: JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'update-status.json'), 'utf8')) }; } catch { return { update: null }; }
 });
 
 // ---------- статика ----------

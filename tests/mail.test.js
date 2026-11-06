@@ -50,6 +50,35 @@ test('раздел «Почта»: только модератор, пароль
   assert.ok(st.data.stats.recent.some((r) => r.kind === 'test' && r.status === 'sent'));
 });
 
+test('уведомления с no-reply: ответы уходят в поддержку, в шапке логотип, в подвале адрес поддержки', async () => {
+  assert.equal((await admin.get('/api/admin/mail')).data.config.replyTo, 'support@test.local', 'по умолчанию — SUPPORT_EMAIL');
+  await admin.post('/api/admin/mail/test', { to: 'reply@test.local' });
+  let m = await smtp.waitFor((x) => x.to === 'reply@test.local');
+  assert.match(m.headers, /^Reply-To: <support@test\.local>$/m);
+  assert.match(m.html, /<img src="http:\/\/torgana\.test\/assets\/icons\/mail-logo\.png" width="34" height="34" alt="Т"/);
+  assert.match(m.html, /mailto:support@test\.local/);
+  assert.match(m.text, /ответьте на это письмо или напишите на support@test\.local/);
+  const logo = await fetch(`${srv.base}/assets/icons/mail-logo.png`);
+  assert.equal(logo.status, 200);
+  assert.equal(logo.headers.get('content-type'), 'image/png');
+
+  // Свой адрес для ответов; неверный — понятная ошибка; адрес поддержки снова — значит «по умолчанию».
+  assert.equal((await admin.put('/api/admin/mail', mailCfg({ replyTo: 'не-почта' }))).status, 400);
+  assert.equal((await admin.put('/api/admin/mail', mailCfg({ replyTo: 'Help@Test.local' }))).data.config.replyTo, 'help@test.local');
+  await admin.post('/api/admin/mail/test', { to: 'reply2@test.local' });
+  m = await smtp.waitFor((x) => x.to === 'reply2@test.local');
+  assert.match(m.headers, /^Reply-To: <help@test\.local>$/m);
+  await admin.put('/api/admin/mail', mailCfg({ replyTo: 'support@test.local' }));
+  assert.equal((await admin.get('/api/admin/mail')).data.config.replyTo, 'support@test.local');
+});
+
+test('если адрес для ответов совпадает с отправителем — Reply-To не добавляется', () => {
+  const { buildMessage } = require('../lib/smtp');
+  const raw = buildMessage({ from: 'support@torgana.ru', replyTo: 'support@torgana.ru', to: 'a@b.ru', subject: 'x', text: 'x', html: 'x' });
+  assert.doesNotMatch(raw, /Reply-To/);
+  assert.match(buildMessage({ from: 'no-reply@torgana.ru', replyTo: 'support@torgana.ru', to: 'a@b.ru', subject: 'x', text: 'x', html: 'x' }), /\r\nReply-To: <support@torgana\.ru>\r\n/);
+});
+
 test('неверный пароль почты — понятная ошибка', async () => {
   await admin.put('/api/admin/mail', mailCfg({ pass: 'wrong' }));
   const r = await admin.post('/api/admin/mail/test', { to: 'owner@test.local' });
