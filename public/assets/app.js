@@ -100,7 +100,6 @@
     gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
     chart: '<path d="M4 20V11M10 20V5M16 20v-6M22 20H2"/>',
-    up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
     star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
     flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
     lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
@@ -207,7 +206,7 @@
     const q = path === '/search' ? new URLSearchParams(location.search).get('q') || '' : '';
     $('#header').innerHTML = String(html`<div class="wrap header-in">
       ${logo()}
-      ${isHome ? '' : html`<form class="search header-search" role="search" id="header-search">
+      ${isHome ? '' : html`<form class="search header-search" role="search" data-search>
         ${ic('search', 18)}
         <label class="sr" for="hq">Поиск по объявлениям</label>
         <input id="hq" name="q" type="search" placeholder="Поиск по всей России" value="${q}" autocomplete="off">
@@ -221,8 +220,6 @@
         <button type="button" class="icon-btn menu-btn" data-menu aria-label="Меню" aria-haspopup="dialog">${ic('menu', 22, 2)}</button>
       </nav>
     </div>`);
-    const hs = $('#header-search');
-    if (hs) hs.onsubmit = (e) => { e.preventDefault(); goSearch({ q: hs.q.value.trim() }); };
     $('[data-menu]', $('#header')).onclick = openMenu;
   }
 
@@ -237,42 +234,45 @@
       <a href="${S.user ? '/profile' : '/login'}" class="${on(p.startsWith('/profile') || p === '/login')}" aria-label="Профиль">${ic('user', 23)}</a>`);
   }
 
-  // Подвал: призыв разместить, поддержка, разделы (на телефоне раскрываются), реквизиты, большой знак.
+  // Подвал: знак и кнопка поддержки, разделы (на телефоне раскрываются), контакты, © с реквизитами оператора, документы. Последняя колонка FOOTER_COLS — документы (их же показывает меню ≡).
   const FOOTER_COLS = [
     ['Покупателям', [['/page/help', 'Как искать'], ['/page/safety', 'Безопасность'], ['/favorites', 'Избранное']]],
     ['Продавцам', [['/new', 'Разместить объявление'], ['/page/business', 'Для бизнеса'], ['/page/rules', 'Правила площадки']]],
     ['Помощь', [['/page/support', 'Поддержка'], ['/page/contacts', 'Реквизиты и контакты']]],
     ['Документы', [['/page/terms', 'Пользовательское соглашение'], ['/page/privacy', 'Конфиденциальность'], ['/page/consent', 'Согласие на обработку данных']]]
   ];
+  const FOOTER_NARROW = '(max-width: 760px)';
   function renderFooter() {
     const op = S.config.operator;
-    const links = (ls) => ls.map(([href, t]) => html`<a href="${href}">${t}</a>`);
-    $('#footer').innerHTML = String(html`<div class="wrap f-in">
-      <div class="f-cta">
-        <div class="f-cta-txt"><h2>Есть что продать?</h2><p>Разместите бесплатно — без лимитов для частных лиц.</p></div>
-        <a class="f-cta-btn" href="/new">${ic('plus', 20, 2.2)}Разместить объявление</a>
+    const mail = S.config.supportEmail;
+    const cols = FOOTER_COLS.slice(0, -1);
+    const docs = FOOTER_COLS[FOOTER_COLS.length - 1][1];
+    const contact = (icon, body) => html`<li><span class="f-ic">${ic(icon, 16)}</span>${body}</li>`;
+    const footer = $('#footer');
+    footer.innerHTML = String(html`<div class="wrap">
+      <div class="f-hero">
+        <div class="f-brand">${logo()}<p class="f-tag">Честная площадка объявлений по всей России</p></div>
+        <div class="f-cta">
+          <a class="f-support" href="/messages/support"><span class="f-support-ic">${ic('headset', 20)}</span>Написать в поддержку</a>
+          <small>Отвечают модераторы, а не бот</small>
+        </div>
       </div>
       <div class="f-grid">
-        <div class="f-brand">
-          ${logo()}
-          <p>Честная площадка объявлений по всей России. Бесплатно для частных лиц, каждое объявление проверяет модератор.</p>
-          <a class="f-help" href="/messages/support">
-            <span class="f-help-ic">${ic('headset', 21)}</span>
-            <span class="f-help-txt"><b>Нужна помощь?</b><span>Отвечают модераторы, не бот</span></span>
-            ${ic('right', 18, 2)}
-          </a>
-          ${S.config.supportEmail ? html`<a class="f-mail" href="mailto:${S.config.supportEmail}">${S.config.supportEmail}</a>` : ''}
-        </div>
-        <div class="f-cols">${FOOTER_COLS.map(([t, ls]) => html`<nav class="f-col" aria-label="${t}"><b>${t}</b>${links(ls)}</nav>`)}</div>
-        <div class="f-acc">${FOOTER_COLS.map(([t, ls], i) => html`<details${i === 0 ? raw(' open') : ''}><summary>${t}${ic('down', 20, 2)}</summary><div>${links(ls)}</div></details>`)}</div>
+        ${cols.map(([t, ls]) => html`<details class="fcol" open><summary><h4>${t}</h4>${ic('down', 18, 2)}</summary><ul>${ls.map(([href, label]) => html`<li><a href="${href}">${label}</a></li>`)}</ul></details>`)}
+        <div class="fcol fcol-contacts"><h4>Контакты</h4><ul class="f-contacts">
+          ${mail ? contact('mail', html`<a href="mailto:${mail}">${mail}</a>`) : ''}
+          ${contact('shield', html`<span>Каждое объявление проверяет модератор</span>`)}
+        </ul></div>
       </div>
-      <div class="f-bottom">
-        <span>© ${new Date().getFullYear()} Торгана${op ? ` · ${op.name} · ИНН ${op.inn} · ОГРНИП ${op.ogrnip}` : ''}</span>
-        <button type="button" class="f-up" data-up>${ic('up', 14, 2.2)}Наверх</button>
-      </div>
-      <svg class="f-mark" viewBox="0 62 1000 150" preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false"><text x="0" y="212" textLength="1000" lengthAdjust="spacingAndGlyphs">торгана</text></svg>
+      <div class="f-bottom"><div class="f-copy"><b>© ${new Date().getFullYear()} Торгана</b>${op ? html`<span>${op.name}, ИНН ${op.inn}, ОГРНИП ${op.ogrnip}</span>` : ''}</div>
+        <nav class="f-docs" aria-label="Документы">${docs.map(([href, label]) => html`<a href="${href}">${label}</a>`)}</nav></div>
     </div>`);
-    $('[data-up]', $('#footer')).onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+    // На телефоне разделы свёрнуты, на компьютере всегда открыты.
+    const narrow = window.matchMedia(FOOTER_NARROW).matches;
+    $$('details.fcol', footer).forEach((d) => {
+      if (narrow) d.open = false;
+      $('summary', d).onclick = (e) => { if (!window.matchMedia(FOOTER_NARROW).matches) e.preventDefault(); };
+    });
   }
 
   function setUnread(n) {
@@ -330,6 +330,12 @@
     if (!sp.has('city') && S.city && params.city === undefined) sp.set('city', S.city);
     go(`/search?${sp}`);
   }
+  // Все строки поиска (в шапке и на главной) — form[data-search] с полем q.
+  document.addEventListener('submit', (e) => {
+    const f = e.target.closest('form[data-search]');
+    if (!f) return;
+    e.preventDefault(); goSearch({ q: f.q.value.trim() });
+  });
   function requireAuth() {
     if (S.user) return true;
     go(`/login?next=${encodeURIComponent(location.pathname + location.search)}`, true);
@@ -437,73 +443,72 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushImpressions(); });
 
   // ================= главная =================
+  // Лента объявлений в box: первая страница, дальше — кнопка «Показать ещё» в .more после box
+  // или (auto) сама при прокрутке. Возвращает функцию остановки для cleanup.
+  function listingFeed(box, params, { limit = 24, empty, onFirst, auto = false }) {
+    const more = box.nextElementSibling;
+    let offset = 0; let total = Infinity; let busy = false; let io = null;
+    const load = async () => {
+      if (busy || offset >= total) return;
+      busy = true;
+      try {
+        const data = await api('GET', `/api/listings?${new URLSearchParams({ ...params, limit, offset })}`);
+        if (!box.isConnected) return;
+        if (offset === 0) {
+          if (onFirst) onFirst(data);
+          box.innerHTML = String(data.items.length ? grid(data.items) : empty);
+        } else {
+          $('.grid', box).insertAdjacentHTML('beforeend', data.items.map((i) => String(card(i))).join(''));
+        }
+        offset += data.items.length;
+        total = data.items.length ? data.total : offset;
+        more.classList.toggle('hidden', offset >= total);
+        if (io && offset < total) { io.unobserve(more); io.observe(more); } // экран ещё не заполнен — грузим дальше
+      } catch (e) { if (!offset) throw e; toast(e.message, true); } finally { busy = false; } // первая страница — ошибку покажет роутер
+    };
+    if (auto && 'IntersectionObserver' in window) {
+      more.innerHTML = '<div class="loader"></div>';
+      io = new IntersectionObserver((es) => { if (es[0].isIntersecting) load(); }, { rootMargin: '800px 0px' });
+      io.observe(more);
+    } else {
+      more.innerHTML = '<button class="btn btn-soft btn-lg" type="button">Показать ещё</button>';
+      more.firstChild.onclick = load;
+    }
+    return { first: load(), stop: () => io && io.disconnect() };
+  }
+
+  // ================= главная =================
+  // Строка поиска и город, категории, бесконечная лента (на телефоне по 3 в ряд, на компьютере по 5).
   async function viewHome() {
     setTitle('');
-    const hints = ['iPhone до 60 000', 'Детская коляска с доставкой', 'Аренда квартиры', 'Ремонт под ключ', 'Велосипед'];
     app.innerHTML = String(html`
-      <section class="hero">
-        <span class="pill-note"><span class="dot"></span>Новое: поиск обычными словами</span>
-        <h1>Найдётся всё.<br><span>По всей России.</span></h1>
-        <p>Бесплатно для частных лиц, честная выдача и понятная модерация.</p>
-        <form class="search search-xl" role="search" id="hero-search">
-          <button type="button" class="city-btn" id="city-btn">${ic('pin', 18)}<span>${S.city || 'Вся Россия'}</span></button>
-          <label class="sr" for="q">Что вы ищете</label>
-          <input id="q" name="q" type="search" placeholder="Например: детская коляска до 15 000 с доставкой" autocomplete="off">
-          <button class="btn btn-accent" type="submit">${ic('search', 18, 2)}Найти</button>
-        </form>
-        <div class="hint-chips">${hints.map((h) => html`<a class="chip" href="/search?q=${encodeURIComponent(h)}">${h}</a>`)}</div>
-      </section>
-
-      <section class="wrap section">
+      <section class="wrap home-top">
+        <h1 class="sr">Торгана — объявления по всей России</h1>
+        <div class="home-find">
+          <form class="search home-search" role="search" data-search>
+            ${ic('search', 20)}
+            <label class="sr" for="q">Что вы ищете</label>
+            <input id="q" name="q" type="search" placeholder="Что вы ищете?" autocomplete="off" enterkeyhint="search">
+            <button class="btn btn-accent" type="submit">Найти</button>
+          </form>
+          <button type="button" class="city-btn" id="city-btn">${ic('pin', 18)}<span>${S.city || 'Вся Россия'}</span>${ic('down', 16, 2)}</button>
+        </div>
         <div class="cats">${S.config.categories.map((c) => html`<a class="cat" href="/search?category=${c.id}"><span class="cat-ic">${catIc(c.id)}</span>${c.name}</a>`)}</div>
       </section>
 
-      <section class="wrap section">
+      <section class="wrap home-feed">
         <div class="section-head"><h2>Свежие объявления${S.city ? html` · ${S.city}` : ''}</h2><a href="/search${S.city ? `?city=${encodeURIComponent(S.city)}` : ''}">Смотреть все</a></div>
-        <div id="feed">${skeletonGrid(8)}</div>
-        <div class="more hidden" id="more"><button class="btn btn-soft btn-lg" type="button">Показать ещё</button></div>
-      </section>
-
-      <section class="wrap section">
-        <div class="promo">
-          <div style="flex:1 1 460px;min-width:0">
-            ${S.config.ai
-    ? html`<h2>Сфотографируйте вещь —<br><span>объявление готово.</span></h2><p>ИИ напишет описание, выберет категорию и подскажет цену по похожим объявлениям. Бесплатно для частных лиц.</p>`
-    : html`<h2>Объявление за минуту —<br><span>бесплатно.</span></h2><p>Добавьте фото, название и цену. Подскажем, за сколько продаются похожие вещи.</p>`}
-          </div>
-          <a href="/new" class="btn btn-dark btn-lg">${ic('camera', 20)}${S.config.ai ? 'Разместить по фото' : 'Разместить объявление'}</a>
-        </div>
-      </section>
-
-      <section class="wrap section">
-        <div class="trust">
-          <div><h3>Бесплатно для частных лиц</h3><p>Без лимитов и платных «поднятий».</p></div>
-          <div><h3>Модерация с объяснением</h3><p>У каждого решения есть причина. Не согласны — подайте апелляцию, её рассмотрит человек.</p></div>
-          <div><h3>Сделка под защитой ${S.config.payments ? '' : html`<span class="tag">Скоро</span>`}</h3><p>Деньги придут продавцу, только когда покупатель получит и проверит товар.</p></div>
-        </div>
+        <div id="feed" class="feed">${skeletonGrid(15)}</div>
+        <div class="more hidden"></div>
       </section>`);
-
-    const form = $('#hero-search');
-    form.onsubmit = (e) => { e.preventDefault(); goSearch({ q: form.q.value.trim() }); };
     $('#city-btn').onclick = () => cityModal(() => render());
-
-    let offset = 0;
-    const load = async () => {
-      const sp = new URLSearchParams({ limit: 16, offset });
-      if (S.city) sp.set('city', S.city);
-      const { items, total } = await api('GET', `/api/listings?${sp}`);
-      const feed = $('#feed');
-      if (!feed) return;
-      if (offset === 0) {
-        feed.innerHTML = items.length ? String(grid(items)) : String(html`<div class="empty"><h3>${S.city ? `В городе ${S.city} пока нет объявлений` : 'Здесь появятся первые объявления'}</h3><p>Разместите своё — это бесплатно и займёт пару минут.</p><a class="btn btn-dark" href="/new">Разместить объявление</a></div>`);
-      } else {
-        $('.grid', feed).insertAdjacentHTML('beforeend', items.map((i) => String(card(i))).join(''));
-      }
-      offset += items.length;
-      $('#more').classList.toggle('hidden', offset >= total);
-    };
-    $('#more button').onclick = () => load().catch((e) => toast(e.message, true));
-    await load();
+    const feed = listingFeed($('#feed'), S.city ? { city: S.city } : {}, {
+      limit: 30,
+      auto: true,
+      empty: html`<div class="empty"><h3>${S.city ? `В городе ${S.city} пока нет объявлений` : 'Здесь появятся первые объявления'}</h3><p>Разместите своё — это бесплатно и займёт пару минут.</p><a class="btn btn-dark" href="/new">Разместить объявление</a></div>`
+    });
+    cleanup = feed.stop;
+    await feed.first;
   }
 
   // ================= поиск =================
@@ -545,7 +550,7 @@
         </div>
         <div class="understood" id="understood"></div>
         <div id="results">${skeletonGrid(9)}</div>
-        <div class="more hidden" id="more"><button class="btn btn-soft btn-lg" type="button">Показать ещё</button></div>
+        <div class="more hidden"></div>
       </section>
     </div>`);
 
@@ -568,13 +573,9 @@
     };
     $('#sort').onchange = (e) => { const p = { ...params, sort: e.target.value }; go(`/search?${new URLSearchParams(Object.entries(p).filter(([, v]) => v))}`); };
 
-    let offset = 0;
-    const load = async () => {
-      const sp = new URLSearchParams({ ...params, limit: 24, offset });
-      const data = await api('GET', `/api/listings?${sp}`);
-      const box = $('#results');
-      if (!box) return;
-      if (offset === 0) {
+    await listingFeed($('#results'), params, {
+      empty: html`<div class="empty"><h3>Ничего не нашлось</h3><p>Попробуйте другие слова, уберите часть фильтров или поищите по всей России.</p><a href="/search" class="btn btn-dark">Все объявления</a></div>`,
+      onFirst: (data) => {
         $('#count').textContent = `${NF.format(data.total)} ${plural(data.total, 'объявление', 'объявления', 'объявлений')}`;
         const u = data.understood || {};
         const chips = [];
@@ -585,15 +586,8 @@
           if (u.delivery && !params.delivery) chips.push(html`<span class="tag">с доставкой</span>`);
         }
         $('#understood').innerHTML = chips.length ? String(html`<span class="muted" style="font-size:14px;align-self:center">Поняли запрос:</span>${chips}`) : '';
-        box.innerHTML = data.items.length ? String(grid(data.items)) : String(html`<div class="empty"><h3>Ничего не нашлось</h3><p>Попробуйте другие слова, уберите часть фильтров или поищите по всей России.</p><a href="/search" class="btn btn-dark">Все объявления</a></div>`);
-      } else {
-        $('.grid', box).insertAdjacentHTML('beforeend', data.items.map((i) => String(card(i))).join(''));
       }
-      offset += data.items.length;
-      $('#more').classList.toggle('hidden', offset >= data.total);
-    };
-    $('#more button').onclick = () => load().catch((e) => toast(e.message, true));
-    await load();
+    }).first;
   }
 
   // ================= объявление =================
