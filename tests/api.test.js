@@ -59,6 +59,19 @@ describe('конфигурация и главная', () => {
     }
   });
 
+  test('стили и скрипт подключены с версией — после обновления браузер берёт свежие', async () => {
+    const page = String((await guest.get('/')).data);
+    const js = page.match(/\/assets\/app\.js\?v=([a-f0-9]{10})"/);
+    const css = page.match(/\/assets\/app\.css\?v=([a-f0-9]{10})"/);
+    assert.ok(js && css, 'в index.html нет версий файлов');
+    assert.equal(js[1], css[1]);
+    const v = await fetch(`${srv.base}/assets/app.js?v=${js[1]}`);
+    assert.match(v.headers.get('cache-control'), /immutable/);
+    const plain = await fetch(`${srv.base}/assets/app.css`);
+    assert.equal(plain.headers.get('cache-control'), 'no-cache');
+    assert.match(String((await guest.get('/index.html')).data), /\?v=/);
+  });
+
   test('неизвестный API — 404', async () => {
     assert.equal((await guest.get('/api/nope')).status, 404);
   });
