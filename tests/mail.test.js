@@ -4,7 +4,7 @@
 // уведомления о сообщениях и решениях модерации, отписка, ошибки почтового сервиса.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, startSmtp, client, registerUser } = require('./helpers');
+const { startServer, startSmtp, client, registerUser, publish } = require('./helpers');
 
 let srv; let smtp; let admin; let anna; let boris;
 const link = (mail, path) => {
@@ -106,8 +106,8 @@ test('восстановление пароля', async () => {
 });
 
 test('новое сообщение → одно письмо получателю, не чаще раза в 15 минут', async () => {
-  const l = await anna.post('/api/listings', { title: 'Детская коляска Cybex', category: 'personal', city: 'Казань', price: '12000' });
-  const c = await boris.post('/api/conversations', { listingId: l.data.id });
+  const lid = await publish(anna, admin, { title: 'Детская коляска Cybex', category: 'personal', city: 'Казань', price: '12000' });
+  const c = await boris.post('/api/conversations', { listingId: lid });
   const n = smtp.inbox.length;
   await boris.post(`/api/conversations/${c.data.id}/messages`, { body: 'Здравствуйте! Ещё продаётся?' });
   const m = await smtp.waitFor((x) => smtp.inbox.indexOf(x) >= n && x.to === 'anna@test.local' && /Новое сообщение/.test(x.subject));
@@ -122,7 +122,7 @@ test('новое сообщение → одно письмо получател
   assert.equal(smtp.inbox.slice(n).filter((x) => x.to === 'anna@test.local' && /Новое сообщение/.test(x.subject)).length, 1);
 
   // Прочитанное до отправки письма — не дублируем на почту.
-  const c2 = await anna.post('/api/conversations', { listingId: (await boris.post('/api/listings', { title: 'Велосипед', category: 'hobby', city: 'Казань' })).data.id });
+  const c2 = await anna.post('/api/conversations', { listingId: await publish(boris, admin, { title: 'Велосипед', category: 'hobby', city: 'Казань' }) });
   await anna.post(`/api/conversations/${c2.data.id}/messages`, { body: 'Добрый день' });
   await boris.get(`/api/conversations/${c2.data.id}`);
   await new Promise((r) => setTimeout(r, 900));
@@ -130,8 +130,11 @@ test('новое сообщение → одно письмо получател
 });
 
 test('решения модерации приходят письмом; отписка в один клик', async () => {
-  const id = (await anna.post('/api/listings', { title: 'Ремонт квартир', category: 'services', city: 'Казань' })).data.id;
   let n = smtp.inbox.length;
+  const id = (await anna.post('/api/listings', { title: 'Ремонт квартир', category: 'services', city: 'Казань' })).data.id;
+  await admin.post(`/api/admin/listings/${id}/restore`);
+  await smtp.waitFor((x) => smtp.inbox.indexOf(x) >= n && /Объявление опубликовано: Ремонт квартир/.test(x.subject));
+  n = smtp.inbox.length;
   await admin.post(`/api/admin/listings/${id}/reject`, { reason: 'Контакты в тексте объявления' });
   const rej = await smtp.waitFor((x) => smtp.inbox.indexOf(x) >= n && /Объявление отклонено: Ремонт квартир/.test(x.subject));
   assert.match(rej.html, /Контакты в тексте объявления/);

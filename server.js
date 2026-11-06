@@ -15,6 +15,8 @@ const { CATEGORIES, CATEGORY_IDS, CITIES, PRICE_UNITS, CONDITIONS } = require('.
 const { norm, parseQuery } = require('./lib/search');
 const { suggestFromPhoto } = require('./lib/ai');
 const { createMailer } = require('./lib/mailer');
+const { checkProhibited } = require('./lib/prohibited');
+const legal = require('./lib/legal');
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 3000);
@@ -27,7 +29,7 @@ const SECURE_COOKIES = PUBLIC_URL.startsWith('https://');
 const ADMIN_EMAILS = (process.env.ADMIN_EMAIL || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 const AI_KEY = process.env.ANTHROPIC_API_KEY || '';
 const AI_MODEL = process.env.AI_MODEL || 'claude-sonnet-5-5';
-const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || '';
+const SUPPORT_EMAIL = legal.operator().email;
 const TRUST_PROXY = process.env.TRUST_PROXY === '1';
 const PAYMENTS_ENABLED = false; // Безопасная сделка включится после подключения платёжной системы.
 
@@ -136,7 +138,9 @@ function validateListing(body) {
   if (!CATEGORY_IDS.has(category)) throw new HttpError(400, 'Выберите категорию');
   if (city.length < 2) throw new HttpError(400, 'Укажите город');
   const photos = Array.isArray(body.photos) ? body.photos.slice(0, 10).map(String) : [];
-  return { title, description, category, city, priceUnit, condition, delivery, price, photos };
+  // Похоже на запрещённое — публикуем после проверки модератором.
+  const flags = checkProhibited(title, description).map((f) => f.title).join(', ');
+  return { title, description, category, city, priceUnit, condition, delivery, price, photos, flags };
 }
 
 function attachPhotos(userId, listingId, files) {
@@ -174,6 +178,11 @@ function route(method, pattern, handler) {
   routes.push({ method, re, keys, handler });
 }
 
+// Модерация (очередь, проверка «от и до», жалобы, история) и чат поддержки — в отдельных модулях.
+const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, str, now, norm };
+const { logEvent } = require('./lib/moderation')({ route, db, mailer, h: helpers });
+const supportChat = require('./lib/support')({ route, db, mailer, h: helpers });
+
 route('GET', '/api/config', () => ({
   categories: CATEGORIES,
   cities: CITIES,
@@ -181,11 +190,12 @@ route('GET', '/api/config', () => ({
   ai: !!AI_KEY,
   payments: PAYMENTS_ENABLED,
   mail: mailer.ready(),
-  supportEmail: SUPPORT_EMAIL
+  supportEmail: SUPPORT_EMAIL,
+  operator: (({ name, inn, ogrnip }) => ({ name, inn, ogrnip }))(legal.operator())
 }));
 
 route('GET', '/api/me', (ctx) => {
-  const unread = ctx.user ? unreadCount(ctx.user.id) : 0;
+  const unread = ctx.user ? unreadCount(ctx.user.id) + supportChat.unreadFor(ctx.user.id) : 0;
   return { user: publicUser(ctx.user), unread };
 });
 
@@ -199,10 +209,11 @@ route('POST', '/api/auth/register', async (ctx) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Проверьте email');
   if (password.length < 8) throw new HttpError(400, 'Пароль — минимум 8 символов');
   if (password.length > 200) throw new HttpError(400, 'Слишком длинный пароль');
+  if (body.consent !== true) throw new HttpError(400, 'Нужно согласие на обработку персональных данных');
   if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) throw new HttpError(409, 'Этот email уже зарегистрирован');
   const isAdmin = ADMIN_EMAILS.includes(email) ? 1 : 0;
-  const info = db.prepare('INSERT INTO users (email, name, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(email, name, auth.hashPassword(password), isAdmin, now());
+  const info = db.prepare('INSERT INTO users (email, name, password_hash, is_admin, created_at, consent_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(email, name, auth.hashPassword(password), isAdmin, now(), now());
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
   const s = auth.createSession(db, user.id);
   ctx.setCookie(auth.sessionCookie(s.token, s.expires, SECURE_COOKIES));
@@ -373,7 +384,7 @@ route('GET', '/api/listings/:id', (ctx) => {
       city: l.city, condition: l.condition, delivery: !!l.delivery, status: l.status, views: l.views,
       createdAt: l.created_at, updatedAt: l.updated_at, photos, isFav, isOwner: !!isOwner,
       rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : '',
-      appealReply: (isOwner || isAdmin) ? l.appeal_reply : ''
+      appealReply: (isOwner || isAdmin) ? l.appeal_reply : '', flags: (isOwner || isAdmin) ? l.flags : ''
     },
     seller: { id: seller.id, name: seller.name, city: seller.city, createdAt: seller.created_at, activeCount: sellerActive },
     similar,
@@ -386,13 +397,16 @@ route('POST', '/api/listings', async (ctx) => {
   rateLimit(`create:${u.id}`, 30, 60 * 60 * 1000);
   const v = validateListing(await readJson(ctx.req));
   const t = now();
-  const info = db.prepare(`INSERT INTO listings (user_id, title, description, category, price, price_unit, city, condition, delivery, search_text, city_lc, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(u.id, v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description), norm(v.city), t, t);
+  // Все объявления публикуются после проверки модератором.
+  const status = 'pending';
+  const info = db.prepare(`INSERT INTO listings (user_id, title, description, category, price, price_unit, city, condition, delivery, search_text, city_lc, status, flags, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(u.id, v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description), norm(v.city), status, v.flags, t, t);
   const id = Number(info.lastInsertRowid);
   attachPhotos(u.id, id, v.photos);
   if (!u.city) db.prepare('UPDATE users SET city = ? WHERE id = ?').run(v.city, u.id);
-  return { id };
+  logEvent(id, u.id, 'created', { flags: v.flags });
+  return { id, status };
 });
 
 route('PATCH', '/api/listings/:id', async (ctx) => {
@@ -404,17 +418,27 @@ route('PATCH', '/api/listings/:id', async (ctx) => {
   if (body.status !== undefined && Object.keys(body).length === 1) {
     if (!['active', 'sold', 'archived'].includes(body.status)) throw new HttpError(400, 'Неверный статус');
     if (l.status === 'rejected') throw new HttpError(400, 'Объявление отклонено модерацией — исправьте его или подайте апелляцию');
+    if (l.status === 'pending') throw new HttpError(400, 'Объявление на проверке у модератора');
     db.prepare('UPDATE listings SET status = ?, updated_at = ? WHERE id = ?').run(body.status, now(), id);
+    logEvent(id, u.id, 'status', { status: body.status });
     return { ok: true };
   }
   const v = validateListing(body);
-  // Отредактированное отклонённое объявление снова публикуется, причина отклонения сохраняется для истории.
-  const status = l.status === 'rejected' ? 'active' : l.status;
+  // Любая правка — снова на проверку модератору. В историю пишем, что именно изменилось.
+  const status = 'pending';
+  const before = { title: l.title, description: l.description, category: l.category, price: l.price, priceUnit: l.price_unit, city: l.city, condition: l.condition, delivery: !!l.delivery };
+  const after = { title: v.title, description: v.description, category: v.category, price: v.price, priceUnit: v.priceUnit, city: v.city, condition: v.condition, delivery: !!v.delivery };
+  const changes = Object.fromEntries(Object.keys(before).filter((k) => before[k] !== after[k]).map((k) => [k, [before[k], after[k]]]));
+  const oldPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(id).map((r) => r.file);
   db.prepare(`UPDATE listings SET title = ?, description = ?, category = ?, price = ?, price_unit = ?, city = ?, condition = ?, delivery = ?,
-    search_text = ?, city_lc = ?, status = ?, updated_at = ? WHERE id = ?`)
-    .run(v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description), norm(v.city), status, now(), id);
+    search_text = ?, city_lc = ?, status = ?, flags = ?, updated_at = ? WHERE id = ?`)
+    .run(v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description), norm(v.city), status,
+      v.flags || (l.status === 'pending' ? l.flags : ''), now(), id);
   attachPhotos(u.id, id, v.photos);
-  return { ok: true };
+  const newPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(id).map((r) => r.file);
+  if (oldPhotos.join() !== newPhotos.join()) changes.photos = [oldPhotos.length, newPhotos.length];
+  logEvent(id, u.id, 'edited', { changes, flags: v.flags, from: l.status });
+  return { ok: true, status };
 });
 
 route('DELETE', '/api/listings/:id', (ctx) => {
@@ -437,6 +461,7 @@ route('POST', '/api/listings/:id/appeal', async (ctx) => {
   if (text.length < 10) throw new HttpError(400, 'Опишите, почему решение стоит пересмотреть');
   if (l.appeal_reply) throw new HttpError(400, 'Апелляция уже рассмотрена. Исправьте объявление — после сохранения оно снова появится в поиске.');
   db.prepare('UPDATE listings SET appeal_text = ?, appeal_at = ? WHERE id = ?').run(text, now(), id);
+  logEvent(id, u.id, 'appeal', { text });
   return { ok: true };
 });
 
@@ -449,7 +474,7 @@ route('GET', '/api/my/listings', (ctx) => {
   return {
     items: rows.map((r) => ({
       ...cardFromRow(r), views: r.views, favCount: r.fav_count, rejectReason: r.reject_reason,
-      appealText: r.appeal_text, appealAt: r.appeal_at, appealReply: r.appeal_reply
+      appealText: r.appeal_text, appealAt: r.appeal_at, appealReply: r.appeal_reply, flags: r.flags
     }))
   };
 });
@@ -607,87 +632,11 @@ route('GET', '/api/users/:id', (ctx) => {
   return { user: { id: u.id, name: u.name, city: u.city, createdAt: u.created_at, soldCount: sold }, items };
 });
 
-// ---------- модерация ----------
-
-route('GET', '/api/admin/stats', (ctx) => {
-  requireAdmin(ctx);
-  const day = now() - 24 * 3600 * 1000;
-  const n = (sql, ...p) => db.prepare(sql).get(...p).n;
-  return {
-    users: n('SELECT COUNT(*) AS n FROM users'),
-    usersToday: n('SELECT COUNT(*) AS n FROM users WHERE created_at > ?', day),
-    active: n('SELECT COUNT(*) AS n FROM listings WHERE status = \'active\''),
-    listingsToday: n('SELECT COUNT(*) AS n FROM listings WHERE created_at > ?', day),
-    rejected: n('SELECT COUNT(*) AS n FROM listings WHERE status = \'rejected\''),
-    appeals: n('SELECT COUNT(*) AS n FROM listings WHERE status = \'rejected\' AND appeal_at IS NOT NULL'),
-    messagesToday: n('SELECT COUNT(*) AS n FROM messages WHERE created_at > ?', day)
-  };
-});
-
-route('GET', '/api/admin/listings', (ctx) => {
-  requireAdmin(ctx);
-  const status = ctx.query.get('status') || 'active';
-  const q = norm(ctx.query.get('q') || '');
-  const where = [];
-  const params = [];
-  if (status === 'appeals') where.push('l.status = \'rejected\' AND l.appeal_at IS NOT NULL');
-  else if (['active', 'sold', 'archived', 'rejected'].includes(status)) { where.push('l.status = ?'); params.push(status); }
-  if (q) { where.push('(l.search_text LIKE ? OR lower(u.email) LIKE ?)'); params.push(`%${q}%`, `%${q}%`); }
-  const rows = db.prepare(`
-    SELECT l.*, u.name AS user_name, u.email AS user_email, u.is_blocked,
-      (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo
-    FROM listings l JOIN users u ON u.id = l.user_id
-    ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-    ORDER BY ${status === 'appeals' ? 'l.appeal_at DESC' : 'l.created_at DESC'} LIMIT 100`).all(...params);
-  return {
-    items: rows.map((r) => ({
-      ...cardFromRow(r), description: r.description, rejectReason: r.reject_reason, appealText: r.appeal_text, appealAt: r.appeal_at, appealReply: r.appeal_reply,
-      user: { id: r.user_id, name: r.user_name, email: r.user_email, blocked: !!r.is_blocked }
-    }))
-  };
-});
-
-route('POST', '/api/admin/listings/:id/reject', async (ctx) => {
-  requireAdmin(ctx);
-  const id = parseInt(ctx.params.id, 10);
-  const reason = str((await readJson(ctx.req)).reason, 500);
-  if (reason.length < 5) throw new HttpError(400, 'Укажите понятную причину — её увидит автор');
-  if (!loadListing(id)) throw new HttpError(404, 'Не найдено');
-  db.prepare('UPDATE listings SET status = \'rejected\', reject_reason = ?, appeal_text = \'\', appeal_at = NULL, appeal_reply = \'\', updated_at = ? WHERE id = ?').run(reason, now(), id);
-  mailer.notifyModeration(id, 'rejected', reason);
-  return { ok: true };
-});
-
-route('POST', '/api/admin/listings/:id/appeal-deny', async (ctx) => {
-  requireAdmin(ctx);
-  const id = parseInt(ctx.params.id, 10);
-  const reason = str((await readJson(ctx.req)).reason, 500);
-  if (reason.length < 5) throw new HttpError(400, 'Объясните решение — ответ увидит автор');
-  const l = loadListing(id);
-  if (!l || l.status !== 'rejected' || !l.appeal_at) throw new HttpError(404, 'Апелляция не найдена');
-  db.prepare('UPDATE listings SET appeal_at = NULL, appeal_reply = ?, updated_at = ? WHERE id = ?').run(reason, now(), id);
-  mailer.notifyModeration(id, 'appeal-denied', reason);
-  return { ok: true };
-});
-
-route('POST', '/api/admin/listings/:id/restore', (ctx) => {
-  requireAdmin(ctx);
-  const id = parseInt(ctx.params.id, 10);
-  const l = loadListing(id);
-  if (!l) throw new HttpError(404, 'Не найдено');
-  db.prepare('UPDATE listings SET status = \'active\', appeal_at = NULL, appeal_reply = \'\', updated_at = ? WHERE id = ?').run(now(), id);
-  if (l.status === 'rejected') mailer.notifyModeration(id, l.appeal_at ? 'appeal-approved' : 'restored');
-  return { ok: true };
-});
-
-route('POST', '/api/admin/users/:id/block', async (ctx) => {
-  const admin = requireAdmin(ctx);
-  const id = parseInt(ctx.params.id, 10);
-  if (id === admin.id) throw new HttpError(400, 'Нельзя заблокировать себя');
-  const blocked = (await readJson(ctx.req)).blocked ? 1 : 0;
-  db.prepare('UPDATE users SET is_blocked = ? WHERE id = ?').run(blocked, id);
-  if (blocked) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
-  return { ok: true };
+// Юридические документы (реквизиты и раздел «Запрещено» подставляются на сервере).
+route('GET', '/api/pages/:slug', (ctx) => {
+  const d = legal.docs({ ai: !!AI_KEY })[ctx.params.slug];
+  if (!d) throw new HttpError(404, 'Страница не найдена');
+  return { title: d[0], html: d[1] };
 });
 
 // Раздел «Почта» в модерации: подключение, проверка, журнал отправки.
