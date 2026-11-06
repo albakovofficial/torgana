@@ -1494,3 +1494,19 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
 }
 .ed-req { font-size: 12px; color: var(--faint); }
 .ed-err { padding: 10px 14px; border-radius: 14px; background: var(--danger-soft); }
+
+/* ---------- 1.14: код подтверждения почты ---------- */
+.code-form { display: flex; flex-direction: column; gap: 18px; }
+.code-to { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 16px; background: var(--surface); font-size: 14.5px; color: var(--text-2); overflow-wrap: anywhere; }
+.code-to svg { flex: none; color: var(--accent); }
+.code-to b { color: var(--text); }
+.code-boxes { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.code-box { width: 100%; height: 64px; padding: 0; border: 1.5px solid var(--line); border-radius: 16px; background: #fff; text-align: center; font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; outline: none; transition: border-color .15s, box-shadow .15s; caret-color: var(--accent); }
+.code-box:focus { border-color: var(--text); box-shadow: 0 0 0 4px rgba(16, 16, 16, .06); }
+.code-box:disabled { background: var(--surface); }
+#code-cells.bad .code-box { border-color: var(--danger); animation: code-shake .3s; }
+@keyframes code-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@media (prefers-reduced-motion: reduce) { #code-cells.bad .code-box { animation: none; } }
+.code-err { padding: 10px 14px; border-radius: 14px; background: var(--danger-soft); color: var(--danger); font-size: 14px; font-weight: 600; }
+.code-again { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13.5px; }
+@media (max-width: 420px) { .code-boxes { gap: 6px; } .code-box { height: 56px; font-size: 24px; border-radius: 14px; } }

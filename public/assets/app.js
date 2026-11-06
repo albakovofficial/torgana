@@ -401,6 +401,7 @@
     [/^\/forgot$/, viewForgot],
     [/^\/reset$/, viewReset],
     [/^\/(verify|unsubscribe)$/, viewMailLink],
+    [/^\/confirm$/, viewConfirm],
     [/^\/favorites$/, viewFavorites],
     [/^\/messages(?:\/(\d+|support))?$/, viewMessages],
     [/^\/profile(?:\/(listings|settings|reviews|searches|stats\/\d+|business(?:\/(?:shop|stats|feed))?))?$/, viewProfile],
@@ -1218,6 +1219,110 @@
     if (l) fetchHint();
   }
 
+  // ================= код подтверждения почты =================
+  // Шесть клеток: цифры, вставка из буфера, автоподстановка кода на телефоне (one-time-code), стирание — назад.
+  function codeBoxes(box, onDone) {
+    box.innerHTML = String(html`<div class="code-boxes" role="group" aria-label="Код из письма">${[0, 1, 2, 3, 4, 5].map((i) => html`<input class="code-box" inputmode="numeric" pattern="[0-9]*" maxlength="${i ? 1 : 6}" autocomplete="${i ? 'off' : 'one-time-code'}" aria-label="Цифра ${i + 1} из 6">`)}</div>`);
+    const ins = $$('.code-box', box);
+    const value = () => ins.map((x) => x.value).join('');
+    const fill = (digits, from) => {
+      digits.split('').forEach((d, k) => { if (ins[from + k]) ins[from + k].value = d; });
+      box.classList.remove('bad');
+      ins[Math.min(from + digits.length, 5)].focus();
+      if (/^\d{6}$/.test(value())) onDone(value());
+    };
+    ins.forEach((inp, i) => {
+      inp.onfocus = () => inp.select();
+      inp.oninput = () => { const d = inp.value.replace(/\D/g, ''); inp.value = ''; if (d) fill(d.slice(0, 6 - i), i); };
+      inp.onkeydown = (e) => {
+        if (e.key === 'Backspace' && !inp.value && i > 0) { e.preventDefault(); ins[i - 1].value = ''; ins[i - 1].focus(); }
+        if (e.key === 'ArrowLeft' && i > 0) ins[i - 1].focus();
+        if (e.key === 'ArrowRight' && i < 5) ins[i + 1].focus();
+      };
+      inp.onpaste = (e) => { const d = ((e.clipboardData && e.clipboardData.getData('text')) || '').replace(/\D/g, '').slice(0, 6); if (d) { e.preventDefault(); ins.forEach((x) => { x.value = ''; }); fill(d, 0); } };
+    });
+    return {
+      focus: () => ins[0].focus(),
+      fail: () => { box.classList.add('bad'); ins.forEach((x) => { x.value = ''; }); ins[0].focus(); },
+      lock: (on) => ins.forEach((x) => { x.disabled = on; })
+    };
+  }
+
+  // Код и «Отправить ещё раз» с обратным отсчётом. send — повторная отправка; check(code) — проверка (бросает ошибку).
+  function codeForm(root, { email, wait = 60, send, check }) {
+    root.innerHTML = String(html`<div class="code-form">
+      <div class="code-to">${ic('mail', 18, 2)}<span>Код отправили на <b>${email}</b></span></div>
+      <div id="code-cells"></div>
+      <div class="code-err hidden" role="alert"></div>
+      <div class="code-again"><span class="muted">Не пришло? Проверьте «Спам».</span><button type="button" class="btn btn-soft btn-sm" data-again disabled></button></div>
+    </div>`);
+    const err = $('.code-err', root);
+    const again = $('[data-again]', root);
+    let left = wait; let timer = null;
+    const tick = () => { again.disabled = left > 0; again.textContent = left > 0 ? `Отправить ещё раз · ${left} с` : 'Отправить ещё раз'; if (left-- > 0) timer = setTimeout(tick, 1000); };
+    const boxes = codeBoxes($('#code-cells', root), async (code) => {
+      err.classList.add('hidden'); boxes.lock(true);
+      try { await check(code); } catch (e) { boxes.lock(false); boxes.fail(); err.textContent = e.message; err.classList.remove('hidden'); }
+    });
+    again.onclick = async () => {
+      again.disabled = true;
+      try { const r = await send(); left = r.wait || 60; toast('Отправили новый код'); err.classList.add('hidden'); boxes.focus(); } catch (e) { toast(e.message, true); left = 0; }
+      clearTimeout(timer); tick();
+    };
+    tick();
+    setTimeout(() => boxes.focus(), 50);
+    return () => clearTimeout(timer);
+  }
+
+  // /confirm — после регистрации или входа с неподтверждённой почтой. Адрес — из sessionStorage (не в ссылке).
+  const CONFIRM_KEY = 'tg_confirm';
+  const confirmStart = (email, next) => { try { sessionStorage.setItem(CONFIRM_KEY, JSON.stringify({ email, next: next || '' })); } catch { /* приватный режим */ } go('/confirm', true); };
+  async function viewConfirm() {
+    if (S.user && S.user.emailVerified) { go('/', true); return; }
+    setTitle('Подтверждение почты');
+    let st = null;
+    try { st = JSON.parse(sessionStorage.getItem(CONFIRM_KEY) || 'null'); } catch { /* нет хранилища */ }
+    const finish = async (r) => {
+      try { sessionStorage.removeItem(CONFIRM_KEY); } catch { /* нет хранилища */ }
+      S.user = r.user; await refreshMe(); toast('Почта подтверждена — добро пожаловать!');
+      go(st && st.next && st.next.startsWith('/') && !st.next.startsWith('//') ? st.next : '/', true);
+    };
+    const showCode = (email, wait) => {
+      authPage('Введите код из письма', 'Шесть цифр — так мы убедимся, что почта ваша. Код действует 15 минут.', html`<div id="cf"></div>`,
+        html`<p class="alt">Ошиблись адресом? <a href="/register">Зарегистрироваться заново</a></p>`);
+      cleanup = codeForm($('#cf'), {
+        email, wait,
+        send: () => api('POST', '/api/auth/code/resend', { email }),
+        check: async (code) => finish(await api('POST', '/api/auth/code', { email, code }))
+      });
+    };
+    if (st && st.email) { showCode(st.email, 60); return; }
+    // Открыли страницу заново без адреса — спросим его и пришлём код.
+    authPage('Подтверждение почты', 'Укажите почту, на которую регистрировались, — пришлём код.', html`<form id="f" novalidate>
+      <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" class="input" autocomplete="email" required></div>
+      <button class="btn btn-dark btn-lg btn-block" type="submit">Прислать код</button></form>`);
+    $('#f').onsubmit = async (e) => {
+      e.preventDefault();
+      const email = e.target.email.value.trim().toLowerCase();
+      try { const r = await api('POST', '/api/auth/code/resend', { email }); st = { email, next: '' }; try { sessionStorage.setItem(CONFIRM_KEY, JSON.stringify(st)); } catch { /* нет */ } showCode(email, r.wait); } catch (ex) { toast(ex.message, true); }
+    };
+  }
+
+  // Из профиля: прислать код и ввести его в окне.
+  async function verifyModal(done) {
+    let r;
+    try { r = await api('POST', '/api/me/verify'); } catch (e) { toast(e.message, true); return; }
+    if (r.already) { await refreshMe(); done(); return; }
+    openModal(String(html`<h2>Подтвердите почту</h2><div id="vm"></div><div class="modal-actions"><button class="btn btn-soft" data-x>Позже</button></div>`), (m, close) => {
+      $('[data-x]', m).onclick = close;
+      const stop = codeForm($('#vm', m), {
+        email: r.email, wait: r.wait,
+        send: () => api('POST', '/api/me/verify'),
+        check: async (code) => { await api('POST', '/api/auth/code', { email: r.email, code }); stop(); close(); await refreshMe(); toast('Почта подтверждена'); done(); }
+      });
+    });
+  }
+
   // ================= вход и регистрация =================
   async function viewLogin(_, q) {
     if (S.user) { go(q.get('next') || '/', true); return; }
@@ -1292,6 +1397,7 @@
       btn.disabled = true;
       try {
         const r = await api('POST', url, body);
+        if (r.needCode) { confirmStart(r.email, next); return; } // почта не подтверждена — сначала код из письма
         if (done) { done(r); return; }
         S.user = r.user;
         await refreshMe();
@@ -1883,7 +1989,7 @@
         const t = b.dataset.todo;
         if (t === 'avatar') pickAvatar(again);
         else if (t === 'city') go('/profile/settings#s-city');
-        else { b.disabled = true; try { await api('POST', '/api/me/verify'); toast(`Письмо отправлено на ${u.email}`); } catch (e) { toast(e.message, true); b.disabled = false; } }
+        else verifyModal(again);
       };
     });
     if (sec === 'stats') return renderStats(statId, days);
@@ -2176,7 +2282,7 @@
       b.disabled = false;
     };
     const va = $('#verify-again');
-    if (va) va.onclick = async () => { va.disabled = true; try { await api('POST', '/api/me/verify'); toast(`Письмо отправлено на ${u.email}`); } catch (e) { toast(e.message, true); va.disabled = false; } };
+    if (va) va.onclick = () => verifyModal(reload);
   }
 
   async function viewUser(id, q) {
@@ -3299,7 +3405,7 @@
   function renderMailAdmin(box, { config: c, stats: st }) {
     const SECURITY = [['ssl', 'SSL (обычно порт 465)'], ['starttls', 'STARTTLS (порт 587 или 2525)']];
     const STATUS = { pending: 'в очереди', sent: 'отправлено', failed: 'не доставлено' };
-    const KIND = { verify: 'Подтверждение email', reset: 'Восстановление пароля', message: 'Новое сообщение', moderation: 'Модерация', review: 'Отзывы', support: 'Ответ поддержки', account: 'Блокировка аккаунта', mod: 'Модератору о новом', billing: 'Оплата и тарифы', test: 'Проверка' };
+    const KIND = { verify: 'Подтверждение email', reset: 'Восстановление пароля', message: 'Новое сообщение', moderation: 'Модерация', review: 'Отзывы', support: 'Ответ поддержки', account: 'Блокировка аккаунта', mod: 'Модератору о новом', billing: 'Оплата и тарифы', code: 'Код подтверждения', test: 'Проверка' };
     const domain = (c.from || 'no-reply@torgana.ru').split('@')[1];
     box.innerHTML = String(html`
       <div class="stats">

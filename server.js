@@ -291,9 +291,10 @@ route('POST', '/api/auth/register', async (ctx) => {
   const info = db.prepare('INSERT INTO users (email, name, password_hash, is_admin, created_at, consent_at) VALUES (?, ?, ?, ?, ?, ?)')
     .run(email, name, auth.hashPassword(password), isAdmin, now(), now());
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
+  // Почта подключена — войти можно только после кода из письма (6 цифр). Без почты код не отправить — входим сразу.
+  if (mailer.ready()) { mailer.sendCode(user); return { needCode: true, email: user.email }; }
   const s = auth.createSession(db, user.id);
   ctx.setCookie(auth.sessionCookie(s.token, s.expires, SECURE_COOKIES));
-  mailer.sendAccountLetter(user, 'verify');
   return { user: publicUser(user) };
 });
 
@@ -308,6 +309,8 @@ route('POST', '/api/auth/login', async (ctx) => {
     db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
     user.is_admin = 1;
   }
+  // Почта не подтверждена — сначала код (новый, если прошлому больше минуты).
+  if (!user.email_verified && mailer.ready()) { mailer.sendCode(user); return { needCode: true, email: user.email }; }
   const s = auth.createSession(db, user.id);
   ctx.setCookie(auth.sessionCookie(s.token, s.expires, SECURE_COOKIES));
   return { user: publicUser(user) };
@@ -332,7 +335,7 @@ route('POST', '/api/auth/forgot', async (ctx) => {
   const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_blocked = 0').get(email);
   // Ответ одинаковый, есть такой аккаунт или нет: по форме нельзя узнать, кто зарегистрирован.
   if (user) {
-    try { rateLimit(`forgot-mail:${email}`, 3, 60 * 60 * 1000); mailer.sendAccountLetter(user, 'reset'); } catch { /* лимит: молча */ }
+    try { rateLimit(`forgot-mail:${email}`, 3, 60 * 60 * 1000); mailer.sendResetLetter(user); } catch { /* лимит: молча */ }
   }
   return { ok: true };
 });
@@ -369,9 +372,35 @@ route('POST', '/api/me/verify', (ctx) => {
   const u = requireUser(ctx);
   requireMail();
   if (u.email_verified) return { ok: true, already: true };
-  rateLimit(`verify-send:${u.id}`, 3, 60 * 60 * 1000);
-  mailer.sendAccountLetter(u, 'verify');
-  return { ok: true };
+  rateLimit(`verify-send:${u.id}`, 10, 60 * 60 * 1000);
+  return { ok: true, email: u.email, ...mailer.sendCode(u) };
+});
+
+// Код из письма: подтверждает почту и открывает вход (при регистрации, при входе и из профиля).
+const CODE_ERR = { bad: 'Неверный код — проверьте цифры', expired: 'Код устарел — отправьте новый', tries: 'Слишком много попыток — отправьте новый код', none: 'Отправьте код ещё раз' };
+route('POST', '/api/auth/code', async (ctx) => {
+  rateLimit(`code:${ctx.ip}`, 30, 10 * 60 * 1000);
+  const b = await readJson(ctx.req);
+  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(str(b.email, 120).toLowerCase());
+  if (!user) throw new HttpError(400, CODE_ERR.none);
+  if (user.is_blocked) throw new HttpError(403, 'Аккаунт заблокирован. Напишите в поддержку.');
+  if (!user.email_verified) {
+    const r = mailer.checkCode(user, String(b.code || '').replace(/\D/g, ''));
+    if (r !== 'ok') throw new HttpError(400, CODE_ERR[r]);
+    db.prepare('UPDATE users SET email_verified = 1 WHERE id = ?').run(user.id);
+  } else if (!(ctx.user && ctx.user.id === user.id)) throw new HttpError(400, 'Почта уже подтверждена — войдите с паролем');
+  const s = auth.createSession(db, user.id);
+  ctx.setCookie(auth.sessionCookie(s.token, s.expires, SECURE_COOKIES));
+  return { user: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(user.id)) };
+});
+
+// Отправить код ещё раз. Ответ одинаковый, есть такой аккаунт или нет.
+route('POST', '/api/auth/code/resend', async (ctx) => {
+  rateLimit(`code-resend:${ctx.ip}`, 10, 60 * 60 * 1000);
+  requireMail();
+  const user = db.prepare('SELECT * FROM users WHERE email = ? AND email_verified = 0 AND is_blocked = 0').get(str((await readJson(ctx.req)).email, 120).toLowerCase());
+  const r = user ? mailer.sendCode(user) : { sent: true, wait: 60 };
+  return { ok: true, wait: r.wait };
 });
 
 // Отписка: со страницы /unsubscribe и «в один клик» из почтового клиента (List-Unsubscribe-Post).
@@ -932,6 +961,13 @@ setInterval(() => {
 }, 60 * 60 * 1000).unref();
 
 mailer.start();
+// 1.14: вход только с подтверждённой почтой. Один раз завершаем старые сессии с неподтверждённой почтой —
+// при следующем входе придёт код.
+if (mailer.ready() && !db.prepare('SELECT 1 FROM settings WHERE key = ?').get('codes_v1')) {
+  const n = db.prepare('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email_verified = 0)').run().changes;
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('codes_v1', JSON.stringify({ at: Date.now(), signedOut: n }));
+  if (n) console.log(`Сессии с неподтверждённой почтой завершены: ${n}`);
+}
 alerts.start({ tickMs: Number(process.env.DIGEST_TICK_MS) || undefined, minAge: process.env.DIGEST_MIN_AGE_MS ? Number(process.env.DIGEST_MIN_AGE_MS) : undefined, anyHour: process.env.DIGEST_ANY_HOUR === '1' });
 // Автопроверка объявлений, которые ждали проверки до появления автопроверок (один раз при запуске).
 for (const { id } of db.prepare('SELECT id FROM listings WHERE status = \'pending\' AND checks = \'\'').all()) autoChecks.run(id);

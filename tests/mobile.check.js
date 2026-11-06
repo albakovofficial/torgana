@@ -151,6 +151,8 @@ function pages(d) {
     ['new', '/new', d.seller],
     ['edit', `/edit/${d.ids[0]}`, d.seller],
     ['new-errors', '/new', d.buyer, 'submit'],
+    ['confirm', '/confirm', null],
+    ['confirm-code', '/confirm', null, 'code'],
     ['profile', '/profile', d.seller],
     ['profile-listings', '/profile/listings', d.seller],
     ['profile-rejected', '/profile/listings?status=rejected', d.seller],
@@ -271,6 +273,11 @@ async function main() {
           await page.click('[data-menu]');
           await page.waitForTimeout(300);
           if (!(await page.$('.modal.drawer .pf-nav'))) errors.push('меню ≡ не открылось');
+        } else if (open === 'code') {
+          await page.evaluate(() => sessionStorage.setItem('tg_confirm', JSON.stringify({ email: 'new.user@test.local', next: '' })));
+          await page.reload({ waitUntil: 'networkidle' });
+          await page.keyboard.type('12');
+          if ((await page.$$('.code-box')).length !== 6) errors.push('нет шести клеток для кода');
         } else if (open === 'submit') {
           await page.click('.ed-dock [data-submit], .ed-panel [data-submit] >> visible=true');
           await page.waitForTimeout(500);
