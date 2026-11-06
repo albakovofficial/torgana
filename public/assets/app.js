@@ -283,6 +283,12 @@
     S.unread = n;
     $$('[data-unread]').forEach((el) => { el.textContent = n; el.classList.toggle('hidden', !n); });
   }
+  // Новое по сохранённым поискам — значок у пункта «Поиски».
+  function setFresh(f) {
+    S.fresh = f || { search: 0, price: 0 };
+    $$('[data-fresh]').forEach((el) => { el.textContent = S.fresh.search; el.classList.toggle('hidden', !S.fresh.search); });
+  }
+  const freshBadge = () => html`<span class="badge ${S.fresh && S.fresh.search ? '' : 'hidden'}" data-fresh>${S.fresh ? S.fresh.search : 0}</span>`;
 
   // ================= карточки =================
   function card(it) {
@@ -291,7 +297,7 @@
       <a href="/l/${it.id}" class="card-link">
         <div class="card-img">
           ${it.photo ? html`<img src="${it.photo}" alt="" loading="lazy">` : svg(P.image, 40, 1.2)}
-          ${it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : ''}
+          ${it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : it.priceWas ? html`<span class="tag drop-badge" title="Было ${price(it.priceWas, it.priceUnit)}">${ic('down', 13, 2.4)}Цена снижена</span>` : ''}
           <span class="price-pill">${price(it.price, it.priceUnit)}</span>
         </div>
         <div class="card-body">
@@ -372,7 +378,7 @@
     [/^\/(verify|unsubscribe)$/, viewMailLink],
     [/^\/favorites$/, viewFavorites],
     [/^\/messages(?:\/(\d+|support))?$/, viewMessages],
-    [/^\/profile(?:\/(listings|settings|reviews|stats\/\d+))?$/, viewProfile],
+    [/^\/profile(?:\/(listings|settings|reviews|searches|stats\/\d+))?$/, viewProfile],
     [/^\/u\/(\d+)$/, viewUser],
     [/^\/admin$/, viewAdmin],
     [/^\/admin\/l\/(\d+)$/, viewAdminListing],
@@ -546,6 +552,7 @@
       <section class="results">
         <div class="results-head">
           <div><h1>${title}</h1><div class="muted" id="count">&nbsp;</div></div>
+          <button type="button" class="btn btn-soft save-search" id="save-search">${ic('bell', 18, 2)}<span>Сохранить поиск</span></button>
           <label class="sr" for="sort">Сортировка</label>
           <select id="sort" class="select" style="width:auto;min-width:200px;height:44px;border-radius:999px">
             <option value="">Сначала новые</option>
@@ -577,6 +584,7 @@
       goSearch(next);
     };
     $('#sort').onchange = (e) => { const p = { ...params, sort: e.target.value }; go(`/search?${new URLSearchParams(Object.entries(p).filter(([, v]) => v))}`); };
+    bindSaveSearch($('#save-search'), params);
 
     await listingFeed($('#results'), params, {
       empty: html`<div class="empty"><h3>Ничего не нашлось</h3><p>Попробуйте другие слова, уберите часть фильтров или поищите по всей России.</p><a href="/search" class="btn btn-dark">Все объявления</a></div>`,
@@ -593,6 +601,60 @@
         $('#understood').innerHTML = chips.length ? String(html`<span class="muted" style="font-size:14px;align-self:center">Поняли запрос:</span>${chips}`) : '';
       }
     }).first;
+  }
+
+  // ---------- сохранённые поиски ----------
+  // Параметры поиска в том же виде, что хранит сервер: только эти поля, без пустых, в этом порядке.
+  const SEARCH_KEYS = ['q', 'category', 'city', 'min', 'max', 'delivery'];
+  const searchParams = (p) => Object.fromEntries(SEARCH_KEYS.map((k) => [k, String(p[k] || '').trim()]).filter(([, v]) => v && v !== '0'));
+  const searchUrl = (s) => `/search?${new URLSearchParams({ ...s.params, ss: s.id })}`;
+  async function bindSaveSearch(btn, params) {
+    const want = JSON.stringify(searchParams(params));
+    let saved = null;
+    const paint = () => {
+      btn.classList.toggle('on', !!saved);
+      btn.innerHTML = String(html`${ic(saved ? 'check' : 'bell', 18, 2)}<span>${saved ? 'Поиск сохранён' : 'Сохранить поиск'}</span>`);
+      btn.title = saved ? 'Пришлём уведомление о новых объявлениях. Нажмите, чтобы удалить поиск.' : 'Пришлём уведомление, когда появятся новые объявления';
+    };
+    if (S.user) {
+      const { items } = await api('GET', '/api/saved-searches').catch(() => ({ items: [] }));
+      saved = items.find((x) => JSON.stringify(x.params) === want) || null;
+      if (saved && params.ss && Number(params.ss) === saved.id && saved.fresh) api('POST', `/api/saved-searches/${saved.id}/seen`).then(refreshMe).catch(() => {});
+    }
+    paint();
+    btn.onclick = async () => {
+      if (!S.user) { go(`/login?next=${encodeURIComponent(location.pathname + location.search)}`); return; }
+      try {
+        if (saved) { await api('DELETE', `/api/saved-searches/${saved.id}`); saved = null; toast('Поиск удалён'); }
+        else { saved = (await api('POST', '/api/saved-searches', searchParams(params))).search; toast('Поиск сохранён — пришлём уведомление о новых объявлениях'); }
+        paint();
+      } catch (e) { toast(e.message, true); }
+    };
+  }
+
+  async function renderSavedSearches(reload) {
+    const { items } = await api('GET', '/api/saved-searches');
+    const box = $('#box');
+    const chips = (p) => [p.city, p.min && `от ${NF.format(p.min)} ₽`, p.max && `до ${NF.format(p.max)} ₽`, p.delivery && 'с доставкой', p.q && p.category && catName(p.category)].filter(Boolean);
+    box.innerHTML = String(html`<div id="nudge"></div>
+      ${items.length ? html`<div class="ss-list">${items.map((s) => html`<div class="ss-card">
+          <a class="ss-main" href="${searchUrl(s)}"><span class="ss-ic">${ic(s.params.category ? 'tag' : 'search', 20, 2)}</span>
+            <span class="ss-txt"><b>${s.params.q ? `«${s.params.q}»` : catName(s.params.category) || 'Все объявления'}</b>
+              <span>${chips(s.params).join(' · ') || 'Вся Россия'}</span></span>
+            ${s.fresh ? html`<span class="ss-new">${s.fresh} ${plural(s.fresh, 'новое', 'новых', 'новых')}</span>` : ''}</a>
+          <div class="ss-side">
+            <label class="mini-switch" title="Уведомлять о новых"><input type="checkbox" data-ss-notify="${s.id}" ${s.notify ? raw('checked') : ''}><span class="track"></span><span class="sr">Уведомлять</span></label>
+            <button type="button" class="icon-btn sm" data-ss-del="${s.id}" aria-label="Удалить поиск">${ic('trash', 17)}</button>
+          </div></div>`)}</div>
+        <p class="muted" style="margin:0;font-size:14px">Новые объявления по включённым поискам приходят push-уведомлением и подборкой на почту раз в день. Настроить — <a href="/profile/settings#sn" style="text-decoration:underline">в настройках</a>.</p>`
+      : html`<div class="empty"><h3>Сохранённых поисков пока нет</h3><p>В выдаче нажмите «Сохранить поиск» — расскажем, когда появятся новые объявления.</p><a class="btn btn-dark" href="/search">Перейти к поиску</a></div>`}`);
+    pushNudge($('#nudge', box), 'Сразу узнаете о новых объявлениях по вашим поискам.');
+    $$('[data-ss-notify]', box).forEach((c) => {
+      c.onchange = async () => { try { await api('PATCH', `/api/saved-searches/${c.dataset.ssNotify}`, { notify: c.checked }); toast(c.checked ? 'Будем уведомлять' : 'Уведомления по поиску выключены'); } catch (e) { c.checked = !c.checked; toast(e.message, true); } };
+    });
+    $$('[data-ss-del]', box).forEach((b) => {
+      b.onclick = async () => { try { await api('DELETE', `/api/saved-searches/${b.dataset.ssDel}`); toast('Поиск удалён'); reload(); refreshMe(); } catch (e) { toast(e.message, true); } };
+    });
   }
 
   // ================= объявление =================
@@ -674,7 +736,7 @@
               ${l.isOwner ? '' : html`<button class="icon-btn ${l.isFav ? 'on' : ''}" data-fav="${l.id}" aria-label="${l.isFav ? 'Убрать из избранного' : 'В избранное'}" aria-pressed="${l.isFav ? 'true' : 'false'}">${ic('heart', 20)}</button>`}
               <button class="icon-btn" data-share aria-label="Поделиться">${ic('share', 20)}</button>
             </div>
-            <div><div class="item-price">${price(l.price, l.priceUnit)}</div>
+            <div><div class="item-price">${price(l.price, l.priceUnit)}${l.priceWas ? html` <s class="price-was">${price(l.priceWas, l.priceUnit)}</s>` : ''}</div>
               ${marketChip ? html`<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${marketChip}<span class="muted" style="font-size:13px">по ${market.count} ${plural(market.count, 'похожему объявлению', 'похожим объявлениям', 'похожим объявлениям')}</span></div>` : ''}
             </div>
             ${actions}
@@ -1161,7 +1223,7 @@
 
   // Один чат на весь сайт: диалоги по объявлениям, поддержка у пользователя и у модератора.
   // load(after) → { messages }, send(body) → message; сообщения { id, mine, body, createdAt }.
-  function mountChat(box, { head, below = '', load, send, scam = false, empty, placeholder = 'Напишите сообщение…', onActivity, back = '/messages' }) {
+  function mountChat(box, { head, below = '', load, send, scam = false, empty, placeholder = 'Сообщение…', onActivity, back = '/messages' }) {
     box.innerHTML = String(html`
       <div class="chat-head">
         <a href="${back}" class="icon-btn chat-back" aria-label="Назад">${ic('left', 20)}</a>
@@ -1171,6 +1233,7 @@
       ${scam ? html`<div class="banner warn chat-warn hidden" data-scam>${ic('warn', 18)} <strong>Осторожно.</strong> Похоже, собеседник предлагает уйти в мессенджер или заплатить вне Торганы. Так действуют мошенники — не переводите деньги и не называйте коды из СМС.</div>` : ''}
       <div class="chat-msgs" data-msgs></div>
       <form class="chat-form" data-send>
+        <label class="icon-btn chat-attach" title="Отправить фото"><input type="file" accept="image/jpeg,image/png,image/webp" data-photo hidden>${ic('camera', 20)}<span class="sr">Отправить фото</span></label>
         <label class="sr" for="chat-body">Сообщение</label>
         <textarea id="chat-body" rows="1" maxlength="4000" placeholder="${placeholder}"></textarea>
         <button class="btn btn-dark" type="submit" aria-label="Отправить" style="height:48px">${ic('right', 20, 2.2)}</button>
@@ -1188,8 +1251,8 @@
       for (const m of list) {
         const d = new Date(m.createdAt).toDateString();
         if (d !== lastDay) { lastDay = d; out += String(html`<div class="chat-day">${shortWhen(m.createdAt)}</div>`); }
-        out += String(html`<div class="msg ${m.mine ? 'out' : 'in'}">${m.body}<span class="t">${hm(m.createdAt)}</span></div>`);
-        if (scam && !m.mine && SCAM_RE.test(m.body)) $('[data-scam]', box).classList.remove('hidden');
+        out += String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${m.photo ? 'has-photo' : ''}">${m.photo ? html`<a class="msg-photo" href="${m.photo}" target="_blank" rel="noopener"><img src="${m.photo}" alt="Фото" loading="lazy"></a>` : ''}${m.body}<span class="t">${hm(m.createdAt)}</span></div>`);
+        if (scam && !m.mine && m.body && SCAM_RE.test(m.body)) $('[data-scam]', box).classList.remove('hidden');
         lastId = Math.max(lastId, m.id);
       }
       msgs.insertAdjacentHTML('beforeend', out);
@@ -1198,12 +1261,29 @@
     const poll = async () => { const r = await load(lastId); if (r.messages.length) { append(r.messages); if (onActivity) onActivity(); } return r; };
     ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`; };
     ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } };
+    // send получает { body, photo }: текст, фото (имя файла из /api/uploads) или и то и другое.
+    const deliver = async (msg) => { append([await send(msg)]); if (onActivity) onActivity(); };
     form.onsubmit = async (e) => {
       e.preventDefault();
       const body = ta.value.trim();
       if (!body) return;
       ta.value = ''; ta.style.height = 'auto';
-      try { append([await send(body)]); if (onActivity) onActivity(); } catch (ex) { ta.value = body; toast(ex.message, true); }
+      try { await deliver({ body }); } catch (ex) { ta.value = body; toast(ex.message, true); }
+    };
+    // Фото: уменьшаем в браузере, загружаем и отправляем вместе с набранным текстом.
+    const pick = $('[data-photo]', box);
+    pick.onchange = async () => {
+      const file = pick.files[0];
+      pick.value = '';
+      if (!file) return;
+      const attach = pick.parentElement;
+      attach.classList.add('busy');
+      try {
+        const up = await api('POST', '/api/uploads', await resizeImage(file, 1600));
+        const body = ta.value.trim();
+        ta.value = ''; ta.style.height = 'auto';
+        await deliver({ body, photo: up.file });
+      } catch (ex) { toast(ex.message, true); } finally { attach.classList.remove('busy'); }
     };
     // Быстрые темы в приветствии: подставляют текст в поле.
     box.addEventListener('click', (e) => { const b = e.target.closest('[data-topic]'); if (b) { ta.value = b.dataset.topic; ta.focus(); ta.oninput(); } });
@@ -1232,6 +1312,7 @@
     const convId = cid && !isSupport ? Number(cid) : null;
     app.innerHTML = String(html`<div class="wrap"><div class="inbox ${cid ? 'has-chat' : ''}">
       <div class="inbox-list"><h1>Сообщения</h1>
+        <div id="nudge" class="inbox-nudge"></div>
         <a href="/messages/support" class="conv support ${isSupport ? 'on' : ''}" id="support-row">
           ${supportAva()}
           <span class="conv-body"><span class="conv-top"><span class="support-name">${SUPPORT_NAME}</span><span class="pin" title="Закреплено">${ic('pin', 14)}</span></span>
@@ -1242,13 +1323,14 @@
       <section class="chat" id="chat">${cid ? html`<div class="loader" style="flex:1"></div>` : html`<div class="chat-empty"><div>${svg(P.chat, 40, 1.4)}<p>Выберите диалог слева.<br>Чтобы написать продавцу, откройте объявление.</p></div></div>`}</section>
     </div></div>`);
 
+    pushNudge($('#nudge'), 'Узнаете о новых сообщениях сразу, даже когда сайт закрыт.');
     const loadList = async () => {
       const [{ items }, sup] = await Promise.all([api('GET', '/api/conversations'), isSupport ? null : api('GET', '/api/support')]);
       const box = $('#convs');
       if (!box) return;
       if (sup) {
         const last = sup.messages[sup.messages.length - 1];
-        if (last) $('#support-last').textContent = `${last.mine ? 'Вы: ' : ''}${last.body}`;
+        if (last) $('#support-last').textContent = `${last.mine ? 'Вы: ' : ''}${last.body || (last.photo ? '📷 Фото' : '')}`;
       }
       box.innerHTML = items.length ? String(html`${items.map((c) => html`<a href="/messages/${c.id}" class="conv ${c.id === convId ? 'on' : ''}">
           <span class="conv-img">${c.photo ? html`<img src="${c.photo}" alt="" loading="lazy">` : svg(P.image, 22, 1.4)}${ava(c.other, 'xs conv-ava')}</span>
@@ -1279,7 +1361,7 @@
       stopChat = mountChat($('#chat'), {
         head: html`${supportAva(44)}<div style="flex:1;min-width:0"><div class="support-name">${SUPPORT_NAME}</div><span class="muted" style="font-size:14px">Отвечают люди, а не боты</span></div>`,
         load: (after) => api('GET', `/api/support?after=${after}`),
-        send: async (body) => (await api('POST', '/api/support/messages', { body })).message,
+        send: async (msg) => (await api('POST', '/api/support/messages', msg)).message,
         empty: supportWelcome(),
         placeholder: 'Опишите вопрос…',
         onActivity: () => refreshMe()
@@ -1311,7 +1393,7 @@
         }
         return r;
       },
-      send: async (body) => { const r = await api('POST', `/api/conversations/${convId}/messages`, { body }); loadList().catch(() => {}); return r.message; },
+      send: async (msg) => { const r = await api('POST', `/api/conversations/${convId}/messages`, msg); loadList().catch(() => {}); return r.message; },
       scam: true,
       empty: html`<div class="chat-day">Напишите первое сообщение — например, уточните состояние или договоритесь о встрече.</div>`,
       onActivity: () => refreshMe()
@@ -1474,6 +1556,7 @@
     return html`<nav class="pf-nav ${full ? 'full' : ''}" aria-label="${full ? 'Меню' : 'Разделы профиля'}">
       ${item('/profile', 'tag', 'Мои объявления', 'listings')}
       ${item('/profile/reviews', 'star', 'Отзывы', 'reviews', u.rating && u.rating.count ? html`<span class="nav-rating">${starSvg(true, 14)}${fmtAvg(u.rating)}</span>` : '')}
+      ${item('/profile/searches', 'bell', 'Поиски', 'searches', freshBadge())}
       ${item('/favorites', 'heart', 'Избранное', 'fav')}
       ${item('/messages', 'chat', 'Сообщения', 'msg', html`<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span>`)}
       ${full ? '' : item('/profile/settings', 'gear', 'Настройки', 'settings')}
@@ -1482,7 +1565,7 @@
       ${full ? html`${head('Настройки профиля')}
         ${set('s-photo', 'camera', 'Фото профиля')}
         ${set('sf', 'user', 'Имя, город и телефон')}
-        ${S.config.mail ? set('sn', 'mail', 'Письма на почту') : ''}
+        ${set('sn', 'bell', 'Уведомления')}
         ${set('sp', 'lock', 'Пароль')}
         ${set('s-acc', 'gear', 'Аккаунт')}
         ${head('Публичный профиль')}
@@ -1569,7 +1652,7 @@
     const hub = !section || section === 'listings';
     const statId = section && section.startsWith('stats/') ? section.slice(6) : null;
     const sec = statId ? 'stats' : section || 'listings';
-    setTitle({ settings: 'Настройки', stats: 'Статистика', reviews: 'Отзывы' }[sec] || 'Профиль');
+    setTitle({ settings: 'Настройки', stats: 'Статистика', reviews: 'Отзывы', searches: 'Поиски' }[sec] || 'Профиль');
     const u = S.user;
     const { items } = await api('GET', '/api/my/listings');
     const count = (st) => items.filter((i) => i.status === st).length;
@@ -1600,6 +1683,8 @@
       ? html`<div class="pf-head"><h1>Статистика</h1><div class="seg" role="tablist">${[['7', '7 дней'], ['30', '30 дней'], ['0', 'Всё время']].map(([v, t]) => html`<a role="tab" aria-selected="${v === days ? 'true' : 'false'}" class="${v === days ? 'on' : ''}" href="/profile/stats/${statId}?days=${v}">${t}</a>`)}</div></div>`
       : sec === 'settings'
       ? html`<div class="pf-head"><h1>Настройки</h1></div>`
+      : sec === 'searches'
+      ? html`<div class="pf-head"><h1>Поиски</h1><a class="btn btn-soft" href="/search">${ic('search', 18, 2)}<span>Новый поиск</span></a></div>`
       : sec === 'reviews'
       ? html`<div class="pf-head"><h1>Отзывы</h1><div class="seg" role="tablist">${[['', 'Обо мне'], ['mine', 'Я оставил']].map(([v, t]) => html`<a role="tab" aria-selected="${(q.get('tab') || '') === v ? 'true' : 'false'}" class="${(q.get('tab') || '') === v ? 'on' : ''}" href="/profile/reviews${v ? `?tab=${v}` : ''}">${t}</a>`)}</div></div>`
       : html`<div class="pf-head"><h1>Мои объявления</h1><a class="btn btn-dark" href="/new" aria-label="Разместить объявление">${ic('plus', 18, 2.2)}<span>Разместить</span></a></div>`;
@@ -1634,6 +1719,7 @@
     });
     if (sec === 'stats') return renderStats(statId, days);
     if (sec === 'reviews') return renderMyReviews(q.get('tab') === 'mine' ? 'mine' : 'about', again);
+    if (sec === 'searches') return renderSavedSearches(again);
     if (sec === 'settings') return renderSettings(again);
     return renderMyListings(items, q.get('status') || 'active', again);
   }
@@ -1771,6 +1857,28 @@
     </div>`);
   }
 
+  // Уведомления: какие push и письма бывают (поле API, название, пояснение).
+  const NOTIFY_PUSH = [['pushMessages', 'Сообщения', 'Новые сообщения в чатах и ответы поддержки'], ['pushSearches', 'Сохранённые поиски', 'Новые объявления по вашим поискам'],
+    ['pushPrices', 'Снижение цены', 'Объявления из избранного стали дешевле'], ['pushModeration', 'Модерация и отзывы', 'Решения по объявлениям, новые отзывы о вас']];
+  const NOTIFY_MAIL = [['notifyMessages', 'Сообщения', 'Если не прочитали в течение 5 минут, не чаще раза в 15 минут'], ['notifyDigest', 'Подборка за день', 'Новое по поискам и снижение цен — одним письмом'],
+    ['notifyModeration', 'Решения модерации', 'Опубликовано, отклонено, ответ на апелляцию'], ['notifyReviews', 'Отзывы', 'Новый отзыв о вас, решения по отзывам и ответ продавца']];
+  const notifySwitch = (u, k, t, sub) => html`<label class="switch"><span>${t}<small>${sub}</small></span><input type="checkbox" name="${k}" ${u[k] ? raw('checked') : ''}><span class="track"></span></label>`;
+
+  // Этот телефон или компьютер: включить, проверить, выключить push.
+  async function renderPushDevice(el) {
+    const st = await pushState();
+    const card = (icon, title, sub, buttons = '') => html`<div class="push-dev ${st.sub ? 'on' : ''}"><span class="push-dev-ic">${ic(icon, 22, 2)}</span><span class="push-dev-txt"><b>${title}</b><span>${sub}</span></span>${buttons}</div>`;
+    el.innerHTML = String(!st.ok
+      ? card('bell', 'На этом устройстве push недоступны', st.ios ? 'На iPhone: «Поделиться» → «На экран «Домой»», откройте Торгану с экрана и включите уведомления здесь.' : 'Браузер не поддерживает уведомления. Письма на почту продолжат приходить.')
+      : st.sub ? card('check', 'Включены на этом устройстве', deviceName(), html`<button type="button" class="btn btn-soft btn-sm" data-test>Проверить</button><button type="button" class="btn btn-line btn-sm" data-off>Выключить</button>`)
+        : st.perm === 'denied' ? card('bell', 'Уведомления запрещены в браузере', 'Разрешите их в настройках сайта (значок замка в адресной строке), затем обновите страницу.')
+          : card('bell', 'Push на этом устройстве выключены', 'Включите, чтобы сразу узнавать о сообщениях и новых объявлениях.', html`<button type="button" class="btn btn-dark btn-sm" data-on>Включить</button>`));
+    const act = async (fn, okText) => { try { await fn(); if (okText) toast(okText); renderPushDevice(el); } catch (e) { toast(e.message, true); } };
+    const on = $('[data-on]', el); if (on) on.onclick = () => act(pushOn, 'Уведомления включены');
+    const off = $('[data-off]', el); if (off) off.onclick = () => act(pushOff, 'Уведомления на этом устройстве выключены');
+    const tst = $('[data-test]', el); if (tst) tst.onclick = () => act(async () => { const r = await api('POST', '/api/push/test'); if (!r.ok) throw new Error('Не получилось отправить — выключите и включите уведомления'); }, 'Отправили проверочное уведомление');
+  }
+
   function renderSettings(reload) {
     const u = S.user;
     const row = (label, value, action = '') => html`<div class="set-row"><div><span class="set-k">${label}</span><span class="set-v">${value}</span></div>${action}</div>`;
@@ -1794,12 +1902,16 @@
         <div><button class="btn btn-dark" type="submit">Сохранить</button></div>
       </form>
 
-      ${S.config.mail ? html`<section class="set-group" id="sn">
-        <h2>Письма на почту</h2>
-        <label class="switch"><span>Новые сообщения в чате<small>Не чаще раза в 15 минут на диалог</small></span><input type="checkbox" name="notifyMessages" ${u.notifyMessages ? raw('checked') : ''}><span class="track"></span></label>
-        <label class="switch"><span>Решения модерации<small>Опубликовано, отклонено, ответ на апелляцию</small></span><input type="checkbox" name="notifyModeration" ${u.notifyModeration ? raw('checked') : ''}><span class="track"></span></label>
-        <label class="switch"><span>Отзывы<small>Новый отзыв о вас, решения по отзывам и жалобам, ответ продавца</small></span><input type="checkbox" name="notifyReviews" ${u.notifyReviews ? raw('checked') : ''}><span class="track"></span></label>
-      </section>` : ''}
+      <section class="set-group set-wide" id="sn">
+        <h2>Уведомления</h2>
+        <div id="push-dev"></div>
+        <div class="set-cols">
+          <div class="set-col"><h3 class="set-h3">${ic('bell', 18, 2)}Push на телефон и компьютер</h3>
+            ${NOTIFY_PUSH.map(([k, t, sub]) => notifySwitch(u, k, t, sub))}</div>
+          ${S.config.mail ? html`<div class="set-col"><h3 class="set-h3">${ic('mail', 18, 2)}Письма на ${u.email}</h3>
+            ${NOTIFY_MAIL.map(([k, t, sub]) => notifySwitch(u, k, t, sub))}</div>` : ''}
+        </div>
+      </section>
 
       <form class="set-group" id="sp" autocomplete="on">
         <h2>Пароль</h2>
@@ -1829,14 +1941,12 @@
         S.user = r.user; toast('Сохранено'); renderHeader(); reload();
       } catch (ex) { toast(ex.message, true); }
     };
-    const sn = $('#sn');
-    if (sn) {
-      $$('input', sn).forEach((inp) => {
-        inp.onchange = async () => {
-          try { const r = await api('PATCH', '/api/me', { [inp.name]: inp.checked }); S.user = r.user; toast(inp.checked ? 'Письма включены' : 'Письма отключены'); } catch (ex) { inp.checked = !inp.checked; toast(ex.message, true); }
-        };
-      });
-    }
+    $$('#sn input[name]').forEach((inp) => {
+      inp.onchange = async () => {
+        try { const r = await api('PATCH', '/api/me', { [inp.name]: inp.checked }); S.user = r.user; toast(inp.checked ? 'Включено' : 'Выключено'); } catch (ex) { inp.checked = !inp.checked; toast(ex.message, true); }
+      };
+    });
+    renderPushDevice($('#push-dev'));
     $('#sp').onsubmit = async (e) => {
       e.preventDefault();
       const f = e.target; const b = $('button[type=submit]', f); b.disabled = true;
@@ -2417,7 +2527,7 @@
       head: html`${ava(u)}<div style="flex:1;min-width:0"><a href="/admin/u/${u.id}" style="font-weight:700">${u.name}</a>
         <span class="muted" style="font-size:13px;word-break:break-all">${u.email}${u.emailVerified ? '' : ' · не подтверждён'} · с ${since(u.createdAt)} · объявлений ${u.listings}${u.rejected ? ` · отклонено ${u.rejected}` : ''}${u.blocked ? ' · заблокирован' : ''}</span></div>`,
       load: (after) => api('GET', `/api/admin/support/${id}?after=${after}`),
-      send: async (body) => (await api('POST', `/api/admin/support/${id}/messages`, { body })).message,
+      send: async (msg) => (await api('POST', `/api/admin/support/${id}/messages`, msg)).message,
       placeholder: 'Ответ от имени поддержки…'
     });
   }
@@ -2648,23 +2758,73 @@
     document.addEventListener('touchcancel', () => { if (state === 'pull' || state === 'maybe') { state = 'idle'; hide(); } }, { passive: true });
   }
 
+  // ================= push-уведомления =================
+  const PUSH_OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  // На iPhone push работает только у Торганы, добавленной на экран «Домой».
+  const IOS_TAB = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
+  let swReg = null;
+  function swReady() {
+    if (!PUSH_OK) return Promise.resolve(null);
+    if (!swReg) {
+      swReg = navigator.serviceWorker.register('/sw.js').catch(() => null);
+      navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.go) go(new URL(e.data.go).pathname); });
+    }
+    return swReg;
+  }
+  async function pushState() {
+    const reg = await swReady();
+    if (!reg) return { ok: false, ios: IOS_TAB };
+    return { ok: true, sub: await reg.pushManager.getSubscription(), perm: Notification.permission };
+  }
+  const b64uBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+  const deviceName = () => { const ua = navigator.userAgent; return `${/Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iPhone' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Устройство'} · ${/YaBrowser/.test(ua) ? 'Яндекс Браузер' : /Edg\//.test(ua) ? 'Edge' : /Firefox/.test(ua) ? 'Firefox' : /Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : 'браузер'}`; };
+  async function pushOn() {
+    if (!PUSH_OK) throw new Error(IOS_TAB ? 'Добавьте Торгану на экран «Домой» — на iPhone уведомления работают оттуда' : 'Этот браузер не поддерживает уведомления');
+    if (await Notification.requestPermission() !== 'granted') throw new Error('Уведомления запрещены — разрешите их в настройках сайта в браузере');
+    const reg = await swReady();
+    const { key } = await api('GET', '/api/push');
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(key) });
+    await api('POST', '/api/push/subscribe', { subscription: sub.toJSON(), device: deviceName() });
+  }
+  async function pushOff() {
+    const { sub } = await pushState();
+    if (!sub) return;
+    await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
+    await sub.unsubscribe().catch(() => {});
+  }
+  // Подсказка «включите уведомления» — в поисках и сообщениях, пока push не включён и человек её не закрыл.
+  const NUDGE_KEY = 'torgana:push-nudge';
+  async function pushNudge(box, text) {
+    if (!box || !S.user) return;
+    try { if (localStorage.getItem(NUDGE_KEY)) return; } catch { /* приватный режим */ }
+    const st = await pushState();
+    if ((st.ok && (st.sub || st.perm === 'denied')) || (!st.ok && !st.ios)) return;
+    box.innerHTML = String(html`<div class="nudge">${ic('bell', 22, 2)}<span class="nudge-txt"><b>Включите уведомления</b><span>${st.ios ? 'На iPhone: «Поделиться» → «На экран «Домой»», затем откройте Торгану оттуда.' : text}</span></span>
+      ${st.ios ? '' : html`<button type="button" class="btn btn-dark btn-sm" data-on>Включить</button>`}<button type="button" class="icon-btn sm" data-x aria-label="Скрыть">${ic('close', 16, 2)}</button></div>`);
+    const on = $('[data-on]', box);
+    if (on) on.onclick = async () => { try { await pushOn(); box.innerHTML = ''; toast('Уведомления включены'); } catch (e) { toast(e.message, true); } };
+    $('[data-x]', box).onclick = () => { box.innerHTML = ''; try { localStorage.setItem(NUDGE_KEY, '1'); } catch { /* ничего */ } };
+  }
+
   // ================= запуск =================
+  // Кто вошёл, непрочитанное и новое по поискам — при запуске и раз в 30 секунд.
+  function applyMe(r) {
+    const changed = (S.user && S.user.id) !== (r.user && r.user.id);
+    S.user = r.user;
+    setUnread(r.unread || 0);
+    setFresh(r.fresh);
+    return changed;
+  }
   async function refreshMe() {
-    try {
-      const r = await api('GET', '/api/me');
-      const changed = (S.user && S.user.id) !== (r.user && r.user.id);
-      S.user = r.user;
-      setUnread(r.unread || 0);
-      if (changed) { renderHeader(); renderBottomNav(); }
-    } catch { /* офлайн */ }
+    try { if (applyMe(await api('GET', '/api/me'))) { renderHeader(); renderBottomNav(); } } catch { /* офлайн */ }
   }
 
   async function boot() {
     try {
       const [config, me] = await Promise.all([api('GET', '/api/config'), api('GET', '/api/me')]);
       S.config = config;
-      S.user = me.user;
-      S.unread = me.unread || 0;
+      applyMe(me);
+      if (S.user) swReady(); // подписка на push живёт, пока зарегистрирован service worker
     } catch (e) {
       app.innerHTML = String(html`<div class="wrap"><div class="empty" style="margin-top:40px"><h3>Нет связи с сервером</h3><p>${e.message}</p><a class="btn btn-dark" href="/">Обновить</a></div></div>`);
       return;
