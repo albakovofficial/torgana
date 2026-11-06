@@ -84,6 +84,7 @@ function pages(d) {
     ['profile', '/profile', d.seller],
     ['profile-rejected', '/profile?status=rejected', d.seller],
     ['settings', '/profile?tab=settings', d.seller],
+    ['profile-empty', '/profile', d.buyer],
     ['favorites', '/favorites', d.buyer],
     ['messages', '/messages', d.buyer],
     ['chat', `/messages/${d.conv}`, d.buyer],

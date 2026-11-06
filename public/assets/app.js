@@ -65,6 +65,8 @@
   const since = (ts) => { const d = new Date(ts); return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
   const hm = (ts) => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   const initial = (name) => (String(name || '?').trim()[0] || '?').toUpperCase();
+  // Аватарка: фото профиля или первая буква имени на изумрудном круге. cls — sm | lg | xl.
+  const ava = (u, cls = '') => html`<span class="avatar ${cls}">${u && u.avatar ? html`<img src="${u.avatar}" alt="" loading="lazy">` : initial(u && u.name)}</span>`;
 
   // ================= иконки =================
   const P = {
@@ -87,7 +89,14 @@
     sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
     filter: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
     warn: '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.5"/>',
-    check: '<path d="M5 12l5 5 9-10"/>'
+    check: '<path d="M5 12l5 5 9-10"/>',
+    eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    more: '<circle cx="5" cy="12" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="19" cy="12" r=".9"/>',
+    edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+    pause: '<circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/>',
+    refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>',
+    trash: '<path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+    tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>'
   };
   const CAT_P = {
     transport: '<path d="M3 13l2-5a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 5v4H3z"/><circle cx="7.5" cy="17" r="1.6"/><circle cx="16.5" cy="17" r="1.6"/>',
@@ -198,7 +207,7 @@
         <a href="/messages" class="nav-link hide-m">${ic('chat', 20)}<span class="nav-text">Сообщения</span><span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span></a>
         <a href="/new" class="btn btn-dark btn-sm hide-m" style="margin-left:8px">Разместить</a>
         ${S.user
-    ? html`<a href="/profile" class="avatar sm" style="margin-left:6px" aria-label="Профиль">${initial(S.user.name)}</a>`
+    ? html`<a href="/profile" class="ava-link" style="margin-left:6px" aria-label="Профиль">${ava(S.user, 'sm')}</a>`
     : html`<a href="/login" class="nav-link" style="margin-left:4px">Войти</a>`}
       </nav>
     </div>`);
@@ -597,7 +606,7 @@
             </div>
           </div>
           <a href="/u/${seller.id}" class="panel" style="display:flex;align-items:center;gap:14px;color:var(--text)">
-            <span class="avatar">${initial(seller.name)}</span>
+            ${ava(seller)}
             <span style="flex:1;min-width:0"><span style="display:block;font-size:17px;font-weight:700">${seller.name}</span>
             <span class="muted" style="display:block;font-size:13px">На Торгане с ${since(seller.createdAt)} · ${seller.activeCount} ${plural(seller.activeCount, 'объявление', 'объявления', 'объявлений')}</span></span>
             ${ic('right', 20)}
@@ -677,19 +686,23 @@
   }
 
   // ================= размещение и редактирование =================
-  function resizeImage(file, max = 1600) {
+  // square — обрезать по центру до квадрата (фото профиля).
+  function resizeImage(file, max = 1600, square = false) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
-        const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
-        const w = Math.round(img.naturalWidth * scale);
-        const h = Math.round(img.naturalHeight * scale);
+        const side = Math.min(img.naturalWidth, img.naturalHeight);
+        const sw = square ? side : img.naturalWidth;
+        const sh = square ? side : img.naturalHeight;
+        const scale = Math.min(1, max / Math.max(sw, sh));
+        const w = Math.round(sw * scale);
+        const h = Math.round(sh * scale);
         const c = document.createElement('canvas');
         c.width = w; c.height = h;
         const ctx = c.getContext('2d');
         ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
+        ctx.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, w, h);
         URL.revokeObjectURL(url);
         resolve(c.toDataURL('image/jpeg', 0.85));
       };
@@ -1140,7 +1153,7 @@
         if (last) $('#support-last').textContent = `${last.mine ? 'Вы: ' : ''}${last.body}`;
       }
       box.innerHTML = items.length ? String(html`${items.map((c) => html`<a href="/messages/${c.id}" class="conv ${c.id === convId ? 'on' : ''}">
-          <span class="conv-img">${c.photo ? html`<img src="${c.photo}" alt="" loading="lazy">` : svg(P.image, 22, 1.4)}</span>
+          <span class="conv-img">${c.photo ? html`<img src="${c.photo}" alt="" loading="lazy">` : svg(P.image, 22, 1.4)}${ava(c.other, 'xs conv-ava')}</span>
           <span class="conv-body">
             <span class="conv-top"><span>${c.other.name}${c.role === 'seller' ? ' · покупатель' : ''}</span><span>${shortWhen(c.updatedAt)}</span></span>
             <span class="conv-title" style="display:block">${c.title}</span>
@@ -1191,114 +1204,276 @@
   }
 
   // ================= профиль =================
+  const MY_STATUS = { active: 'Активные', pending: 'На проверке', rejected: 'На исправлении', sold: 'Проданные', archived: 'Сняты' };
+  const MY_TAG = { active: ['ok', 'Опубликовано'], pending: ['wait', 'На проверке'], rejected: ['bad', 'Нужно исправить'], sold: ['dark', 'Продано'], archived: ['off', 'Снято'] };
+
+  // Шапка профиля — своя и публичная: фото, имя, город, дата, цифры. own — с кнопкой смены фото.
+  function profileHero(u, { own = false, stats = [], meta = '', badges = '', actions = '', extra = '' }) {
+    return html`<section class="pf-hero">
+      <div class="pf-top">
+        <div class="pf-ava">${ava(u, 'xl')}${own ? html`<button class="pf-cam" type="button" data-ava-pick aria-label="${u.avatar ? 'Сменить фото профиля' : 'Добавить фото профиля'}">${ic('camera', 18)}</button>` : ''}</div>
+        <div class="pf-id">
+          <h1>${u.name}</h1>
+          <div class="pf-meta">${meta}</div>
+          ${badges ? html`<div class="pf-badges">${badges}</div>` : ''}
+        </div>
+        ${actions ? html`<div class="pf-actions">${actions}</div>` : ''}
+      </div>
+      ${stats.length ? html`<div class="pf-stats">${stats.map(([n, k]) => html`<div class="pf-stat"><b>${NF.format(n)}</b><span>${k}</span></div>`)}</div>` : ''}
+      ${extra}
+    </section>`;
+  }
+
+  // Загрузка фото профиля: квадрат 512×512 → /api/uploads → PATCH /api/me.
+  function pickAvatar(done) {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/jpeg,image/png,image/webp';
+    inp.onchange = async () => {
+      const file = inp.files[0];
+      if (!file) return;
+      toast('Загружаем фото…');
+      try {
+        const data = await resizeImage(file, 512, true);
+        const up = await api('POST', '/api/uploads', { data });
+        const r = await api('PATCH', '/api/me', { avatar: up.file });
+        S.user = r.user; renderHeader(); toast('Фото профиля обновлено'); done();
+      } catch (e) { toast(e.message, true); }
+    };
+    inp.click();
+  }
+  async function removeAvatar(done) {
+    if (!(await confirmModal('Убрать фото профиля?', 'Вместо фото будет первая буква имени.', 'Убрать', true))) return;
+    try { const r = await api('PATCH', '/api/me', { avatar: '' }); S.user = r.user; renderHeader(); toast('Фото убрано'); done(); } catch (e) { toast(e.message, true); }
+  }
+
+  async function shareLink(url, title) {
+    if (navigator.share) { try { await navigator.share({ title, url }); return; } catch { /* отмена */ } }
+    try { await navigator.clipboard.writeText(url); toast('Ссылка скопирована'); } catch { toast(url); }
+  }
+
+  // Меню действий: на телефоне выезжает снизу, на компьютере — окно по центру.
+  function actionSheet(title, items) {
+    openModal(String(html`<div class="sheet-title">${title}</div>
+      <div class="sheet-list">${items.map((it, i) => (it.href
+        ? html`<a class="sheet-item ${it.danger ? 'danger' : ''}" href="${it.href}">${ic(it.icon, 20)}<span>${it.label}</span></a>`
+        : html`<button type="button" class="sheet-item ${it.danger ? 'danger' : ''}" data-i="${i}">${ic(it.icon, 20)}<span>${it.label}</span></button>`))}</div>
+      <button type="button" class="btn btn-soft sheet-cancel" data-x>Отмена</button>`), (m, close) => {
+      m.classList.add('sheet'); m.parentElement.classList.add('sheet-back');
+      $('[data-x]', m).onclick = close;
+      $$('.sheet-item', m).forEach((b) => { b.addEventListener('click', () => { close(); if (b.dataset.i !== undefined) items[Number(b.dataset.i)].run(); }); });
+    });
+  }
+
   async function viewProfile(_, q) {
     if (!requireAuth()) return;
     setTitle('Профиль');
     const tab = q.get('tab') || 'listings';
     const u = S.user;
-    app.innerHTML = String(html`<div class="wrap">
-      <div class="profile-head">
-        <span class="avatar lg">${initial(u.name)}</span>
-        <div style="flex:1;min-width:0"><h1>${u.name}</h1><div class="muted">${u.email} · на Торгане с ${since(u.createdAt)}</div></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${u.isAdmin ? html`<a class="btn btn-soft" href="/admin">Модерация</a>` : ''}
-          <a class="btn btn-soft" href="/u/${u.id}">Публичный профиль</a>
-          <button class="btn btn-line" id="logout">Выйти</button>
-        </div>
+    const { items } = await api('GET', '/api/my/listings');
+    const count = (st) => items.filter((i) => i.status === st).length;
+    const sum = (k) => items.reduce((n, i) => n + (i[k] || 0), 0);
+    const todo = [
+      [!!u.avatar, 'Добавить фото', 'avatar'],
+      [!!u.city, 'Указать город', 'city'],
+      ...(S.config.mail ? [[u.emailVerified, 'Подтвердить почту', 'verify']] : [])
+    ];
+    const done = todo.filter((t) => t[0]).length;
+    const pct = Math.round(((done + 1) / (todo.length + 1)) * 100); // имя есть всегда
+    const badges = html`${S.config.mail ? (u.emailVerified
+      ? html`<span class="pf-badge ok">${ic('check', 14, 2.4)} Почта подтверждена</span>`
+      : html`<span class="pf-badge warn">${ic('warn', 14, 2)} Почта не подтверждена</span>`) : ''}
+      ${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 14, 2)} Модератор</span>` : ''}`;
+    const extra = pct < 100 ? html`<div class="pf-progress">
+        <div class="pf-progress-head"><strong>Профиль заполнен на ${pct}%</strong><span class="muted">Покупатели больше доверяют заполненным профилям</span></div>
+        <div class="pf-bar"><i style="width:${pct}%"></i></div>
+        <div class="pf-todo">${todo.filter((t) => !t[0]).map((t) => html`<button type="button" class="chip" data-todo="${t[2]}">${ic('plus', 16, 2)}${t[1]}</button>`)}</div>
+      </div>` : '';
+    app.innerHTML = String(html`<div class="wrap pf">
+      ${profileHero(u, {
+        own: true,
+        meta: `${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}`,
+        badges,
+        stats: [[count('active'), 'активных'], [count('sold'), 'продано'], [sum('views'), 'просмотров'], [sum('favCount'), 'в избранном']],
+        actions: html`<a class="btn btn-dark" href="/new">${ic('plus', 18, 2.2)}Разместить</a>
+          <button type="button" class="btn btn-soft" data-share>${ic('share', 18)}<span class="hide-xs">Мой профиль</span></button>
+          ${u.isAdmin ? html`<a class="btn btn-soft" href="/admin">${ic('shield', 18)}<span class="hide-xs">Модерация</span></a>` : ''}`,
+        extra
+      })}
+      <div class="pf-tabs" role="tablist">
+        <a role="tab" aria-selected="${tab !== 'settings'}" class="${tab !== 'settings' ? 'on' : ''}" href="/profile">Мои объявления<span>${items.length}</span></a>
+        <a role="tab" aria-selected="${tab === 'settings'}" class="${tab === 'settings' ? 'on' : ''}" href="/profile?tab=settings">Настройки</a>
       </div>
-      ${S.config.mail && !u.emailVerified ? html`<div class="banner warn" style="margin-bottom:20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <span style="flex:1 1 260px">${ic('warn', 18)} <strong>Подтвердите email.</strong> Мы отправили письмо на ${u.email} — без этого не придут уведомления о сообщениях.</span>
-        <button class="btn btn-soft btn-sm" id="verify-again">Отправить ещё раз</button></div>` : ''}
-      <div class="tabs">
-        <a class="chip ${tab === 'listings' ? 'active' : ''}" href="/profile">Мои объявления</a>
-        <a class="chip ${tab === 'settings' ? 'active' : ''}" href="/profile?tab=settings">Настройки</a>
-      </div>
-      <div id="box"><div class="loader"></div></div>
+      <div id="box"></div>
     </div>`);
+    const again = () => viewProfile(_, q);
+    $('[data-ava-pick]').onclick = () => pickAvatar(again);
+    $('[data-share]').onclick = () => shareLink(`${location.origin}/u/${u.id}`, `${u.name} на Торгане`);
+    $$('[data-todo]').forEach((b) => {
+      b.onclick = async () => {
+        const t = b.dataset.todo;
+        if (t === 'avatar') pickAvatar(again);
+        else if (t === 'city') go('/profile?tab=settings#s-city');
+        else { b.disabled = true; try { await api('POST', '/api/me/verify'); toast(`Письмо отправлено на ${u.email}`); } catch (e) { toast(e.message, true); b.disabled = false; } }
+      };
+    });
+    if (tab === 'settings') return renderSettings(again);
+    return renderMyListings(items, q.get('status') || 'active', again);
+  }
+
+  function renderMyListings(items, status, reload) {
+    const groups = { active: [], pending: [], rejected: [], sold: [], archived: [] };
+    items.forEach((i) => (groups[i.status] || groups.archived).push(i));
+    const list = groups[status] || [];
+    const tips = [
+      ['camera', 'Светлые фото', 'Снимайте при дневном свете, с разных сторон — первое фото видно в поиске.'],
+      ['sparkle', 'Честная цена', 'При размещении подскажем цену по похожим объявлениям.'],
+      ['chat', 'Отвечайте быстро', 'Первые часы после публикации — самые активные.']
+    ];
+    $('#box').innerHTML = String(html`
+      ${items.length ? html`<div class="pf-status" role="tablist">${Object.keys(MY_STATUS).map((k) => html`<a class="chip ${k === status ? 'active' : ''} ${groups[k].length ? '' : 'zero'}" href="/profile?status=${k}">${MY_STATUS[k]}<span class="cnt">${groups[k].length}</span></a>`)}</div>` : ''}
+      ${list.length ? html`<div class="ml-list">${list.map((i) => {
+        const [tone, label] = MY_TAG[i.status] || MY_TAG.archived;
+        return html`<article class="ml-card">
+          <a href="/l/${i.id}" class="ml-img">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 26, 1.3)}</a>
+          <div class="ml-info">
+            <span class="ml-tag ${tone}"><i></i>${label}</span>
+            <a href="/l/${i.id}" class="ml-title">${i.title}</a>
+            <div class="ml-price">${price(i.price, i.priceUnit)}</div>
+            <div class="ml-meta"><span title="Просмотры">${svg(P.eye, 15, 1.8)} ${NF.format(i.views)}</span><span title="В избранном">${svg(P.heart, 15, 1.8)} ${i.favCount}</span><span>${i.city} · ${shortWhen(i.createdAt)}</span></div>
+          </div>
+          <div class="ml-side">
+            ${i.status === 'rejected' ? html`<a class="btn btn-dark btn-sm hide-xs" href="/edit/${i.id}">Исправить</a>` : ''}
+            <button type="button" class="icon-btn ml-more" data-more="${i.id}" aria-label="Действия с объявлением">${svg(P.more, 20, 2.2)}</button>
+          </div>
+          ${i.status === 'pending' ? html`<div class="ml-note warn">${i.flags ? `Проверяем внимательнее: похоже на «${i.flags}». ` : ''}Модератор проверит объявление — обычно это несколько часов.</div>` : ''}
+          ${i.status === 'rejected' ? html`<div class="ml-note bad"><strong>Причина:</strong> ${i.rejectReason}${i.appealAt ? ' · апелляция отправлена' : ''}${i.appealReply ? html`<br><strong>Ответ на апелляцию:</strong> ${i.appealReply}` : ''}</div>` : ''}
+        </article>`;
+      })}</div>`
+      : status === 'active' && !items.length ? html`<div class="pf-empty">
+          <div class="pf-empty-ic">${svg(P.tag, 34, 1.6)}</div>
+          <h3>Разместите первое объявление</h3>
+          <p>Это бесплатно и занимает пару минут. Каждое объявление проверяет модератор — обычно несколько часов.</p>
+          <a class="btn btn-dark" href="/new">${ic('plus', 18, 2.2)}Разместить объявление</a>
+          <div class="pf-tips">${tips.map(([icn, t, d]) => html`<div class="pf-tip"><span>${ic(icn, 20)}</span><div><b>${t}</b><p>${d}</p></div></div>`)}</div>
+        </div>`
+      : html`<div class="pf-empty sm"><h3>Здесь пусто</h3><p>${{ active: 'Нет опубликованных объявлений.', pending: 'Сейчас ничего не ждёт проверки.', rejected: 'Нет объявлений, которые нужно исправить.', sold: 'Отметьте объявление «Продано», и оно появится здесь.', archived: 'Снятые с публикации объявления появятся здесь.' }[status]}</p></div>`}`);
+    const byId = Object.fromEntries(items.map((i) => [String(i.id), i]));
+    const setStatus = async (i, st, msg) => { try { await api('PATCH', `/api/listings/${i.id}`, { status: st }); toast(msg); reload(); } catch (e) { toast(e.message, true); } };
+    $$('[data-more]').forEach((b) => {
+      b.onclick = () => {
+        const i = byId[b.dataset.more];
+        const acts = [{ icon: 'eye', label: 'Открыть объявление', href: `/l/${i.id}` }, { icon: 'edit', label: i.status === 'rejected' ? 'Исправить' : 'Изменить', href: `/edit/${i.id}` }];
+        if (i.status === 'active') acts.push({ icon: 'check', label: 'Отметить «Продано»', run: () => setStatus(i, 'sold', 'Отмечено как проданное') }, { icon: 'pause', label: 'Снять с публикации', run: () => setStatus(i, 'archived', 'Снято с публикации') });
+        if (i.status === 'sold' || i.status === 'archived') acts.push({ icon: 'refresh', label: 'Опубликовать снова', run: () => setStatus(i, 'active', 'Снова опубликовано') });
+        if (i.status === 'rejected' && !i.appealAt && !i.appealReply) acts.push({ icon: 'chat', label: 'Подать апелляцию', run: () => appealModal(i.id, reload) });
+        if (i.status === 'active') acts.push({ icon: 'share', label: 'Поделиться', run: () => shareLink(`${location.origin}/l/${i.id}`, i.title) });
+        acts.push({ icon: 'trash', label: 'Удалить', danger: true, run: async () => {
+          if (!(await confirmModal('Удалить объявление?', 'Объявление и фото удалятся без возможности восстановления.', 'Удалить', true))) return;
+          try { await api('DELETE', `/api/listings/${i.id}`); toast('Удалено'); reload(); } catch (e) { toast(e.message, true); }
+        } });
+        actionSheet(i.title, acts);
+      };
+    });
+  }
+
+  function renderSettings(reload) {
+    const u = S.user;
+    const row = (label, value, action = '') => html`<div class="set-row"><div><span class="set-k">${label}</span><span class="set-v">${value}</span></div>${action}</div>`;
+    $('#box').innerHTML = String(html`<div class="set">
+      <section class="set-group">
+        <h2>Фото профиля</h2>
+        <div class="set-ava">${ava(u, 'lg')}
+          <div><p class="muted">Фото видят покупатели и продавцы — на объявлениях и в чатах. JPG, PNG или WebP, обрежем по кругу.</p>
+            <div class="set-btns"><button type="button" class="btn btn-dark btn-sm" data-ava-set>${u.avatar ? 'Заменить фото' : 'Загрузить фото'}</button>
+              ${u.avatar ? html`<button type="button" class="btn btn-line btn-sm" data-ava-del>Убрать</button>` : ''}</div></div>
+        </div>
+      </section>
+
+      <form class="set-group" id="sf">
+        <h2>Профиль</h2>
+        <div class="field"><label for="s-name">Имя</label><input id="s-name" name="name" class="input" maxlength="60" value="${u.name}" required autocomplete="name"></div>
+        <div class="field"><label for="s-city">Город</label><input id="s-city" name="city" class="input" list="cities" value="${u.city || ''}" placeholder="Подставим в новые объявления">
+          <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
+        <div class="field"><label for="s-phone">Телефон</label><input id="s-phone" name="phone" class="input" type="tel" inputmode="tel" maxlength="30" value="${u.phone || ''}" placeholder="+7" autocomplete="tel">
+          <span class="help">Другим пользователям не показывается</span></div>
+        <div><button class="btn btn-dark" type="submit">Сохранить</button></div>
+      </form>
+
+      ${S.config.mail ? html`<section class="set-group" id="sn">
+        <h2>Письма на почту</h2>
+        <label class="switch"><span>Новые сообщения в чате<small>Не чаще раза в 15 минут на диалог</small></span><input type="checkbox" name="notifyMessages" ${u.notifyMessages ? raw('checked') : ''}><span class="track"></span></label>
+        <label class="switch"><span>Решения модерации<small>Опубликовано, отклонено, ответ на апелляцию</small></span><input type="checkbox" name="notifyModeration" ${u.notifyModeration ? raw('checked') : ''}><span class="track"></span></label>
+      </section>` : ''}
+
+      <form class="set-group" id="sp" autocomplete="on">
+        <h2>Пароль</h2>
+        <input type="email" name="username" value="${u.email}" autocomplete="username" hidden>
+        <div class="field"><label for="p-cur">Текущий пароль</label><input id="p-cur" name="current" class="input" type="password" autocomplete="current-password" required></div>
+        <div class="field"><label for="p-new">Новый пароль</label><input id="p-new" name="password" class="input" type="password" minlength="8" autocomplete="new-password" required><span class="help">Минимум 8 символов. На других устройствах потребуется войти заново.</span></div>
+        <div><button class="btn btn-dark" type="submit">Сменить пароль</button></div>
+      </form>
+
+      <section class="set-group">
+        <h2>Аккаунт</h2>
+        ${row('Email для входа', u.email, S.config.mail ? (u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 14, 2.4)} Подтверждён</span>` : html`<button type="button" class="btn btn-soft btn-sm" id="verify-again">Подтвердить</button>`) : '')}
+        ${row('На Торгане', `с ${since(u.createdAt)}`)}
+        <div class="set-row"><div><span class="set-k">Удалить аккаунт</span><span class="set-v muted">Напишите в поддержку с этого email — удалим аккаунт и данные.</span></div><a class="btn btn-soft btn-sm" href="/messages/support">Поддержка</a></div>
+        <button type="button" class="btn btn-line set-logout" id="logout">Выйти из аккаунта</button>
+      </section>
+    </div>`);
+    if (location.hash === '#s-city') { const c = $('#s-city'); c.scrollIntoView({ block: 'center' }); c.focus(); }
+    $('[data-ava-set]').onclick = () => pickAvatar(reload);
+    const del = $('[data-ava-del]'); if (del) del.onclick = () => removeAvatar(reload);
+    $('#sf').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      try {
+        const r = await api('PATCH', '/api/me', { name: f.name.value, city: f.city.value, phone: f.phone.value });
+        S.user = r.user; toast('Сохранено'); renderHeader(); reload();
+      } catch (ex) { toast(ex.message, true); }
+    };
+    const sn = $('#sn');
+    if (sn) {
+      $$('input', sn).forEach((inp) => {
+        inp.onchange = async () => {
+          try { const r = await api('PATCH', '/api/me', { [inp.name]: inp.checked }); S.user = r.user; toast(inp.checked ? 'Письма включены' : 'Письма отключены'); } catch (ex) { inp.checked = !inp.checked; toast(ex.message, true); }
+        };
+      });
+    }
+    $('#sp').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target; const b = $('button[type=submit]', f); b.disabled = true;
+      try {
+        const r = await api('POST', '/api/me/password', { current: f.current.value, password: f.password.value });
+        f.reset();
+        toast(r.signedOut ? `Пароль изменён. Вышли на других устройствах: ${r.signedOut}` : 'Пароль изменён');
+      } catch (ex) { toast(ex.message, true); }
+      b.disabled = false;
+    };
+    const va = $('#verify-again');
+    if (va) va.onclick = async () => { va.disabled = true; try { await api('POST', '/api/me/verify'); toast(`Письмо отправлено на ${u.email}`); } catch (e) { toast(e.message, true); va.disabled = false; } };
     $('#logout').onclick = async () => {
       await api('POST', '/api/auth/logout').catch(() => {});
       S.user = null; setUnread(0);
       toast('Вы вышли из аккаунта');
       go('/', true);
     };
-    const va = $('#verify-again');
-    if (va) va.onclick = async () => { va.disabled = true; try { await api('POST', '/api/me/verify'); toast(`Письмо отправлено на ${u.email}`); } catch (e) { toast(e.message, true); va.disabled = false; } };
-    if (tab === 'settings') return renderSettings();
-    return renderMyListings(q.get('status') || 'active');
-  }
-
-  async function renderMyListings(status) {
-    const { items } = await api('GET', '/api/my/listings');
-    const groups = { active: [], pending: [], sold: [], rejected: [], archived: [] };
-    items.forEach((i) => (groups[i.status] || groups.archived).push(i));
-    const labels = { active: 'Активные', pending: 'На проверке', rejected: 'На исправлении', sold: 'Проданные', archived: 'Сняты' };
-    const list = groups[status] || [];
-    $('#box').innerHTML = String(html`
-      <div class="tabs">${Object.keys(labels).map((k) => html`<a class="chip ${k === status ? 'active' : ''}" href="/profile?status=${k}">${labels[k]} · ${groups[k].length}</a>`)}</div>
-      ${list.length ? list.map((i) => html`<div class="my-row">
-        <a href="/l/${i.id}" class="my-img">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 26, 1.3)}</a>
-        <div class="my-info">
-          <a href="/l/${i.id}" class="t" style="display:block">${i.title}</a>
-          <div class="p">${price(i.price, i.priceUnit)}</div>
-          <div class="m">${i.city} · ${shortWhen(i.createdAt)} · ${NF.format(i.views)} ${plural(i.views, 'просмотр', 'просмотра', 'просмотров')} · в избранном у ${i.favCount}</div>
-          ${i.status === 'pending' ? html`<div class="banner warn" style="margin-top:10px;padding:10px 14px;font-size:14px">Ждёт проверки модератором: похоже на «${i.flags}».</div>` : ''}
-          ${i.status === 'rejected' ? html`<div class="banner danger" style="margin-top:10px;padding:10px 14px;font-size:14px"><strong>Причина:</strong> ${i.rejectReason}${i.appealAt ? html` · <span>апелляция отправлена</span>` : ''}${i.appealReply ? html`<br><strong>Ответ на апелляцию:</strong> ${i.appealReply}` : ''}</div>` : ''}
-        </div>
-        <div class="my-actions">
-          <a class="btn btn-soft btn-sm" href="/edit/${i.id}">${i.status === 'rejected' ? 'Исправить' : 'Изменить'}</a>
-          ${i.status === 'active' ? html`<button class="btn btn-soft btn-sm" data-st="sold" data-id="${i.id}">Продано</button><button class="btn btn-line btn-sm" data-st="archived" data-id="${i.id}">Снять</button>` : ''}
-          ${i.status === 'sold' || i.status === 'archived' ? html`<button class="btn btn-soft btn-sm" data-st="active" data-id="${i.id}">Опубликовать</button>` : ''}
-          ${i.status === 'rejected' && !i.appealAt && !i.appealReply ? html`<button class="btn btn-line btn-sm" data-appeal="${i.id}">Апелляция</button>` : ''}
-          <button class="btn btn-danger btn-sm" data-del="${i.id}">Удалить</button>
-        </div>
-      </div>`) : html`<div class="empty"><h3>${status === 'active' ? 'У вас пока нет объявлений' : 'Здесь пусто'}</h3><p>${status === 'active' ? 'Разместите первое — это бесплатно.' : 'Объявления появятся здесь, когда сменят статус.'}</p>${status === 'active' ? html`<a class="btn btn-dark" href="/new">Разместить объявление</a>` : ''}</div>`}`);
-    $$('[data-st]').forEach((b) => {
-      b.onclick = async () => {
-        try { await api('PATCH', `/api/listings/${b.dataset.id}`, { status: b.dataset.st }); toast('Готово'); renderMyListings(status); } catch (e) { toast(e.message, true); }
-      };
-    });
-    $$('[data-del]').forEach((b) => {
-      b.onclick = async () => {
-        if (!(await confirmModal('Удалить объявление?', 'Объявление и фото удалятся без возможности восстановления.', 'Удалить', true))) return;
-        try { await api('DELETE', `/api/listings/${b.dataset.del}`); toast('Удалено'); renderMyListings(status); } catch (e) { toast(e.message, true); }
-      };
-    });
-    $$('[data-appeal]').forEach((b) => { b.onclick = () => appealModal(b.dataset.appeal, () => renderMyListings(status)); });
-  }
-
-  function renderSettings() {
-    const u = S.user;
-    $('#box').innerHTML = String(html`<form class="settings" id="sf">
-      <div class="field"><label for="s-name">Имя</label><input id="s-name" name="name" class="input" maxlength="60" value="${u.name}" required></div>
-      <div class="field"><label for="s-city">Город</label><input id="s-city" name="city" class="input" list="cities" value="${u.city || ''}" placeholder="Подставим в новые объявления">
-        <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
-      <div class="field"><label for="s-email">Email</label><input id="s-email" class="input" value="${u.email}" disabled><span class="help">Email используется для входа${S.config.mail ? (u.emailVerified ? ' · подтверждён' : ' · не подтверждён') : ''}</span></div>
-      ${S.config.mail ? html`<div class="field"><span class="label">Письма на почту</span>
-        <label class="switch"><span>Новые сообщения в чате</span><input type="checkbox" name="notifyMessages" ${u.notifyMessages ? raw('checked') : ''}><span class="track"></span></label>
-        <label class="switch"><span>Решения модерации по моим объявлениям</span><input type="checkbox" name="notifyModeration" ${u.notifyModeration ? raw('checked') : ''}><span class="track"></span></label></div>` : ''}
-      <div><button class="btn btn-dark" type="submit">Сохранить</button></div>
-    </form>`);
-    $('#sf').onsubmit = async (e) => {
-      e.preventDefault();
-      try {
-        const f = e.target;
-        const body = { name: f.name.value, city: f.city.value };
-        if (f.notifyMessages) Object.assign(body, { notifyMessages: f.notifyMessages.checked, notifyModeration: f.notifyModeration.checked });
-        const r = await api('PATCH', '/api/me', body);
-        S.user = r.user; toast('Сохранено'); renderHeader();
-      } catch (ex) { toast(ex.message, true); }
-    };
   }
 
   async function viewUser(id) {
     const { user: u, items } = await api('GET', `/api/users/${id}`);
     setTitle(u.name);
-    app.innerHTML = String(html`<div class="wrap">
-      <div class="profile-head"><span class="avatar lg">${initial(u.name)}</span>
-        <div><h1>${u.name}</h1><div class="muted">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}${u.soldCount ? ` · продано ${u.soldCount}` : ''}</div></div></div>
-      <div class="section-head"><h2>Объявления · ${items.length}</h2></div>
-      ${items.length ? grid(items) : html`<div class="empty"><h3>Активных объявлений нет</h3><p>Загляните позже.</p></div>`}
+    const own = S.user && S.user.id === u.id;
+    app.innerHTML = String(html`<div class="wrap pf">
+      ${profileHero(u, {
+        meta: `${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}`,
+        stats: [[u.activeCount, plural(u.activeCount, 'объявление', 'объявления', 'объявлений')], [u.soldCount, 'продано']],
+        actions: html`<button type="button" class="btn btn-soft" data-share>${ic('share', 18)}Поделиться</button>${own ? html`<a class="btn btn-dark" href="/profile">Мой профиль</a>` : ''}`
+      })}
+      <div class="section-head"><h2>Объявления</h2></div>
+      ${items.length ? grid(items) : html`<div class="pf-empty sm"><h3>Активных объявлений нет</h3><p>Загляните позже.</p></div>`}
     </div>`);
+    $('[data-share]').onclick = () => shareLink(location.href, `${u.name} на Торгане`);
   }
 
   // ================= модерация =================
@@ -1333,6 +1508,12 @@
   // Кнопки модератора — одни обработчики для очереди и страницы проверки. after — что делать после решения.
   function bindModActions(root, after = () => render()) {
     const mailNote = S.config.mail ? ' и получит письмом' : '';
+    $$('[data-ava-remove]', root).forEach((b) => {
+      b.onclick = async () => {
+        if (!(await confirmModal('Убрать фото профиля?', 'Фото удалится, вместо него будет буква имени. Пользователь сможет загрузить другое.', 'Убрать', true))) return;
+        try { await api('POST', `/api/admin/users/${b.dataset.avaRemove}/avatar/remove`); toast('Фото убрано'); render(); } catch (e) { toast(e.message, true); }
+      };
+    });
     $$('[data-reject]', root).forEach((b) => { b.onclick = () => reasonModal({ title: 'Отклонить объявление', hint: `Причину увидит автор${mailNote}. Пишите понятно и вежливо.`, url: `/api/admin/listings/${b.dataset.reject}/reject`, okLabel: 'Отклонить', reasons: REASONS, done: after }); });
     $$('[data-deny]', root).forEach((b) => { b.onclick = () => reasonModal({ title: 'Отказать по апелляции', hint: `Ответ увидит автор${mailNote}.`, url: `/api/admin/listings/${b.dataset.deny}/appeal-deny`, okLabel: 'Отказать', done: after }); });
     $$('[data-dismiss]', root).forEach((b) => { b.onclick = () => reasonModal({ title: 'Закрыть жалобы', hint: 'Объявление останется опубликованным. Комментарий видят только модераторы.', url: `/api/admin/listings/${b.dataset.dismiss}/reports/dismiss`, okLabel: 'Закрыть жалобы', minText: 0, placeholder: 'Например: проверили — нарушений нет', danger: false, done: after }); });
@@ -1479,8 +1660,9 @@
             <div class="mod-btns">${modButtons({ ...l, reports: open.length })}</div>
             <p class="muted" style="margin:0;font-size:13px">После решения откроется следующее объявление из очереди.</p></div>
           <div class="panel"><h2 class="h2" style="margin:0 0 12px">Продавец</h2>
-            <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px"><span class="avatar">${initial(u.name)}</span>
-              <div style="min-width:0"><a href="/u/${u.id}" target="_blank" style="font-weight:700">${u.name}</a><div class="muted" style="font-size:13px;word-break:break-all">${u.email}${u.emailVerified ? ' · подтверждён' : ' · не подтверждён'}</div></div></div>
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">${ava(u)}
+              <div style="min-width:0;flex:1"><a href="/u/${u.id}" target="_blank" style="font-weight:700">${u.name}</a><div class="muted" style="font-size:13px;word-break:break-all">${u.email}${u.emailVerified ? ' · подтверждён' : ' · не подтверждён'}</div></div>
+              ${u.avatar ? html`<button class="btn btn-line btn-sm" data-ava-remove="${u.id}">Убрать фото</button>` : ''}</div>
             <div class="kv">
               <span>На Торгане</span><b>с ${since(u.createdAt)}</b>
               <span>Телефон</span><b>${u.phone || '—'}</b>
@@ -1509,7 +1691,7 @@
     const id = Number(threadId) || (items[0] && items[0].id);
     box.innerHTML = String(html`<div class="inbox ${threadId ? 'has-chat' : ''}" style="margin-top:0">
       <div class="inbox-list">${items.length ? items.map((t) => html`<a href="/admin?status=support&t=${t.id}" class="conv ${t.id === id ? 'on' : ''}">
-          <span class="avatar">${initial(t.user.name)}</span>
+          ${ava(t.user)}
           <span class="conv-body"><span class="conv-top"><span>${t.user.name}</span><span>${shortWhen(t.updatedAt)}</span></span>
             <span class="conv-title" style="display:block">${t.waiting ? 'Ждёт ответа' : 'Отвечено'}</span>
             <span class="conv-last" style="display:block">${t.lastBody}</span></span>
@@ -1521,7 +1703,7 @@
     const u = first.user;
     cleanup = mountChat($('#support-chat'), {
       back: '/admin?status=support',
-      head: html`<span class="avatar">${initial(u.name)}</span><div style="flex:1;min-width:0"><div style="font-weight:700">${u.name}</div>
+      head: html`${ava(u)}<div style="flex:1;min-width:0"><div style="font-weight:700">${u.name}</div>
         <span class="muted" style="font-size:13px;word-break:break-all">${u.email}${u.emailVerified ? '' : ' · не подтверждён'} · с ${since(u.createdAt)} · объявлений ${u.listings}${u.rejected ? ` · отклонено ${u.rejected}` : ''}${u.blocked ? ' · заблокирован' : ''}</span></div>`,
       load: (after) => api('GET', `/api/admin/support/${id}?after=${after}`),
       send: async (body) => (await api('POST', `/api/admin/support/${id}/messages`, { body })).message,

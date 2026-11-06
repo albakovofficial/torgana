@@ -69,14 +69,25 @@ function requireAdmin(ctx) {
   return u;
 }
 
+const photoUrl = (file) => (file ? `/uploads/${file}` : null);
+
 function publicUser(u) {
   return u ? {
-    id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, isAdmin: !!u.is_admin, createdAt: u.created_at,
+    id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, avatar: photoUrl(u.avatar), isAdmin: !!u.is_admin, createdAt: u.created_at,
     emailVerified: !!u.email_verified, notifyMessages: !!u.notify_messages, notifyModeration: !!u.notify_moderation
   } : null;
 }
 
-const photoUrl = (file) => (file ? `/uploads/${file}` : null);
+// Фото профиля: файл из uploads, не привязанный к объявлению. Прежнее фото удаляется с диска.
+function setAvatar(userId, file) {
+  const cur = db.prepare('SELECT avatar FROM users WHERE id = ?').get(userId);
+  if (!cur || cur.avatar === file) return;
+  db.prepare('UPDATE users SET avatar = ? WHERE id = ?').run(file, userId);
+  if (cur.avatar) {
+    db.prepare('DELETE FROM uploads WHERE file = ?').run(cur.avatar);
+    fs.rm(path.join(UPLOAD_DIR, cur.avatar), { force: true }, () => {});
+  }
+}
 
 function cardFromRow(r) {
   return {
@@ -146,9 +157,10 @@ function validateListing(body) {
 
 function attachPhotos(userId, listingId, files) {
   const owned = db.prepare('SELECT file, listing_id FROM uploads WHERE file = ? AND user_id = ?');
+  const isAvatar = db.prepare('SELECT 1 FROM users WHERE avatar = ?');
   const valid = files.filter((f) => {
     const row = owned.get(f, userId);
-    return row && (row.listing_id === null || row.listing_id === listingId);
+    return row && (row.listing_id === null || row.listing_id === listingId) && !isAvatar.get(f);
   });
   const current = db.prepare('SELECT file FROM uploads WHERE listing_id = ?').all(listingId).map((r) => r.file);
   for (const f of current) {
@@ -180,7 +192,7 @@ function route(method, pattern, handler) {
 }
 
 // Модерация (очередь, проверка «от и до», жалобы, история) и чат поддержки — в отдельных модулях.
-const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, str, now, norm };
+const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, setAvatar, str, now, norm };
 const { logEvent } = require('./lib/moderation')({ route, db, mailer, h: helpers });
 const supportChat = require('./lib/support')({ route, db, mailer, h: helpers });
 
@@ -315,9 +327,34 @@ route('PATCH', '/api/me', async (ctx) => {
   const phone = body.phone !== undefined ? str(body.phone, 30) : u.phone;
   const flag = (v, cur) => (v === undefined ? cur : v ? 1 : 0);
   if (name.length < 2) throw new HttpError(400, 'Укажите имя');
+  // avatar: имя файла из /api/uploads — новое фото; '' — убрать фото.
+  let avatar = null;
+  if (body.avatar !== undefined) {
+    avatar = String(body.avatar || '');
+    if (avatar && avatar !== u.avatar) {
+      const row = db.prepare('SELECT listing_id FROM uploads WHERE file = ? AND user_id = ?').get(avatar, u.id);
+      if (!row || row.listing_id !== null) throw new HttpError(400, 'Сначала загрузите фото');
+    }
+  }
   db.prepare('UPDATE users SET name = ?, city = ?, phone = ?, notify_messages = ?, notify_moderation = ? WHERE id = ?')
     .run(name, city, phone, flag(body.notifyMessages, u.notify_messages), flag(body.notifyModeration, u.notify_moderation), u.id);
+  if (avatar !== null) setAvatar(u.id, avatar);
   return { user: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id)) };
+});
+
+// Смена пароля из настроек: нужен текущий пароль; остальные устройства выходят из аккаунта.
+route('POST', '/api/me/password', async (ctx) => {
+  const u = requireUser(ctx);
+  rateLimit(`password:${u.id}`, 10, 60 * 60 * 1000);
+  const body = await readJson(ctx.req);
+  const password = String(body.password || '');
+  const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(u.id);
+  if (!auth.verifyPassword(String(body.current || ''), row.password_hash)) throw new HttpError(400, 'Текущий пароль указан неверно');
+  if (password.length < 8) throw new HttpError(400, 'Новый пароль — минимум 8 символов');
+  if (password.length > 200) throw new HttpError(400, 'Слишком длинный пароль');
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(auth.hashPassword(password), u.id);
+  const others = db.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?').run(u.id, ctx.token || '');
+  return { ok: true, signedOut: Number(others.changes) };
 });
 
 route('GET', '/api/listings', (ctx) => {
@@ -358,7 +395,7 @@ route('GET', '/api/listings/:id', (ctx) => {
   const id = parseInt(ctx.params.id, 10);
   const l = loadListing(id);
   if (!l) throw new HttpError(404, 'Объявление не найдено');
-  const seller = db.prepare('SELECT id, name, city, created_at, is_blocked FROM users WHERE id = ?').get(l.user_id);
+  const seller = db.prepare('SELECT id, name, city, avatar, created_at, is_blocked FROM users WHERE id = ?').get(l.user_id);
   const isOwner = ctx.user && ctx.user.id === l.user_id;
   const isAdmin = ctx.user && ctx.user.is_admin;
   if ((l.status !== 'active' && l.status !== 'sold') || seller.is_blocked) {
@@ -387,7 +424,7 @@ route('GET', '/api/listings/:id', (ctx) => {
       rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : '',
       appealReply: (isOwner || isAdmin) ? l.appeal_reply : '', flags: (isOwner || isAdmin) ? l.flags : ''
     },
-    seller: { id: seller.id, name: seller.name, city: seller.city, createdAt: seller.created_at, activeCount: sellerActive },
+    seller: { id: seller.id, name: seller.name, city: seller.city, avatar: photoUrl(seller.avatar), createdAt: seller.created_at, activeCount: sellerActive },
     similar,
     market
   };
@@ -555,7 +592,7 @@ route('GET', '/api/conversations', (ctx) => {
   const rows = db.prepare(`
     SELECT c.id, c.listing_id, c.buyer_id, c.seller_id, c.updated_at, l.title, l.price, l.price_unit, l.status,
       (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
-      ou.id AS other_id, ou.name AS other_name,
+      ou.id AS other_id, ou.name AS other_name, ou.avatar AS other_avatar,
       (SELECT body FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_body,
       (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != ? AND m.read_at IS NULL) AS unread
     FROM conversations c
@@ -566,7 +603,7 @@ route('GET', '/api/conversations', (ctx) => {
   return {
     items: rows.map((r) => ({
       id: r.id, listingId: r.listing_id, title: r.title, price: r.price, priceUnit: r.price_unit, status: r.status,
-      photo: photoUrl(r.photo), other: { id: r.other_id, name: r.other_name }, lastBody: r.last_body || '',
+      photo: photoUrl(r.photo), other: { id: r.other_id, name: r.other_name, avatar: photoUrl(r.other_avatar) }, lastBody: r.last_body || '',
       unread: r.unread, updatedAt: r.updated_at, role: r.buyer_id === u.id ? 'buyer' : 'seller'
     }))
   };
@@ -601,12 +638,12 @@ route('GET', '/api/conversations/:id', (ctx) => {
     .all(c.id, after).map((m) => ({ id: m.id, mine: m.sender_id === u.id, body: m.body, createdAt: m.created_at, read: !!m.read_at }));
   const l = loadListing(c.listing_id);
   const otherId = c.buyer_id === u.id ? c.seller_id : c.buyer_id;
-  const other = db.prepare('SELECT id, name, created_at FROM users WHERE id = ?').get(otherId);
+  const other = db.prepare('SELECT id, name, avatar, created_at FROM users WHERE id = ?').get(otherId);
   const photo = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position LIMIT 1').get(c.listing_id);
   return {
     conversation: { id: c.id, role: c.buyer_id === u.id ? 'buyer' : 'seller' },
     listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, photo: photoUrl(photo && photo.file) },
-    other: { id: other.id, name: other.name, createdAt: other.created_at },
+    other: { id: other.id, name: other.name, avatar: photoUrl(other.avatar), createdAt: other.created_at },
     messages
   };
 });
@@ -625,12 +662,12 @@ route('POST', '/api/conversations/:id/messages', async (ctx) => {
 
 route('GET', '/api/users/:id', (ctx) => {
   const id = parseInt(ctx.params.id, 10);
-  const u = db.prepare('SELECT id, name, city, created_at, is_blocked FROM users WHERE id = ?').get(id);
+  const u = db.prepare('SELECT id, name, city, avatar, created_at, is_blocked FROM users WHERE id = ?').get(id);
   if (!u || u.is_blocked) throw new HttpError(404, 'Пользователь не найден');
   const uid = ctx.user ? ctx.user.id : 0;
   const items = db.prepare(`${CARD_SELECT} WHERE l.user_id = ? AND l.status = 'active' ORDER BY l.created_at DESC LIMIT 60`).all(uid, id).map(cardFromRow);
   const sold = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ? AND status = \'sold\'').get(id).n;
-  return { user: { id: u.id, name: u.name, city: u.city, createdAt: u.created_at, soldCount: sold }, items };
+  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length }, items };
 });
 
 // Юридические документы (реквизиты и раздел «Запрещено» подставляются на сервере).
@@ -784,7 +821,7 @@ const server = http.createServer(async (req, res) => {
 // Чистим просроченные сессии и брошенные загрузки раз в час.
 setInterval(() => {
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now());
-  const old = db.prepare('SELECT file FROM uploads WHERE listing_id IS NULL AND created_at < ?').all(now() - 24 * 3600 * 1000);
+  const old = db.prepare('SELECT file FROM uploads WHERE listing_id IS NULL AND created_at < ? AND file NOT IN (SELECT avatar FROM users WHERE avatar != \'\')').all(now() - 24 * 3600 * 1000);
   for (const { file } of old) {
     fs.rm(path.join(UPLOAD_DIR, file), { force: true }, () => {});
     db.prepare('DELETE FROM uploads WHERE file = ?').run(file);
