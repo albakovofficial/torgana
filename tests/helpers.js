@@ -86,6 +86,7 @@ function client(base) {
     get: (u, h) => req('GET', u, undefined, h),
     post: (u, b = {}, h) => req('POST', u, b, h),
     patch: (u, b = {}, h) => req('PATCH', u, b, h),
+    put: (u, b = {}, h) => req('PUT', u, b, h),
     del: (u, h) => req('DELETE', u, undefined, h),
     get cookie() { return cookie; },
     set cookie(v) { cookie = v; }
@@ -100,4 +101,65 @@ async function registerUser(base, { name, email, password = 'password123' }) {
   return c;
 }
 
-module.exports = { ROOT, PNG_1PX, JPEG_HEAD, startServer, client, registerUser };
+// Поддельный SMTP-сервер: принимает письма как настоящий и складывает их в inbox (тема и HTML уже раскодированы).
+async function startSmtp({ user = 'smtp-user', pass = 'smtp-pass' } = {}) {
+  const inbox = [];
+  const decodeWord = (s) => s.replace(/=\?UTF-8\?B\?([^?]+)\?=/g, (_, b) => Buffer.from(b, 'base64').toString('utf8'));
+  const part = (raw, type) => {
+    const m = new RegExp(`Content-Type: ${type}; charset=utf-8\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n([\\s\\S]*?)--tg-`).exec(raw);
+    return m ? Buffer.from(m[1].replace(/\s+/g, ''), 'base64').toString('utf8') : '';
+  };
+  const server = net.createServer((sock) => {
+    let buf = '';
+    let data = null;
+    let mail = {};
+    sock.write('220 fake smtp\r\n');
+    sock.on('data', (d) => {
+      buf += d.toString('utf8');
+      if (data !== null) {
+        const end = buf.indexOf('\r\n.\r\n');
+        if (end < 0) return;
+        const raw = buf.slice(0, end).replace(/^\.\./gm, '.');
+        buf = buf.slice(end + 5);
+        data = null;
+        const headers = raw.slice(0, raw.indexOf('\r\n\r\n'));
+        const h = (k) => (new RegExp(`^${k}: (.*)$`, 'm').exec(headers) || [])[1] || '';
+        inbox.push({ ...mail, subject: decodeWord(h('Subject')), from: decodeWord(h('From')), headers, html: part(raw, 'text/html'), text: part(raw, 'text/plain') });
+        mail = {};
+        sock.write('250 queued\r\n');
+      }
+      let nl;
+      while (data === null && (nl = buf.indexOf('\r\n')) >= 0) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 2);
+        const cmd = line.split(' ')[0].toUpperCase();
+        if (cmd === 'EHLO') sock.write('250-fake\r\n250-AUTH PLAIN LOGIN\r\n250 OK\r\n');
+        else if (cmd === 'AUTH') {
+          const got = Buffer.from(line.split(' ')[2] || '', 'base64').toString('utf8');
+          sock.write(got === `\0${user}\0${pass}` ? '235 ok\r\n' : '535 bad credentials\r\n');
+        } else if (cmd === 'MAIL') { mail.mailFrom = line; sock.write('250 ok\r\n'); }
+        else if (cmd === 'RCPT') { mail.to = /<([^>]+)>/.exec(line)[1]; sock.write('250 ok\r\n'); }
+        else if (cmd === 'DATA') { data = ''; sock.write('354 go\r\n'); }
+        else if (cmd === 'QUIT') { sock.end('221 bye\r\n'); }
+        else sock.write('500 ?\r\n');
+      }
+    });
+    sock.on('error', () => {});
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return {
+    port: server.address().port, user, pass, inbox,
+    // Ждём письмо, подходящее под условие (очередь отправляет асинхронно).
+    async waitFor(fn, ms = 5000) {
+      for (let t = 0; t < ms; t += 50) {
+        const m = inbox.find(fn);
+        if (m) return m;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      throw new Error(`Письмо не пришло. Есть: ${inbox.map((x) => `${x.to}: ${x.subject}`).join('; ') || 'ничего'}`);
+    },
+    close: () => new Promise((r) => server.close(r))
+  };
+}
+
+module.exports = { ROOT, PNG_1PX, JPEG_HEAD, startServer, startSmtp, client, registerUser };
