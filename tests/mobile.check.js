@@ -55,7 +55,8 @@ async function seed(base, browser) {
   await seller.post(`/api/conversations/${conv.data.id}/messages`, { body: 'Да, можно посмотреть сегодня вечером.' });
   await buyer.post(`/api/favorites/${ids[1]}`);
   await admin.post(`/api/admin/listings/${ids[5]}/reject`, { reason: 'Контакты в тексте объявления' });
-  return { seller, buyer, admin, ids, conv: conv.data.id };
+  const pending = (await seller.post('/api/listings', { title: 'Травматический пистолет', category: 'hobby', city: 'Казань', price: '9000' })).data.id;
+  return { seller, buyer, admin, ids, pending, conv: conv.data.id };
 }
 
 function pages(d) {
@@ -69,6 +70,9 @@ function pages(d) {
     ['login', '/login', null],
     ['register', '/register', null],
     ['rules', '/page/rules', null],
+    ['terms', '/page/terms', null],
+    ['privacy', '/page/privacy', null],
+    ['consent', '/page/consent', null],
     ['not-found', '/nope', null],
     ['new', '/new', d.seller],
     ['edit', `/edit/${d.ids[0]}`, d.seller],
@@ -80,6 +84,8 @@ function pages(d) {
     ['chat', `/messages/${d.conv}`, d.buyer],
     ['admin', '/admin', d.admin],
     ['admin-mail', '/admin?status=mail', d.admin],
+    ['admin-pending', '/admin?status=pending', d.admin],
+    ['listing-pending', `/l/${d.pending}`, d.seller],
     ['forgot', '/forgot', null],
     ['reset-expired', `/reset?token=${'0'.repeat(64)}`, null],
     ['unsubscribe', `/unsubscribe?t=${'0'.repeat(32)}&k=messages`, null]

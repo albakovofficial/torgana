@@ -224,7 +224,7 @@
         <div class="footer-col brand">${logo()}<p class="muted" style="margin:6px 0 0;max-width:300px">Честная площадка объявлений по всей России.</p></div>
         <div class="footer-col"><b>Покупателям</b><a href="/page/safety">Безопасность</a><a href="/page/help">Как искать</a><a href="/favorites">Избранное</a></div>
         <div class="footer-col"><b>Продавцам</b><a href="/new">Разместить объявление</a><a href="/page/business">Для бизнеса</a><a href="/page/rules">Правила площадки</a></div>
-        <div class="footer-col"><b>Помощь</b><a href="/page/support">Поддержка</a><a href="/page/terms">Пользовательское соглашение</a><a href="/page/privacy">Конфиденциальность</a></div>
+        <div class="footer-col"><b>Помощь</b><a href="/page/support">Поддержка</a><a href="/page/terms">Пользовательское соглашение</a><a href="/page/privacy">Конфиденциальность</a><a href="/page/consent">Согласие на обработку данных</a></div>
       </div>
       <div class="footer-bottom"><span>© ${new Date().getFullYear()} Торгана</span><span>Бесплатно для частных лиц</span></div>
     </div>`);
@@ -534,6 +534,8 @@
         <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-dark btn-sm" href="/edit/${l.id}">Исправить</a>
         ${l.appealReply ? '' : l.appealText ? html`<span class="tag">Апелляция отправлена</span>` : html`<button class="btn btn-line btn-sm" data-appeal>Не согласен — подать апелляцию</button>`}</div>
         ${l.appealReply ? html`<div style="margin-top:10px"><strong>Ответ на апелляцию:</strong> ${l.appealReply}</div>` : ''}</div>`;
+    } else if (l.isOwner && l.status === 'pending') {
+      ownerBanner = html`<div class="banner warn"><strong>Объявление на проверке.</strong> Похоже на товар из раздела «${l.flags}» <a href="/page/rules" style="text-decoration:underline">правил</a>, поэтому его сначала посмотрит модератор. Обычно это занимает несколько часов${S.config.mail ? ' — мы напишем на почту' : ''}.</div>`;
     } else if (l.isOwner && l.status === 'archived') {
       ownerBanner = html`<div class="banner soft"><strong>Объявление снято с публикации.</strong> Его не видят покупатели.</div>`;
     }
@@ -881,8 +883,9 @@
       const btn = $('#submit');
       btn.disabled = true;
       try {
-        if (l) { await api('PATCH', `/api/listings/${l.id}`, body); toast('Изменения сохранены'); go(`/l/${l.id}`, true); }
-        else { const r = await api('POST', '/api/listings', body); toast('Объявление опубликовано'); go(`/l/${r.id}`, true); }
+        const r = l ? await api('PATCH', `/api/listings/${l.id}`, body) : await api('POST', '/api/listings', body);
+        toast(r.status === 'pending' ? 'Отправлено на проверку модератору' : l ? 'Изменения сохранены' : 'Объявление опубликовано');
+        go(`/l/${l ? l.id : r.id}`, true);
       } catch (ex) {
         err.textContent = ex.message; err.classList.remove('hidden');
         btn.disabled = false;
@@ -920,16 +923,21 @@
         <div class="field"><label for="name">Имя</label><input id="name" name="name" class="input" autocomplete="given-name" maxlength="60" required></div>
         <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" class="input" autocomplete="email" required></div>
         <div class="field"><label for="password">Пароль</label><input id="password" name="password" type="password" class="input" autocomplete="new-password" minlength="8" required><span class="help">Минимум 8 символов</span></div>
+        <label class="check"><input type="checkbox" name="consent" required><span>Даю <a href="/page/consent" target="_blank" style="text-decoration:underline">согласие на обработку персональных данных</a></span></label>
         <div class="form-error hidden" id="err" role="alert"></div>
         <button class="btn btn-dark btn-lg btn-block" type="submit">Создать аккаунт</button>
-        <p class="muted" style="margin:0;font-size:13px">Регистрируясь, вы принимаете <a href="/page/terms" style="text-decoration:underline">пользовательское соглашение</a> и <a href="/page/privacy" style="text-decoration:underline">политику конфиденциальности</a>.</p>
+        <p class="muted" style="margin:0;font-size:13px">Регистрируясь, вы принимаете <a href="/page/terms" style="text-decoration:underline">пользовательское соглашение</a> и <a href="/page/rules" style="text-decoration:underline">правила размещения</a>. Как мы храним данные — в <a href="/page/privacy" style="text-decoration:underline">политике конфиденциальности</a>.</p>
       </form>
       <p class="alt">Уже есть аккаунт? <a href="/login${q.get('next') ? `?next=${encodeURIComponent(q.get('next'))}` : ''}">Войти</a></p>
     </div></div>`);
-    bindAuthForm('/api/auth/register', q.get('next'));
+    bindAuthForm('/api/auth/register', q.get('next'), {
+      extra: () => ({ consent: $('#f').consent.checked }),
+      check: () => ($('#f').consent.checked ? '' : 'Отметьте согласие на обработку персональных данных — без него зарегистрироваться нельзя')
+    });
   }
 
   // Отправка формы #f. По умолчанию — вход: запоминаем пользователя и уходим на next.
+  // extra — поля сверх формы (объект или функция, вызываемая при отправке);
   // check(body) может вернуть текст ошибки до отправки; done(r) — свой обработчик ответа.
   function bindAuthForm(url, next, { extra = {}, check, done } = {}) {
     const f = $('#f');
@@ -937,7 +945,7 @@
       e.preventDefault();
       const err = $('#err');
       err.classList.add('hidden');
-      const body = { ...Object.fromEntries(new FormData(f).entries()), ...extra };
+      const body = { ...Object.fromEntries(new FormData(f).entries()), ...(typeof extra === 'function' ? extra() : extra) };
       const problem = check && check(body);
       if (problem) { err.textContent = problem; err.classList.remove('hidden'); return; }
       const btn = $('button[type=submit]', f);
@@ -1167,9 +1175,9 @@
 
   async function renderMyListings(status) {
     const { items } = await api('GET', '/api/my/listings');
-    const groups = { active: [], sold: [], rejected: [], archived: [] };
+    const groups = { active: [], pending: [], sold: [], rejected: [], archived: [] };
     items.forEach((i) => (groups[i.status] || groups.archived).push(i));
-    const labels = { active: 'Активные', rejected: 'На исправлении', sold: 'Проданные', archived: 'Сняты' };
+    const labels = { active: 'Активные', pending: 'На проверке', rejected: 'На исправлении', sold: 'Проданные', archived: 'Сняты' };
     const list = groups[status] || [];
     $('#box').innerHTML = String(html`
       <div class="tabs">${Object.keys(labels).map((k) => html`<a class="chip ${k === status ? 'active' : ''}" href="/profile?status=${k}">${labels[k]} · ${groups[k].length}</a>`)}</div>
@@ -1179,6 +1187,7 @@
           <a href="/l/${i.id}" class="t" style="display:block">${i.title}</a>
           <div class="p">${price(i.price, i.priceUnit)}</div>
           <div class="m">${i.city} · ${shortWhen(i.createdAt)} · ${NF.format(i.views)} ${plural(i.views, 'просмотр', 'просмотра', 'просмотров')} · в избранном у ${i.favCount}</div>
+          ${i.status === 'pending' ? html`<div class="banner warn" style="margin-top:10px;padding:10px 14px;font-size:14px">Ждёт проверки модератором: похоже на «${i.flags}».</div>` : ''}
           ${i.status === 'rejected' ? html`<div class="banner danger" style="margin-top:10px;padding:10px 14px;font-size:14px"><strong>Причина:</strong> ${i.rejectReason}${i.appealAt ? html` · <span>апелляция отправлена</span>` : ''}${i.appealReply ? html`<br><strong>Ответ на апелляцию:</strong> ${i.appealReply}` : ''}</div>` : ''}
         </div>
         <div class="my-actions">
@@ -1245,7 +1254,7 @@
     if (!requireAuth()) return;
     if (!S.user.isAdmin) { viewNotFound(); return; }
     setTitle('Модерация');
-    const status = q.get('status') || 'active';
+    const status = q.get('status') || 'pending';
     const search = q.get('q') || '';
     const isMail = status === 'mail';
     const [stats, list, mail] = await Promise.all([
@@ -1253,7 +1262,7 @@
       isMail ? { items: [] } : api('GET', `/api/admin/listings?${new URLSearchParams({ status, q: search })}`),
       isMail ? api('GET', '/api/admin/mail') : null
     ]);
-    const tabs = { active: 'Активные', appeals: `Апелляции${stats.appeals ? ` · ${stats.appeals}` : ''}`, rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые', mail: `Почта${S.config.mail ? '' : ' · не подключена'}` };
+    const tabs = { pending: `На проверке${stats.pending ? ` · ${stats.pending}` : ''}`, active: 'Активные', appeals: `Апелляции${stats.appeals ? ` · ${stats.appeals}` : ''}`, rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые', mail: `Почта${S.config.mail ? '' : ' · не подключена'}` };
     app.innerHTML = String(html`<div class="wrap">
       <div class="profile-head"><h1 style="flex:1">Модерация</h1></div>
       ${isMail ? '' : html`<div class="stats">
@@ -1274,11 +1283,13 @@
           <div class="m">${i.user.name} (${i.user.email})${i.user.blocked ? ' · заблокирован' : ''} · ${when(i.createdAt)}</div>
           ${i.description ? html`<div class="m" style="max-width:640px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${i.description}</div>` : ''}
           ${i.rejectReason && i.status === 'rejected' ? html`<div class="banner danger" style="margin-top:8px;padding:10px 14px;font-size:14px"><strong>Причина:</strong> ${i.rejectReason}</div>` : ''}
+          ${i.flags ? html`<div class="banner warn" style="margin-top:8px;padding:10px 14px;font-size:14px"><strong>Похоже на запрещённое:</strong> ${i.flags}</div>` : ''}
           ${i.appealAt ? html`<div class="banner warn" style="margin-top:8px;padding:10px 14px;font-size:14px"><strong>Апелляция:</strong> ${i.appealText}</div>` : ''}
           ${i.appealReply ? html`<div class="banner soft" style="margin-top:8px;padding:10px 14px;font-size:14px"><strong>Ответ на апелляцию:</strong> ${i.appealReply}</div>` : ''}
         </div>
         <div class="my-actions">
-          ${i.status !== 'rejected' ? html`<button class="btn btn-danger btn-sm" data-reject="${i.id}">Отклонить</button>` : html`<button class="btn btn-accent btn-sm" data-restore="${i.id}">${i.appealAt ? 'Одобрить апелляцию' : 'Восстановить'}</button>`}
+          ${i.status !== 'rejected' && i.status !== 'pending' ? html`<button class="btn btn-danger btn-sm" data-reject="${i.id}">Отклонить</button>` : html`<button class="btn btn-accent btn-sm" data-restore="${i.id}">${i.status === 'pending' ? 'Опубликовать' : i.appealAt ? 'Одобрить апелляцию' : 'Восстановить'}</button>`}
+          ${i.status === 'pending' ? html`<button class="btn btn-danger btn-sm" data-reject="${i.id}">Отклонить</button>` : ''}
           ${i.appealAt ? html`<button class="btn btn-line btn-sm" data-deny="${i.id}">Отказать по апелляции</button>` : ''}
           <button class="btn btn-line btn-sm" data-block="${i.user.id}" data-blocked="${i.user.blocked ? '1' : ''}">${i.user.blocked ? 'Разблокировать' : 'Заблокировать автора'}</button>
         </div>
@@ -1376,15 +1387,17 @@
   }
 
   // ================= информационные страницы =================
-  function viewPage(slug) {
+  const LEGAL = new Set(['terms', 'rules', 'privacy', 'consent']);
+  async function viewPage(slug) {
+    if (LEGAL.has(slug)) {
+      const d = await api('GET', `/api/pages/${slug}`);
+      setTitle(d.title);
+      app.innerHTML = String(html`<div class="wrap"><article class="page"><h1>${d.title}</h1>${raw(d.html)}</article></div>`);
+      return;
+    }
     const email = S.config.supportEmail;
     const contact = email ? html`<a href="mailto:${email}" style="text-decoration:underline">${email}</a>` : html`через форму на сайте (адрес поддержки появится здесь)`;
     const PAGES = {
-      rules: ['Правила площадки', html`
-        <p>Торгана — место для честных сделок между людьми. Чтобы всем было удобно и безопасно, придерживайтесь простых правил.</p>
-        <h2>Что можно размещать</h2><p>Вещи, транспорт, недвижимость, вакансии и услуги, которые вы действительно продаёте, сдаёте или оказываете. Одно объявление — один товар или одна услуга.</p>
-        <h2>Что нельзя</h2><ul><li>Товары и услуги, запрещённые законодательством РФ: оружие, наркотические вещества, лекарства по рецепту, поддельные документы, персональные данные и т. п.</li><li>Чужие фото и вводящие в заблуждение описания.</li><li>Контакты, ссылки и призывы перейти в мессенджеры в тексте или на фото.</li><li>Повторные объявления об одном и том же товаре.</li><li>Оскорбления, дискриминацию, спам.</li></ul>
-        <h2>Как работает модерация</h2><p>Мы проверяем объявления после публикации. Если объявление нарушает правила, мы снимаем его и обязательно объясняем причину. Вы можете исправить объявление — после сохранения оно снова появится в поиске — или подать апелляцию, если считаете решение ошибочным. Апелляцию рассматривает человек.</p>`],
       safety: ['Безопасность', html`
         <p>Большинство мошеннических схем строится на одном: увести вас из чата площадки и получить деньги или данные карты.</p>
         <h2>Чего никогда не делать</h2><ul><li>Не переходите в мессенджеры по просьбе собеседника.</li><li>Не называйте коды из СМС, CVV/CVC и данные карты.</li><li>Не переходите по ссылкам «для получения оплаты» или «оформления доставки».</li><li>Не вносите предоплату незнакомым продавцам.</li></ul>
@@ -1404,19 +1417,7 @@
         <h2>Частые вопросы</h2>
         <p><strong>Почему отклонили объявление?</strong> Причина указана в профиле в разделе «На исправлении». Исправьте объявление или подайте апелляцию.</p>
         <p><strong>Сколько стоит размещение?</strong> Для частных лиц — бесплатно и без лимитов.</p>
-        <p><strong>Как удалить аккаунт?</strong> Напишите в поддержку с email, на который зарегистрирован аккаунт.</p>`],
-      terms: ['Пользовательское соглашение', html`
-        <p><strong>Документ-заготовка.</strong> Перед запуском его нужно дополнить реквизитами оператора площадки и проверить у юриста.</p>
-        <h2>1. Общие положения</h2><p>Торгана — сервис для размещения объявлений и общения между пользователями. Сделки заключаются напрямую между пользователями; площадка не является стороной сделки.</p>
-        <h2>2. Аккаунт</h2><p>Пользователь отвечает за достоверность данных и сохранность пароля. Один человек — один аккаунт.</p>
-        <h2>3. Объявления</h2><p>Пользователь отвечает за содержание объявлений и обязуется соблюдать правила площадки. Площадка вправе снять объявление с указанием причины и заблокировать аккаунт за систематические нарушения.</p>
-        <h2>4. Контакты</h2><p>Вопросы по соглашению: ${contact}.</p>`],
-      privacy: ['Политика конфиденциальности', html`
-        <p><strong>Документ-заготовка.</strong> Перед запуском его нужно дополнить реквизитами оператора персональных данных и проверить у юриста.</p>
-        <h2>Какие данные мы храним</h2><ul><li>Имя, email и город — для работы аккаунта.</li><li>Объявления, фото и сообщения в чатах — для работы сервиса.</li><li>Технические данные (IP-адрес, сведения о браузере) — для защиты от злоупотреблений.</li></ul>
-        <h2>Как мы их используем</h2><p>Только для работы Торганы: показа объявлений, переписки, модерации и поддержки. Мы не продаём персональные данные.</p>
-        <h2>Cookie</h2><p>Мы используем только необходимый cookie для входа в аккаунт.</p>
-        <h2>Ваши права</h2><p>Вы можете запросить изменение или удаление своих данных: ${contact}.</p>`]
+        <p><strong>Как удалить аккаунт?</strong> Напишите в поддержку с email, на который зарегистрирован аккаунт.</p>`]
     };
     const p = PAGES[slug];
     if (!p) { viewNotFound(); return; }
