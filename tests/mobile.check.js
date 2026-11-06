@@ -89,6 +89,7 @@ function pages(d) {
     ['chat', `/messages/${d.conv}`, d.buyer],
     ['admin', '/admin', d.admin],
     ['admin-mail', '/admin?status=mail', d.admin],
+    ['admin-site', '/admin?status=site', d.admin],
     ['admin-pending', '/admin?status=pending', d.admin],
     ['admin-check', `/admin/l/${d.pending}`, d.admin],
     ['admin-reports', '/admin?status=reports', d.admin],
