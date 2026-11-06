@@ -413,6 +413,7 @@ route('GET', '/api/listings/:id', (ctx) => {
   const photos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(id).map((r) => photoUrl(r.file));
   const sellerActive = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ? AND status = \'active\'').get(l.user_id).n;
   const isFav = ctx.user ? !!db.prepare('SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?').get(ctx.user.id, id) : false;
+  const favCount = db.prepare('SELECT COUNT(*) AS n FROM favorites WHERE listing_id = ?').get(id).n;
   const uid = ctx.user ? ctx.user.id : 0;
   const similar = db.prepare(`${CARD_SELECT} WHERE l.status = 'active' AND u.is_blocked = 0 AND l.category = ? AND l.id != ? ORDER BY l.created_at DESC LIMIT 4`)
     .all(uid, l.category, id).map(cardFromRow);
@@ -427,7 +428,7 @@ route('GET', '/api/listings/:id', (ctx) => {
   return {
     listing: {
       id: l.id, title: l.title, description: l.description, category: l.category, price: l.price, priceUnit: l.price_unit,
-      city: l.city, condition: l.condition, delivery: !!l.delivery, status: l.status, views: l.views,
+      city: l.city, condition: l.condition, delivery: !!l.delivery, status: l.status, views: l.views, favCount,
       createdAt: l.created_at, updatedAt: l.updated_at, photos, isFav, isOwner: !!isOwner,
       rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : '',
       appealReply: (isOwner || isAdmin) ? l.appeal_reply : '', flags: (isOwner || isAdmin) ? l.flags : ''
@@ -587,7 +588,7 @@ route('POST', '/api/favorites/:id', (ctx) => {
   const exists = db.prepare('SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?').get(u.id, id);
   if (exists) db.prepare('DELETE FROM favorites WHERE user_id = ? AND listing_id = ?').run(u.id, id);
   else db.prepare('INSERT INTO favorites (user_id, listing_id, created_at) VALUES (?, ?, ?)').run(u.id, id, now());
-  return { fav: !exists };
+  return { fav: !exists, favCount: db.prepare('SELECT COUNT(*) AS n FROM favorites WHERE listing_id = ?').get(id).n };
 });
 
 function unreadCount(userId) {

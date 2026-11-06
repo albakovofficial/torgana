@@ -96,7 +96,10 @@
     pause: '<circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/>',
     refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13M9 7V4h6v3"/>',
-    tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>'
+    tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+    logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
+    headset: '<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>'
   };
   const CAT_P = {
     transport: '<path d="M3 13l2-5a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 5v4H3z"/><circle cx="7.5" cy="17" r="1.6"/><circle cx="16.5" cy="17" r="1.6"/>',
@@ -223,18 +226,36 @@
       <a href="/favorites" class="${on(p === '/favorites')}" aria-label="Избранное">${ic('heart', 23)}</a>
       <a href="/new" class="plus" aria-label="Разместить объявление">${ic('plus', 24, 2.2)}</a>
       <a href="/messages" class="${on(p.startsWith('/messages'))}" aria-label="Сообщения">${ic('chat', 23)}<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span></a>
-      <a href="${S.user ? '/profile' : '/login'}" class="${on(p === '/profile' || p === '/login')}" aria-label="Профиль">${ic('user', 23)}</a>`);
+      <a href="${S.user ? '/profile' : '/login'}" class="${on(p.startsWith('/profile') || p === '/login')}" aria-label="Профиль">${ic('user', 23)}</a>`);
   }
 
+  // Подвал: призыв разместить, поддержка, разделы (на телефоне раскрываются), реквизиты, большой знак.
+  const FOOTER_COLS = [
+    ['Покупателям', [['/page/help', 'Как искать'], ['/page/safety', 'Безопасность'], ['/favorites', 'Избранное']]],
+    ['Продавцам', [['/new', 'Разместить объявление'], ['/page/business', 'Для бизнеса'], ['/page/rules', 'Правила площадки']]],
+    ['Помощь', [['/page/support', 'Поддержка'], ['/page/contacts', 'Реквизиты и контакты']]],
+    ['Документы', [['/page/terms', 'Пользовательское соглашение'], ['/page/privacy', 'Конфиденциальность'], ['/page/consent', 'Согласие на обработку данных']]]
+  ];
   function renderFooter() {
+    const op = S.config.operator;
+    const links = (ls) => ls.map(([href, t]) => html`<a href="${href}">${t}</a>`);
     $('#footer').innerHTML = String(html`<div class="wrap">
-      <div class="footer-in">
-        <div class="footer-col brand">${logo()}<p class="muted" style="margin:6px 0 0;max-width:300px">Честная площадка объявлений по всей России.</p></div>
-        <div class="footer-col"><b>Покупателям</b><a href="/page/safety">Безопасность</a><a href="/page/help">Как искать</a><a href="/favorites">Избранное</a></div>
-        <div class="footer-col"><b>Продавцам</b><a href="/new">Разместить объявление</a><a href="/page/business">Для бизнеса</a><a href="/page/rules">Правила площадки</a></div>
-        <div class="footer-col"><b>Помощь</b><a href="/page/support">Поддержка</a><a href="/page/terms">Пользовательское соглашение</a><a href="/page/privacy">Конфиденциальность</a><a href="/page/consent">Согласие на обработку данных</a></div>
+      <div class="f-cta">
+        <div><div class="f-cta-t">Есть что продать?</div><div class="f-cta-s">Разместите бесплатно — без лимитов для частных лиц.</div></div>
+        <a class="btn btn-lg f-cta-btn" href="/new">${ic('plus', 20, 2.2)}Разместить объявление</a>
       </div>
-      <div class="footer-bottom"><span>© ${new Date().getFullYear()} Торгана${S.config.operator ? ` · ${S.config.operator.name} · ИНН ${S.config.operator.inn} · ОГРНИП ${S.config.operator.ogrnip}` : ''}</span><a href="/page/contacts">Реквизиты и контакты</a></div>
+      <div class="f-top">
+        <div class="f-brand">${logo()}<p>Честная площадка объявлений по всей России. Бесплатно для частных лиц, каждое объявление проверяет модератор.</p></div>
+        <a class="f-help" href="/messages/support">
+          <span class="f-help-ic">${ic('headset', 22)}</span>
+          <span class="f-help-txt"><b>Нужна помощь?</b><span>Отвечают модераторы, не бот${S.config.supportEmail ? ` · ${S.config.supportEmail}` : ''}</span></span>
+          ${ic('right', 18, 2)}
+        </a>
+      </div>
+      <div class="f-cols">${FOOTER_COLS.map(([t, ls]) => html`<nav class="f-col" aria-label="${t}"><b>${t}</b>${links(ls)}</nav>`)}</div>
+      <div class="f-acc">${FOOTER_COLS.map(([t, ls], i) => html`<details${i === 0 ? raw(' open') : ''}><summary>${t}${ic('down', 20, 2)}</summary><div>${links(ls)}</div></details>`)}</div>
+      <div class="footer-bottom"><span>© ${new Date().getFullYear()} Торгана${op ? ` · ${op.name} · ИНН ${op.inn} · ОГРНИП ${op.ogrnip}` : ''}</span><a href="/page/contacts">Реквизиты и контакты</a></div>
+      <div class="f-mark" aria-hidden="true">торгана</div>
     </div>`);
   }
 
@@ -270,7 +291,8 @@
     e.preventDefault();
     if (!S.user) { go(`/login?next=${encodeURIComponent(location.pathname + location.search)}`); return; }
     try {
-      const { fav } = await api('POST', `/api/favorites/${b.dataset.fav}`);
+      const { fav, favCount } = await api('POST', `/api/favorites/${b.dataset.fav}`);
+      const fc = $('[data-favs]'); if (fc && location.pathname === `/l/${b.dataset.fav}`) fc.textContent = `в избранном у ${NF.format(favCount)}`;
       $$(`[data-fav="${b.dataset.fav}"]`).forEach((x) => {
         x.classList.toggle('on', fav);
         x.setAttribute('aria-pressed', fav ? 'true' : 'false');
@@ -324,7 +346,7 @@
     [/^\/(verify|unsubscribe)$/, viewMailLink],
     [/^\/favorites$/, viewFavorites],
     [/^\/messages(?:\/(\d+|support))?$/, viewMessages],
-    [/^\/profile$/, viewProfile],
+    [/^\/profile(?:\/(listings|settings))?$/, viewProfile],
     [/^\/u\/(\d+)$/, viewUser],
     [/^\/admin$/, viewAdmin],
     [/^\/admin\/l\/(\d+)$/, viewAdminListing],
@@ -533,8 +555,7 @@
       CONDITION_CATS.has(l.category) && l.condition ? ['Состояние', CONDITION_LABEL[l.condition]] : null,
       ['Город', l.city],
       ['Доставка', l.delivery ? 'Отправит по России' : 'Только встреча'],
-      ['Опубликовано', when(l.createdAt)],
-      ['Просмотры', NF.format(l.views)]
+      ['Опубликовано', when(l.createdAt)]
     ].filter(Boolean);
 
     let ownerBanner = '';
@@ -590,7 +611,8 @@
         <aside class="item-side">
           <div class="panel panel-shadow" style="display:flex;flex-direction:column;gap:22px">
             <div style="display:flex;gap:10px;align-items:flex-start">
-              <div style="flex:1;min-width:0"><h1 class="item-title">${l.title}</h1><p class="muted" style="margin:8px 0 0;font-size:14px">${l.city} · ${when(l.createdAt)}</p></div>
+              <div style="flex:1;min-width:0"><h1 class="item-title">${l.title}</h1><p class="muted" style="margin:8px 0 0;font-size:14px">${l.city} · ${when(l.createdAt)}</p>
+                <p class="item-counts"><span title="Просмотры">${ic('eye', 16)}<span data-views>${NF.format(l.views)} ${plural(l.views, 'просмотр', 'просмотра', 'просмотров')}</span></span><span title="В избранном">${ic('heart', 16)}<span data-favs>в избранном у ${NF.format(l.favCount)}</span></span></p></div>
               ${l.isOwner ? '' : html`<button class="icon-btn ${l.isFav ? 'on' : ''}" data-fav="${l.id}" aria-label="${l.isFav ? 'Убрать из избранного' : 'В избранное'}" aria-pressed="${l.isFav ? 'true' : 'false'}">${ic('heart', 20)}</button>`}
               <button class="icon-btn" data-share aria-label="Поделиться">${ic('share', 20)}</button>
             </div>
@@ -1207,21 +1229,44 @@
   const MY_STATUS = { active: 'Активные', pending: 'На проверке', rejected: 'На исправлении', sold: 'Проданные', archived: 'Сняты' };
   const MY_TAG = { active: ['ok', 'Опубликовано'], pending: ['wait', 'На проверке'], rejected: ['bad', 'Нужно исправить'], sold: ['dark', 'Продано'], archived: ['off', 'Снято'] };
 
-  // Шапка профиля — своя и публичная: фото, имя, город, дата, цифры. own — с кнопкой смены фото.
-  function profileHero(u, { own = false, stats = [], meta = '', badges = '', actions = '', extra = '' }) {
-    return html`<section class="pf-hero">
-      <div class="pf-top">
-        <div class="pf-ava">${ava(u, 'xl')}${own ? html`<button class="pf-cam" type="button" data-ava-pick aria-label="${u.avatar ? 'Сменить фото профиля' : 'Добавить фото профиля'}">${ic('camera', 18)}</button>` : ''}</div>
-        <div class="pf-id">
-          <h1>${u.name}</h1>
-          <div class="pf-meta">${meta}</div>
+  // Карточка человека слева в профиле — своя и публичная: фото, имя, город, дата, цифры.
+  function idCard(u, { own = false, stats = [], badges = '', extra = '', foot = '' }) {
+    return html`<div class="pf-card">
+      <div class="pf-who">
+        <div class="pf-ava">${ava(u, own ? 'lg' : 'xl')}${own ? html`<button class="pf-cam" type="button" data-ava-pick aria-label="${u.avatar ? 'Сменить фото профиля' : 'Добавить фото профиля'}">${ic('camera', 15, 2)}</button>` : ''}</div>
+        <div class="pf-who-txt">
+          ${own ? html`<div class="pf-name">${u.name}</div>` : html`<h1 class="pf-name">${u.name}</h1>`}
+          <div class="pf-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
           ${badges ? html`<div class="pf-badges">${badges}</div>` : ''}
         </div>
-        ${actions ? html`<div class="pf-actions">${actions}</div>` : ''}
       </div>
-      ${stats.length ? html`<div class="pf-stats">${stats.map(([n, k]) => html`<div class="pf-stat"><b>${NF.format(n)}</b><span>${k}</span></div>`)}</div>` : ''}
+      ${stats.length ? html`<div class="pf-nums">${stats.map(([n, k]) => html`<div class="pf-num"><b>${NF.format(n)}</b><span>${k}</span></div>`)}</div>` : ''}
       ${extra}
-    </section>`;
+      ${foot}
+    </div>`;
+  }
+
+  // Меню профиля: разделы и «Выйти». На телефоне — главный экран профиля.
+  function profileNav(active) {
+    const chev = html`<span class="chev">${ic('right', 16, 2)}</span>`;
+    const item = (href, icon, label, key, right = '') => html`<a href="${href}" class="${active === key ? 'on' : ''}"${active === key ? raw(' aria-current="page"') : ''}>${ic(icon, 20)}<span class="lbl">${label}</span>${right}${chev}</a>`;
+    return html`<nav class="pf-nav" aria-label="Разделы профиля">
+      ${item('/profile/listings', 'tag', 'Мои объявления', 'listings')}
+      ${item('/favorites', 'heart', 'Избранное', 'fav')}
+      ${item('/messages', 'chat', 'Сообщения', 'msg', html`<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span>`)}
+      ${item('/profile/settings', 'gear', 'Настройки', 'settings')}
+      ${item('/messages/support', 'headset', 'Поддержка', 'support')}
+      ${S.user.isAdmin ? item('/admin', 'shield', 'Модерация', 'admin') : ''}
+      <hr>
+      <button type="button" class="out" data-logout>${ic('logout', 20, 2)}<span class="lbl">Выйти из аккаунта</span></button>
+    </nav>`;
+  }
+
+  async function logout() {
+    await api('POST', '/api/auth/logout').catch(() => {});
+    S.user = null; setUnread(0);
+    toast('Вы вышли из аккаунта');
+    go('/', true);
   }
 
   // Загрузка фото профиля: квадрат 512×512 → /api/uploads → PATCH /api/me.
@@ -1264,59 +1309,75 @@
     });
   }
 
-  async function viewProfile(_, q) {
+  // /profile — на компьютере меню слева и «Мои объявления», на телефоне — меню профиля.
+  // /profile/listings и /profile/settings — разделы; на телефоне без меню, со ссылкой «Профиль».
+  async function viewProfile(section, q) {
     if (!requireAuth()) return;
-    setTitle('Профиль');
-    const tab = q.get('tab') || 'listings';
+    if (!section && q.get('tab') === 'settings') { go(`/profile/settings${location.hash}`, true); return; }
+    const hub = !section;
+    const sec = section || 'listings';
+    setTitle(sec === 'settings' ? 'Настройки' : 'Профиль');
     const u = S.user;
     const { items } = await api('GET', '/api/my/listings');
     const count = (st) => items.filter((i) => i.status === st).length;
-    const sum = (k) => items.reduce((n, i) => n + (i[k] || 0), 0);
     const todo = [
       [!!u.avatar, 'Добавить фото', 'avatar'],
       [!!u.city, 'Указать город', 'city'],
       ...(S.config.mail ? [[u.emailVerified, 'Подтвердить почту', 'verify']] : [])
     ];
-    const done = todo.filter((t) => t[0]).length;
-    const pct = Math.round(((done + 1) / (todo.length + 1)) * 100); // имя есть всегда
+    const pct = Math.round(((todo.filter((t) => t[0]).length + 1) / (todo.length + 1)) * 100); // имя есть всегда
     const badges = html`${S.config.mail ? (u.emailVerified
-      ? html`<span class="pf-badge ok">${ic('check', 14, 2.4)} Почта подтверждена</span>`
-      : html`<span class="pf-badge warn">${ic('warn', 14, 2)} Почта не подтверждена</span>`) : ''}
-      ${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 14, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
-    const extra = pct < 100 ? html`<div class="pf-progress">
-        <div class="pf-progress-head"><strong>Профиль заполнен на ${pct}%</strong><span class="muted">Покупатели больше доверяют заполненным профилям</span></div>
+      ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>`
+      : html`<span class="pf-badge warn">${ic('warn', 13, 2)} Почта не подтверждена</span>`) : ''}
+      ${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
+    const progress = pct < 100 ? html`<div class="pf-progress">
+        <div class="pf-progress-head"><strong>Профиль заполнен на ${pct}%</strong></div>
         <div class="pf-bar"><i style="width:${pct}%"></i></div>
-        <div class="pf-todo">${todo.filter((t) => !t[0]).map((t) => html`<button type="button" class="chip" data-todo="${t[2]}">${ic('plus', 16, 2)}${t[1]}</button>`)}</div>
+        <div class="pf-todo">${todo.filter((t) => !t[0]).map((t) => html`<button type="button" class="chip" data-todo="${t[2]}">${ic('plus', 15, 2)}${t[1]}</button>`)}</div>
       </div>` : '';
-    app.innerHTML = String(html`<div class="wrap pf">
-      ${profileHero(u, {
-        own: true,
-        meta: `${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}`,
-        badges,
-        stats: [[count('active'), 'активных'], [count('sold'), 'продано'], [sum('views'), 'просмотров'], [sum('favCount'), 'в избранном']],
-        actions: html`<a class="btn btn-dark" href="/new">${ic('plus', 18, 2.2)}Разместить</a>
-          <button type="button" class="btn btn-soft" data-share>${ic('share', 18)}<span class="hide-xs">Мой профиль</span></button>
-          ${u.isAdmin ? html`<a class="btn btn-soft" href="/admin">${ic('shield', 18)}<span class="hide-xs">Модерация</span></a>` : ''}`,
-        extra
-      })}
-      <div class="pf-tabs" role="tablist">
-        <a role="tab" aria-selected="${tab !== 'settings'}" class="${tab !== 'settings' ? 'on' : ''}" href="/profile">Мои объявления<span>${items.length}</span></a>
-        <a role="tab" aria-selected="${tab === 'settings'}" class="${tab === 'settings' ? 'on' : ''}" href="/profile?tab=settings">Настройки</a>
-      </div>
-      <div id="box"></div>
+    const fix = items.filter((i) => i.status === 'rejected');
+    const attention = fix.length ? html`<div class="pf-attn">
+        <span class="pf-attn-ic">${ic('warn', 20, 2)}</span>
+        <div class="pf-attn-txt"><strong>${fix.length === 1 ? '1 объявление нужно исправить' : `${fix.length} ${plural(fix.length, 'объявление', 'объявления', 'объявлений')} нужно исправить`}</strong>
+          <span>«${fix[0].title}» — ${fix[0].rejectReason || 'причина в объявлении'}</span></div>
+        <a class="btn btn-dark btn-sm" href="/edit/${fix[0].id}">Исправить</a>
+      </div>` : '';
+    const head = sec === 'settings'
+      ? html`<div class="pf-head"><h1>Настройки</h1></div>`
+      : html`<div class="pf-head"><h1>Мои объявления</h1><a class="btn btn-dark" href="/new" aria-label="Разместить объявление">${ic('plus', 18, 2.2)}<span>Разместить</span></a></div>`;
+    app.innerHTML = String(html`<div class="wrap pf2 ${hub ? 'is-hub' : 'is-section'}">
+      <aside class="pf-side">
+        <h1 class="pf-hub-title">Профиль</h1>
+        ${idCard(u, {
+          own: true,
+          badges,
+          stats: [[count('active'), plural(count('active'), 'активное', 'активных', 'активных')], [count('sold'), 'продано']],
+          extra: progress,
+          foot: html`<div class="pf-link-row"><a href="/u/${u.id}">Мой публичный профиль${ic('right', 16, 2)}</a><button type="button" class="icon-btn sm" data-share aria-label="Поделиться профилем">${ic('share', 18)}</button></div>`
+        })}
+        ${attention}
+        ${profileNav(hub ? '' : sec)}
+      </aside>
+      <section class="pf-main">
+        <a class="pf-back" href="/profile">${ic('left', 18, 2)}Профиль</a>
+        ${head}
+        ${sec === 'listings' ? attention : ''}
+        <div id="box"></div>
+      </section>
     </div>`);
-    const again = () => viewProfile(_, q);
+    const again = () => viewProfile(section, q);
     $('[data-ava-pick]').onclick = () => pickAvatar(again);
     $('[data-share]').onclick = () => shareLink(`${location.origin}/u/${u.id}`, `${u.name} на Торгане`);
+    $('[data-logout]').onclick = logout;
     $$('[data-todo]').forEach((b) => {
       b.onclick = async () => {
         const t = b.dataset.todo;
         if (t === 'avatar') pickAvatar(again);
-        else if (t === 'city') go('/profile?tab=settings#s-city');
+        else if (t === 'city') go('/profile/settings#s-city');
         else { b.disabled = true; try { await api('POST', '/api/me/verify'); toast(`Письмо отправлено на ${u.email}`); } catch (e) { toast(e.message, true); b.disabled = false; } }
       };
     });
-    if (tab === 'settings') return renderSettings(again);
+    if (sec === 'settings') return renderSettings(again);
     return renderMyListings(items, q.get('status') || 'active', again);
   }
 
@@ -1330,7 +1391,7 @@
       ['chat', 'Отвечайте быстро', 'Первые часы после публикации — самые активные.']
     ];
     $('#box').innerHTML = String(html`
-      ${items.length ? html`<div class="pf-status" role="tablist">${Object.keys(MY_STATUS).map((k) => html`<a class="chip ${k === status ? 'active' : ''} ${groups[k].length ? '' : 'zero'}" href="/profile?status=${k}">${MY_STATUS[k]}<span class="cnt">${groups[k].length}</span></a>`)}</div>` : ''}
+      ${items.length ? html`<div class="pf-status" role="tablist">${Object.keys(MY_STATUS).map((k) => html`<a class="chip ${k === status ? 'active' : ''} ${groups[k].length ? '' : 'zero'}" href="/profile/listings?status=${k}">${MY_STATUS[k]}<span class="cnt">${groups[k].length}</span></a>`)}</div>` : ''}
       ${list.length ? html`<div class="ml-list">${list.map((i) => {
         const [tone, label] = MY_TAG[i.status] || MY_TAG.archived;
         return html`<article class="ml-card">
@@ -1418,7 +1479,6 @@
         ${row('Email для входа', u.email, S.config.mail ? (u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 14, 2.4)} Подтверждён</span>` : html`<button type="button" class="btn btn-soft btn-sm" id="verify-again">Подтвердить</button>`) : '')}
         ${row('На Торгане', `с ${since(u.createdAt)}`)}
         <div class="set-row"><div><span class="set-k">Удалить аккаунт</span><span class="set-v muted">Напишите в поддержку с этого email — удалим аккаунт и данные.</span></div><a class="btn btn-soft btn-sm" href="/messages/support">Поддержка</a></div>
-        <button type="button" class="btn btn-line set-logout" id="logout">Выйти из аккаунта</button>
       </section>
     </div>`);
     if (location.hash === '#s-city') { const c = $('#s-city'); c.scrollIntoView({ block: 'center' }); c.focus(); }
@@ -1452,26 +1512,24 @@
     };
     const va = $('#verify-again');
     if (va) va.onclick = async () => { va.disabled = true; try { await api('POST', '/api/me/verify'); toast(`Письмо отправлено на ${u.email}`); } catch (e) { toast(e.message, true); va.disabled = false; } };
-    $('#logout').onclick = async () => {
-      await api('POST', '/api/auth/logout').catch(() => {});
-      S.user = null; setUnread(0);
-      toast('Вы вышли из аккаунта');
-      go('/', true);
-    };
   }
 
   async function viewUser(id) {
     const { user: u, items } = await api('GET', `/api/users/${id}`);
     setTitle(u.name);
     const own = S.user && S.user.id === u.id;
-    app.innerHTML = String(html`<div class="wrap pf">
-      ${profileHero(u, {
-        meta: `${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}`,
-        stats: [[u.activeCount, plural(u.activeCount, 'объявление', 'объявления', 'объявлений')], [u.soldCount, 'продано']],
-        actions: html`<button type="button" class="btn btn-soft" data-share>${ic('share', 18)}Поделиться</button>${own ? html`<a class="btn btn-dark" href="/profile">Мой профиль</a>` : ''}`
-      })}
-      <div class="section-head"><h2>Объявления</h2></div>
-      ${items.length ? grid(items) : html`<div class="pf-empty sm"><h3>Активных объявлений нет</h3><p>Загляните позже.</p></div>`}
+    app.innerHTML = String(html`<div class="wrap pf2 pf-pub">
+      <aside class="pf-side">
+        ${idCard(u, {
+          badges: S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : '',
+          stats: [[u.activeCount, plural(u.activeCount, 'объявление', 'объявления', 'объявлений')], [u.soldCount, 'продано']],
+          foot: html`<div class="pf-pub-actions"><button type="button" class="btn btn-soft btn-block" data-share>${ic('share', 18)}Поделиться профилем</button>${own ? html`<a class="btn btn-dark btn-block" href="/profile">Мой профиль</a>` : ''}</div>`
+        })}
+      </aside>
+      <section class="pf-main">
+        <div class="pf-head"><h2>Объявления <span class="muted">${u.activeCount}</span></h2></div>
+        ${items.length ? grid(items) : html`<div class="pf-empty sm"><h3>Активных объявлений нет</h3><p>Загляните позже.</p></div>`}
+      </section>
     </div>`);
     $('[data-share]').onclick = () => shareLink(location.href, `${u.name} на Торгане`);
   }
