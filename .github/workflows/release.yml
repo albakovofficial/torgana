@@ -1,0 +1,35 @@
+# Выпуск: Actions → «Выпуск» → Run workflow. Проверяет main и сливает его в release.
+# Сервер сам забирает release в течение 30 секунд (deploy/update.sh).
+# Слияние только «вперёд» (fast-forward): если в release есть коммиты, которых нет в main, выпуск остановится.
+name: Выпуск
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+
+  release:
+    needs: check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: main → release
+        run: |
+          if git ls-remote --exit-code --heads origin release >/dev/null; then
+            git fetch -q origin release
+            git merge-base --is-ancestor origin/release HEAD || { echo "::error::В release есть коммиты, которых нет в main. Сначала перенесите их в main."; exit 1; }
+          fi
+          git push origin HEAD:refs/heads/release
+          echo "Выпущено: $(git log -1 --format='%h — %s')" >> "$GITHUB_STEP_SUMMARY"
