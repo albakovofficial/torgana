@@ -7,7 +7,9 @@ cd /var/www/torgana || exit 1
 exec 9>/tmp/torgana-update.lock
 flock -n 9 || exit 0
 
-git fetch -q origin main || exit 0
+# Без таймаута оборванное соединение с GitHub подвешивает автообновление навсегда.
+export GIT_SSH_COMMAND="ssh -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o BatchMode=yes"
+timeout 90 git fetch -q origin main || exit 0
 OLD=$(git rev-parse HEAD)
 NEW=$(git rev-parse origin/main)
 [ "$OLD" = "$NEW" ] && exit 0

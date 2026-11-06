@@ -4,4 +4,6 @@ Description=Torgana auto-update from GitHub
 [Service]
 Type=oneshot
 User=torgana
+# Если что-то зависло — systemd остановит попытку, и через 30 секунд начнётся новая.
+TimeoutStartSec=5min
 ExecStart=/bin/bash /var/www/torgana/deploy/update.sh
