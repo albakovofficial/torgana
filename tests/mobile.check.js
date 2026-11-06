@@ -93,6 +93,9 @@ async function seed(base, browser) {
   await seller.patch(`/api/listings/${ids[1]}`, { title: phone.title, description: phone.description, category: phone.category, city: phone.city, price: 79900, delivery: true, photos: [photos[1]] });
   await admin.post(`/api/admin/listings/${ids[1]}/restore`);
   await buyer.post(`/api/conversations/${conv.data.id}/messages`, { photo: (await buyer.post('/api/uploads', { data: photoData })).data.file, body: 'Вот такую ищу' });
+  // 1.11: вход через сервисы включён, заявка бизнеса на проверке
+  await admin.put('/api/admin/oauth', { yandex: { id: 'ya-app', secret: 'ya-secret' }, vk: { id: '5551' } });
+  await seller.post('/api/me/business', { name: 'ИП Смирнова А. А.', inn: '500100732259', ogrn: '304500116000157' });
   // модерация: объявление с контактами в тексте (автопроверка) и заблокированный пользователь
   await buyer.post('/api/listings', { title: 'Велосипед детский', description: 'Звоните +7 900 123-45-67 или пишите в WhatsApp', category: 'hobby', city: 'Москва', price: '4000' });
   const spam = await registerUser(base, { name: 'Иван Спамов', email: 'spam@test.local' });
@@ -139,6 +142,8 @@ function pages(d) {
     ['admin-site', '/admin?status=site', d.admin],
     ['profile-searches', '/profile/searches', d.buyer],
     ['admin-users', '/admin?status=users', d.admin],
+    ['admin-biz', '/admin?status=biz', d.admin],
+    ['admin-oauth', '/admin?status=oauth', d.admin],
     ['admin-user', `/admin/u/${d.seller.user.id}`, d.admin],
     ['admin-log', '/admin?status=log', d.admin],
     ['admin-notify', '/admin?status=notify', d.admin],
