@@ -12,9 +12,10 @@ const { openDb } = require('./lib/db');
 const { HttpError, sendJson, readJson, parseCookies, rateLimit } = require('./lib/http');
 const auth = require('./lib/auth');
 const { CATEGORIES, CATEGORY_IDS, CITIES, PRICE_UNITS, CONDITIONS } = require('./lib/constants');
-const { norm, parseQuery } = require('./lib/search');
+const { norm, parseQuery, searchSpec, specSql } = require('./lib/search');
 const { suggestFromPhoto } = require('./lib/ai');
 const { createMailer } = require('./lib/mailer');
+const { createPush } = require('./lib/push');
 const { checkProhibited } = require('./lib/prohibited');
 const legal = require('./lib/legal');
 
@@ -82,10 +83,16 @@ function requireAdmin(ctx) {
 
 const photoUrl = (file) => (file ? `/uploads/${file}` : null);
 
+// Переключатели уведомлений: поле API → колонка users (письма и push по видам).
+const NOTIFY_FIELDS = {
+  notifyMessages: 'notify_messages', notifyModeration: 'notify_moderation', notifyReviews: 'notify_reviews', notifyDigest: 'notify_digest',
+  pushMessages: 'push_messages', pushSearches: 'push_searches', pushPrices: 'push_prices', pushModeration: 'push_moderation'
+};
+
 function publicUser(u) {
   return u ? {
     id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, avatar: photoUrl(u.avatar), isAdmin: !!u.is_admin, isOwner: !!u.is_admin && u.email === OWNER_EMAIL, createdAt: u.created_at,
-    emailVerified: !!u.email_verified, notifyMessages: !!u.notify_messages, notifyModeration: !!u.notify_moderation, notifyReviews: !!u.notify_reviews,
+    emailVerified: !!u.email_verified, ...Object.fromEntries(Object.entries(NOTIFY_FIELDS).map(([k, col]) => [k, !!u[col]])),
     rating: reviews.ratingOf(u.id)
   } : null;
 }
@@ -101,6 +108,9 @@ function setAvatar(userId, file) {
   }
 }
 
+// Старая цена, если цену снизили за последние 30 дней (зачёркнутая цена в карточке и на странице объявления).
+const priceWasOf = (r) => (r.price_was && r.price_drop_at > Date.now() - 30 * 24 * 3600 * 1000 ? r.price_was : null);
+
 function cardFromRow(r) {
   return {
     id: r.id,
@@ -113,12 +123,13 @@ function cardFromRow(r) {
     status: r.status,
     photo: photoUrl(r.photo),
     createdAt: r.created_at,
-    isFav: !!r.is_fav
+    isFav: !!r.is_fav,
+    priceWas: priceWasOf(r)
   };
 }
 
 const CARD_SELECT = `
-  SELECT l.id, l.title, l.price, l.price_unit, l.city, l.category, l.delivery, l.status, l.created_at,
+  SELECT l.id, l.title, l.price, l.price_unit, l.city, l.category, l.delivery, l.status, l.created_at, l.price_was, l.price_drop_at,
     (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
     EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id = l.id AND f.user_id = ?) AS is_fav
   FROM listings l JOIN users u ON u.id = l.user_id`;
@@ -206,6 +217,9 @@ function route(method, pattern, handler) {
 // Модерация (очередь, проверка «от и до», жалобы, история) и чат поддержки — в отдельных модулях.
 const autoChecks = require('./lib/checks')({ db, marketEstimate });
 const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, setAvatar, str, now, norm, autoChecks, OWNER_EMAIL };
+const push = createPush({ db, subject: `mailto:${SUPPORT_EMAIL || 'support@torgana.ru'}`, allowHttp: process.env.PUSH_ALLOW_HTTP === '1' });
+const alerts = require('./lib/alerts')({ route, db, mailer, push, h: helpers, categories: CATEGORIES });
+helpers.alerts = alerts; // push и подборки нужны модерации, поддержке и отзывам
 const { logEvent, audit } = require('./lib/moderation')({ route, db, mailer, h: helpers });
 helpers.audit = audit; // журнал модерации нужен и отзывам, и поддержке
 const supportChat = require('./lib/support')({ route, db, mailer, h: helpers });
@@ -226,7 +240,7 @@ route('GET', '/api/config', () => ({
 
 route('GET', '/api/me', (ctx) => {
   const unread = ctx.user ? unreadCount(ctx.user.id) + supportChat.unreadFor(ctx.user.id) : 0;
-  return { user: publicUser(ctx.user), unread };
+  return { user: publicUser(ctx.user), unread, fresh: ctx.user ? alerts.freshCounts(ctx.user.id) : null };
 });
 
 route('POST', '/api/auth/register', async (ctx) => {
@@ -353,8 +367,9 @@ route('PATCH', '/api/me', async (ctx) => {
       if (!row || row.listing_id !== null) throw new HttpError(400, 'Сначала загрузите фото');
     }
   }
-  db.prepare('UPDATE users SET name = ?, city = ?, phone = ?, notify_messages = ?, notify_moderation = ?, notify_reviews = ? WHERE id = ?')
-    .run(name, city, phone, flag(body.notifyMessages, u.notify_messages), flag(body.notifyModeration, u.notify_moderation), flag(body.notifyReviews, u.notify_reviews), u.id);
+  const cols = Object.entries(NOTIFY_FIELDS);
+  db.prepare(`UPDATE users SET name = ?, city = ?, phone = ?, ${cols.map(([, c]) => `${c} = ?`).join(', ')} WHERE id = ?`)
+    .run(name, city, phone, ...cols.map(([k, c]) => flag(body[k], u[c])), u.id);
   if (avatar !== null) setAvatar(u.id, avatar);
   return { user: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id)) };
 });
@@ -377,21 +392,11 @@ route('POST', '/api/me/password', async (ctx) => {
 route('GET', '/api/listings', (ctx) => {
   const q = ctx.query;
   const uid = ctx.user ? ctx.user.id : 0;
-  const where = ['l.status = \'active\'', 'u.is_blocked = 0'];
-  const params = [];
-  const parsed = parseQuery(q.get('q') || '');
-  for (const w of parsed.words) { where.push('l.search_text LIKE ?'); params.push(`%${w}%`); }
-  const category = q.get('category');
-  if (category && CATEGORY_IDS.has(category)) { where.push('l.category = ?'); params.push(category); }
-  const city = q.get('city') || parsed.city;
-  if (city) { where.push('l.city_lc = ?'); params.push(norm(city)); }
-  const min = q.get('min') ? parseInt(q.get('min'), 10) : parsed.min;
-  const max = q.get('max') ? parseInt(q.get('max'), 10) : parsed.max;
-  if (Number.isFinite(min)) { where.push('l.price >= ?'); params.push(min); }
-  if (Number.isFinite(max)) { where.push('l.price <= ?'); params.push(max); }
-  if (q.get('delivery') === '1' || parsed.delivery) where.push('l.delivery = 1');
-  const userId = parseInt(q.get('user') || '', 10);
-  if (Number.isFinite(userId)) { where.push('l.user_id = ?'); params.push(userId); }
+  const spec = searchSpec(Object.fromEntries(q.entries()), CATEGORY_IDS);
+  const { parsed } = spec;
+  const f = specSql(spec);
+  const where = ['l.status = \'active\'', 'u.is_blocked = 0', ...f.where];
+  const params = f.args;
   const sort = q.get('sort');
   const order = sort === 'cheap' ? 'l.price IS NULL, l.price ASC, l.id DESC'
     : sort === 'expensive' ? 'l.price IS NULL, l.price DESC, l.id DESC'
@@ -435,7 +440,7 @@ route('GET', '/api/listings/:id', (ctx) => {
   }
   return {
     listing: {
-      id: l.id, title: l.title, description: l.description, category: l.category, price: l.price, priceUnit: l.price_unit,
+      id: l.id, title: l.title, description: l.description, category: l.category, price: l.price, priceUnit: l.price_unit, priceWas: priceWasOf(l),
       city: l.city, condition: l.condition, delivery: !!l.delivery, status: l.status, views: l.views, favCount,
       createdAt: l.created_at, updatedAt: l.updated_at, photos, isFav, isOwner: !!isOwner,
       rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : '',
@@ -588,6 +593,7 @@ route('GET', '/api/price-hint', (ctx) => {
 
 route('GET', '/api/favorites', (ctx) => {
   const u = requireUser(ctx);
+  alerts.seenPrices(u.id);
   const rows = db.prepare(`${CARD_SELECT} JOIN favorites fv ON fv.listing_id = l.id AND fv.user_id = ?
     WHERE l.status IN ('active', 'sold') AND u.is_blocked = 0 ORDER BY fv.created_at DESC`).all(u.id, u.id);
   return { items: rows.map(cardFromRow) };
@@ -617,7 +623,7 @@ route('GET', '/api/conversations', (ctx) => {
     SELECT c.id, c.listing_id, c.buyer_id, c.seller_id, c.updated_at, l.title, l.price, l.price_unit, l.status,
       (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
       ou.id AS other_id, ou.name AS other_name, ou.avatar AS other_avatar,
-      (SELECT body FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_body,
+      (SELECT CASE WHEN body = '' AND photo != '' THEN '📷 Фото' ELSE body END FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_body,
       (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != ? AND m.read_at IS NULL) AS unread
     FROM conversations c
     JOIN listings l ON l.id = c.listing_id
@@ -647,6 +653,17 @@ route('POST', '/api/conversations', async (ctx) => {
   return { id: Number(info.lastInsertRowid) };
 });
 
+// Фото в сообщении: своё загруженное фото, ещё не привязанное к объявлению и не фото профиля.
+function chatPhoto(u, file) {
+  if (!file) return '';
+  const f = String(file);
+  const row = db.prepare('SELECT listing_id FROM uploads WHERE file = ? AND user_id = ?').get(f, u.id);
+  if (!row || row.listing_id !== null || db.prepare('SELECT 1 FROM users WHERE avatar = ?').get(f)) throw new HttpError(400, 'Сначала загрузите фото');
+  return f;
+}
+helpers.chatPhoto = chatPhoto;
+const msgPreview = (body, photo) => body || (photo ? '📷 Фото' : '');
+
 function loadConversation(u, id) {
   const c = db.prepare('SELECT * FROM conversations WHERE id = ?').get(id);
   if (!c || (c.buyer_id !== u.id && c.seller_id !== u.id)) throw new HttpError(404, 'Диалог не найден');
@@ -658,8 +675,8 @@ route('GET', '/api/conversations/:id', (ctx) => {
   const c = loadConversation(u, parseInt(ctx.params.id, 10));
   const after = parseInt(ctx.query.get('after') || '0', 10) || 0;
   db.prepare('UPDATE messages SET read_at = ? WHERE conversation_id = ? AND sender_id != ? AND read_at IS NULL').run(now(), c.id, u.id);
-  const messages = db.prepare('SELECT id, sender_id, body, created_at, read_at FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id LIMIT 500')
-    .all(c.id, after).map((m) => ({ id: m.id, mine: m.sender_id === u.id, body: m.body, createdAt: m.created_at, read: !!m.read_at }));
+  const messages = db.prepare('SELECT id, sender_id, body, photo, created_at, read_at FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id LIMIT 500')
+    .all(c.id, after).map((m) => ({ id: m.id, mine: m.sender_id === u.id, body: m.body, photo: photoUrl(m.photo), createdAt: m.created_at, read: !!m.read_at }));
   const l = loadListing(c.listing_id);
   const otherId = c.buyer_id === u.id ? c.seller_id : c.buyer_id;
   const other = db.prepare('SELECT id, name, avatar, created_at FROM users WHERE id = ?').get(otherId);
@@ -677,12 +694,16 @@ route('POST', '/api/conversations/:id/messages', async (ctx) => {
   const u = requireUser(ctx);
   rateLimit(`msg:${u.id}`, 40, 60 * 1000);
   const c = loadConversation(u, parseInt(ctx.params.id, 10));
-  const body = str((await readJson(ctx.req)).body, 2000);
-  if (!body) throw new HttpError(400, 'Пустое сообщение');
+  const input = await readJson(ctx.req);
+  const body = str(input.body, 2000);
+  const photo = chatPhoto(u, input.photo);
+  if (!body && !photo) throw new HttpError(400, 'Пустое сообщение');
   const t = now();
-  const info = db.prepare('INSERT INTO messages (conversation_id, sender_id, body, created_at) VALUES (?, ?, ?, ?)').run(c.id, u.id, body, t);
+  const info = db.prepare('INSERT INTO messages (conversation_id, sender_id, body, photo, created_at) VALUES (?, ?, ?, ?, ?)').run(c.id, u.id, body, photo, t);
   db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(t, c.id);
-  return { message: { id: Number(info.lastInsertRowid), mine: true, body, createdAt: t, read: false } };
+  const l = loadListing(c.listing_id);
+  alerts.notify(c.buyer_id === u.id ? c.seller_id : c.buyer_id, 'messages', { title: `${u.name} · ${l.title}`, body: msgPreview(body, photo).slice(0, 180), url: `/messages/${c.id}`, tag: `chat-${c.id}`, urgent: true });
+  return { message: { id: Number(info.lastInsertRowid), mine: true, body, photo: photoUrl(photo), createdAt: t, read: false } };
 });
 
 route('GET', '/api/users/:id', (ctx) => {
@@ -846,7 +867,8 @@ const server = http.createServer(async (req, res) => {
 // Чистим просроченные сессии и брошенные загрузки раз в час.
 setInterval(() => {
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now());
-  const old = db.prepare('SELECT file FROM uploads WHERE listing_id IS NULL AND created_at < ? AND file NOT IN (SELECT avatar FROM users WHERE avatar != \'\')').all(now() - 24 * 3600 * 1000);
+  const old = db.prepare(`SELECT file FROM uploads WHERE listing_id IS NULL AND created_at < ? AND file NOT IN (SELECT avatar FROM users WHERE avatar != '')
+    AND file NOT IN (SELECT photo FROM messages WHERE photo != '') AND file NOT IN (SELECT photo FROM support_messages WHERE photo != '')`).all(now() - 24 * 3600 * 1000);
   for (const { file } of old) {
     fs.rm(path.join(UPLOAD_DIR, file), { force: true }, () => {});
     db.prepare('DELETE FROM uploads WHERE file = ?').run(file);
@@ -854,6 +876,7 @@ setInterval(() => {
 }, 60 * 60 * 1000).unref();
 
 mailer.start();
+alerts.start({ tickMs: Number(process.env.DIGEST_TICK_MS) || undefined, minAge: process.env.DIGEST_MIN_AGE_MS ? Number(process.env.DIGEST_MIN_AGE_MS) : undefined, anyHour: process.env.DIGEST_ANY_HOUR === '1' });
 // Автопроверка объявлений, которые ждали проверки до появления автопроверок (один раз при запуске).
 for (const { id } of db.prepare('SELECT id FROM listings WHERE status = \'pending\' AND checks = \'\'').all()) autoChecks.run(id);
 

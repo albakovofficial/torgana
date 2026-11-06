@@ -23,6 +23,7 @@ async function seed(base, browser) {
   const page = await browser.newPage();
   const colors = ['#C9D6CF', '#E3D5C6', '#CFD3DE', '#DCCFD9', '#D6DCC4', '#C8D9DD'];
   const photos = [];
+  let photoData = '';
   for (const c of colors) {
     const data = await page.evaluate((color) => {
       const cv = document.createElement('canvas'); cv.width = 800; cv.height = 800;
@@ -31,6 +32,7 @@ async function seed(base, browser) {
       return cv.toDataURL('image/jpeg', 0.8);
     }, c);
     photos.push((await seller.post('/api/uploads', { data })).data.file);
+    photoData = photoData || data;
   }
   await page.close();
   const items = [
@@ -84,6 +86,13 @@ async function seed(base, browser) {
   const c3 = (await buyer.post('/api/conversations', { listingId: ids[4] })).data.id;
   await buyer.post(`/api/conversations/${c3}/messages`, { body: 'Добрый день! Можно забрать завтра?' });
   await seller.post(`/api/conversations/${c3}/messages`, { body: 'Да, после обеда.' });
+  // 1.10: сохранённые поиски, снижение цены, фото в чате
+  await buyer.post('/api/saved-searches', { q: 'велосипед', city: 'Казань' });
+  await buyer.post('/api/saved-searches', { category: 'electronics', max: '100000', delivery: '1' });
+  const phone = (await seller.get(`/api/listings/${ids[1]}`)).data.listing;
+  await seller.patch(`/api/listings/${ids[1]}`, { title: phone.title, description: phone.description, category: phone.category, city: phone.city, price: 79900, delivery: true, photos: [photos[1]] });
+  await admin.post(`/api/admin/listings/${ids[1]}/restore`);
+  await buyer.post(`/api/conversations/${conv.data.id}/messages`, { photo: (await buyer.post('/api/uploads', { data: photoData })).data.file, body: 'Вот такую ищу' });
   // модерация: объявление с контактами в тексте (автопроверка) и заблокированный пользователь
   await buyer.post('/api/listings', { title: 'Велосипед детский', description: 'Звоните +7 900 123-45-67 или пишите в WhatsApp', category: 'hobby', city: 'Москва', price: '4000' });
   const spam = await registerUser(base, { name: 'Иван Спамов', email: 'spam@test.local' });
@@ -128,6 +137,7 @@ function pages(d) {
     ['admin', '/admin', d.admin],
     ['admin-mail', '/admin?status=mail', d.admin],
     ['admin-site', '/admin?status=site', d.admin],
+    ['profile-searches', '/profile/searches', d.buyer],
     ['admin-users', '/admin?status=users', d.admin],
     ['admin-user', `/admin/u/${d.seller.user.id}`, d.admin],
     ['admin-log', '/admin?status=log', d.admin],
