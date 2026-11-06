@@ -57,10 +57,12 @@ const mailer = createMailer({
 const now = () => Date.now();
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 
+// За nginx: он дописывает настоящий адрес посетителя в конец X-Forwarded-For ($proxy_add_x_forwarded_for).
+// Берём последний адрес — первые посетитель может подставить сам, чтобы обойти лимиты.
 function clientIp(req) {
   if (TRUST_PROXY) {
     const xf = req.headers['x-forwarded-for'];
-    if (xf) return String(xf).split(',')[0].trim();
+    if (xf) return String(xf).split(',').pop().trim();
   }
   return req.socket.remoteAddress || '';
 }
@@ -203,6 +205,7 @@ function route(method, pattern, handler) {
 const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, setAvatar, str, now, norm };
 const { logEvent } = require('./lib/moderation')({ route, db, mailer, h: helpers });
 const supportChat = require('./lib/support')({ route, db, mailer, h: helpers });
+const stats = require('./lib/stats')({ route, db, h: helpers });
 
 route('GET', '/api/config', () => ({
   categories: CATEGORIES,
@@ -409,7 +412,6 @@ route('GET', '/api/listings/:id', (ctx) => {
   if ((l.status !== 'active' && l.status !== 'sold') || seller.is_blocked) {
     if (!isOwner && !isAdmin) throw new HttpError(404, 'Объявление снято с публикации');
   }
-  if (!isOwner) db.prepare('UPDATE listings SET views = views + 1 WHERE id = ?').run(id);
   const photos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(id).map((r) => photoUrl(r.file));
   const sellerActive = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ? AND status = \'active\'').get(l.user_id).n;
   const isFav = ctx.user ? !!db.prepare('SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?').get(ctx.user.id, id) : false;
@@ -587,7 +589,10 @@ route('POST', '/api/favorites/:id', (ctx) => {
   if (!loadListing(id)) throw new HttpError(404, 'Объявление не найдено');
   const exists = db.prepare('SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?').get(u.id, id);
   if (exists) db.prepare('DELETE FROM favorites WHERE user_id = ? AND listing_id = ?').run(u.id, id);
-  else db.prepare('INSERT INTO favorites (user_id, listing_id, created_at) VALUES (?, ?, ?)').run(u.id, id, now());
+  else {
+    db.prepare('INSERT INTO favorites (user_id, listing_id, created_at) VALUES (?, ?, ?)').run(u.id, id, now());
+    stats.countFav(ctx, loadListing(id));
+  }
   return { fav: !exists, favCount: db.prepare('SELECT COUNT(*) AS n FROM favorites WHERE listing_id = ?').get(id).n };
 });
 

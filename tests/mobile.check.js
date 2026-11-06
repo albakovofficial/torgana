@@ -7,7 +7,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
-const { startServer, registerUser } = require('./helpers');
+const { startServer, registerUser, client } = require('./helpers');
 
 const SHOTS = path.join(__dirname, 'screenshots');
 const VIEWPORTS = {
@@ -54,7 +54,15 @@ async function seed(base, browser) {
   const conv = await buyer.post('/api/conversations', { listingId: ids[0] });
   await buyer.post(`/api/conversations/${conv.data.id}/messages`, { body: 'Здравствуйте! Коляска ещё продаётся?' });
   await seller.post(`/api/conversations/${conv.data.id}/messages`, { body: 'Да, можно посмотреть сегодня вечером.' });
-  await buyer.post(`/api/favorites/${ids[1]}`);
+  // статистика: несколько разных «гостей» видели и открыли объявление
+  const ua = (i) => `Mozilla/5.0 (Linux; Android 14; Pixel ${i}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36`;
+  for (let i = 0; i < 6; i++) {
+    const g = client(base);
+    const h = { origin: base, 'user-agent': ua(i) };
+    await g.post('/api/stats/impressions', { ids: [ids[1], ids[0]] }, h);
+    if (i < 4) await g.post('/api/stats/view', { id: ids[1], src: ['search', 'home', 'search', 'external'][i] }, h);
+  }
+  await buyer.post(`/api/favorites/${ids[1]}`, {}, { origin: base, 'user-agent': ua(9) });
   await admin.post(`/api/admin/listings/${ids[5]}/reject`, { reason: 'Контакты в тексте объявления' });
   const pending = (await seller.post('/api/listings', { title: 'Травматический пистолет', category: 'hobby', city: 'Казань', price: '9000' })).data.id;
   await buyer.post('/api/support/messages', { body: 'Здравствуйте! Почему моё объявление на проверке?' });
@@ -85,6 +93,8 @@ function pages(d) {
     ['profile-listings', '/profile/listings', d.seller],
     ['profile-rejected', '/profile/listings?status=rejected', d.seller],
     ['settings', '/profile/settings', d.seller],
+    ['stats', `/profile/stats/${d.ids[1]}`, d.seller],
+    ['stats-week', `/profile/stats/${d.ids[1]}?days=7`, d.seller],
     ['settings-old-link', '/profile?tab=settings', d.seller],
     ['profile-empty', '/profile', d.buyer],
     ['favorites', '/favorites', d.buyer],
