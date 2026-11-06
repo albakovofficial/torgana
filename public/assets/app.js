@@ -100,6 +100,7 @@
     gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
     chart: '<path d="M4 20V11M10 20V5M16 20v-6M22 20H2"/>',
+    up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
     star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
     flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
     lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
@@ -244,24 +245,32 @@
   function renderFooter() {
     const op = S.config.operator;
     const links = (ls) => ls.map(([href, t]) => html`<a href="${href}">${t}</a>`);
-    $('#footer').innerHTML = String(html`<div class="wrap">
+    $('#footer').innerHTML = String(html`<div class="wrap f-in">
       <div class="f-cta">
-        <div><div class="f-cta-t">Есть что продать?</div><div class="f-cta-s">Разместите бесплатно — без лимитов для частных лиц.</div></div>
-        <a class="btn btn-lg f-cta-btn" href="/new">${ic('plus', 20, 2.2)}Разместить объявление</a>
+        <div class="f-cta-txt"><h2>Есть что продать?</h2><p>Разместите бесплатно — без лимитов для частных лиц.</p></div>
+        <a class="f-cta-btn" href="/new">${ic('plus', 20, 2.2)}Разместить объявление</a>
       </div>
-      <div class="f-top">
-        <div class="f-brand">${logo()}<p>Честная площадка объявлений по всей России. Бесплатно для частных лиц, каждое объявление проверяет модератор.</p></div>
-        <a class="f-help" href="/messages/support">
-          <span class="f-help-ic">${ic('headset', 22)}</span>
-          <span class="f-help-txt"><b>Нужна помощь?</b><span>Отвечают модераторы, не бот${S.config.supportEmail ? ` · ${S.config.supportEmail}` : ''}</span></span>
-          ${ic('right', 18, 2)}
-        </a>
+      <div class="f-grid">
+        <div class="f-brand">
+          ${logo()}
+          <p>Честная площадка объявлений по всей России. Бесплатно для частных лиц, каждое объявление проверяет модератор.</p>
+          <a class="f-help" href="/messages/support">
+            <span class="f-help-ic">${ic('headset', 21)}</span>
+            <span class="f-help-txt"><b>Нужна помощь?</b><span>Отвечают модераторы, не бот</span></span>
+            ${ic('right', 18, 2)}
+          </a>
+          ${S.config.supportEmail ? html`<a class="f-mail" href="mailto:${S.config.supportEmail}">${S.config.supportEmail}</a>` : ''}
+        </div>
+        <div class="f-cols">${FOOTER_COLS.map(([t, ls]) => html`<nav class="f-col" aria-label="${t}"><b>${t}</b>${links(ls)}</nav>`)}</div>
+        <div class="f-acc">${FOOTER_COLS.map(([t, ls], i) => html`<details${i === 0 ? raw(' open') : ''}><summary>${t}${ic('down', 20, 2)}</summary><div>${links(ls)}</div></details>`)}</div>
       </div>
-      <div class="f-cols">${FOOTER_COLS.map(([t, ls]) => html`<nav class="f-col" aria-label="${t}"><b>${t}</b>${links(ls)}</nav>`)}</div>
-      <div class="f-acc">${FOOTER_COLS.map(([t, ls], i) => html`<details${i === 0 ? raw(' open') : ''}><summary>${t}${ic('down', 20, 2)}</summary><div>${links(ls)}</div></details>`)}</div>
-      <div class="footer-bottom"><span>© ${new Date().getFullYear()} Торгана${op ? ` · ${op.name} · ИНН ${op.inn} · ОГРНИП ${op.ogrnip}` : ''}</span><a href="/page/contacts">Реквизиты и контакты</a></div>
-      <div class="f-mark" aria-hidden="true">торгана</div>
+      <div class="f-bottom">
+        <span>© ${new Date().getFullYear()} Торгана${op ? ` · ${op.name} · ИНН ${op.inn} · ОГРНИП ${op.ogrnip}` : ''}</span>
+        <button type="button" class="f-up" data-up>${ic('up', 14, 2.2)}Наверх</button>
+      </div>
+      <svg class="f-mark" viewBox="0 62 1000 150" preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false"><text x="0" y="212" textLength="1000" lengthAdjust="spacingAndGlyphs">торгана</text></svg>
     </div>`);
+    $('[data-up]', $('#footer')).onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function setUnread(n) {
