@@ -234,8 +234,7 @@
       <a href="${S.user ? '/profile' : '/login'}" class="${on(p.startsWith('/profile') || p === '/login')}" aria-label="Профиль">${ic('user', 23)}</a>`);
   }
 
-  // Подвал (как у ALBAKOV, в изумруде): знак и кнопки связи, разделы (на телефоне раскрываются), контакты,
-  // реквизиты оператора, документы. Последняя колонка FOOTER_COLS — документы (их же показывает меню ≡).
+  // Подвал: знак и кнопки связи, разделы (на телефоне раскрываются), контакты, © с реквизитами оператора, документы. Последняя колонка FOOTER_COLS — документы (их же показывает меню ≡).
   const FOOTER_COLS = [
     ['Покупателям', [['/page/help', 'Как искать'], ['/page/safety', 'Безопасность'], ['/favorites', 'Избранное']]],
     ['Продавцам', [['/new', 'Разместить объявление'], ['/page/business', 'Для бизнеса'], ['/page/rules', 'Правила площадки']]],
@@ -259,15 +258,14 @@
         </div>
       </div>
       <div class="f-grid">
-        ${cols.map(([t, ls]) => html`<details class="fcol" open><summary><h4>${t}</h4><i aria-hidden="true"></i></summary><ul>${ls.map(([href, label]) => html`<li><a href="${href}">${label}</a></li>`)}</ul></details>`)}
+        ${cols.map(([t, ls]) => html`<details class="fcol" open><summary><h4>${t}</h4>${ic('down', 18, 2)}</summary><ul>${ls.map(([href, label]) => html`<li><a href="${href}">${label}</a></li>`)}</ul></details>`)}
         <div class="fcol fcol-contacts"><h4>Контакты</h4><ul class="f-contacts">
           ${mail ? contact('mail', html`<a href="mailto:${mail}">${mail}</a>`) : ''}
           ${contact('chat', html`<a href="/messages/support">Чат «Поддержка Торганы»</a>`)}
           ${contact('shield', html`<span>Каждое объявление проверяет модератор</span>`)}
         </ul></div>
       </div>
-      ${op ? html`<div class="f-seller"><span class="f-seller-t">Оператор</span><span>${op.name}</span><i aria-hidden="true">·</i><span>ИНН ${op.inn}</span><i aria-hidden="true">·</i><span>ОГРНИП ${op.ogrnip}</span></div>` : ''}
-      <div class="f-bottom"><span>© ${new Date().getFullYear()} Торгана. Все права защищены</span>
+      <div class="f-bottom"><div class="f-copy"><b>© ${new Date().getFullYear()} Торгана</b>${op ? html`<span>${op.name}, ИНН ${op.inn}, ОГРНИП ${op.ogrnip}</span>` : ''}</div>
         <nav class="f-docs" aria-label="Документы">${docs.map(([href, label]) => html`<a href="${href}">${label}</a>`)}</nav></div>
     </div>`);
     // На телефоне разделы свёрнуты, на компьютере всегда открыты.
