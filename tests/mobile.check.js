@@ -6,6 +6,7 @@
 // Запуск: npm run test:ui   (нужен Playwright с Chromium)
 const fs = require('node:fs');
 const path = require('node:path');
+const http = require('node:http');
 const { chromium } = require('playwright');
 const { startServer, registerUser, client } = require('./helpers');
 
@@ -100,7 +101,36 @@ async function seed(base, browser) {
   await buyer.post('/api/listings', { title: 'Велосипед детский', description: 'Звоните +7 900 123-45-67 или пишите в WhatsApp', category: 'hobby', city: 'Москва', price: '4000' });
   const spam = await registerUser(base, { name: 'Иван Спамов', email: 'spam@test.local' });
   await admin.post(`/api/admin/users/${spam.user.id}/block`, { blocked: true, reason: 'Спам и повторные объявления' });
-  return { seller, buyer, admin, ids, pending, thread, conv: conv.data.id, convReview: c3 };
+
+  // 1.12: магазин с тарифом «Магазин Про», витрина, продвижение (идёт и ждёт erid), платежи (поддельная ЮKassa).
+  await admin.put('/api/admin/billing', { config: { shopId: '123456', secret: 'test_AbCdEfGhIjKlMnOp', receipts: true, vat: 1, mode: 'full_payment' } });
+  const shop = await registerUser(base, { name: 'Ольга Детство', email: 'shop@test.local' });
+  await shop.post('/api/me/business', { name: 'ООО «Детство»', inn: '7707083893', ogrn: '1027700132195' });
+  await admin.post(`/api/admin/users/${shop.user.id}/business`, { decision: 'approve' });
+  const pay = async (r) => { const id = r.data.url.split('/').pop(); ykPay.get(id).status = 'succeeded'; ykPay.get(id).payment_method = { type: 'bank_card' }; await client(base).post('/api/pay/yookassa', { object: { id } }); return r.data.id; };
+  const planPay = await pay(await shop.post('/api/my/plan/pay', { plan: 'pro', months: 3 }));
+  const pg = await browser.newPage();
+  const coverData = await pg.evaluate(() => {
+    const cv = document.createElement('canvas'); cv.width = 1600; cv.height = 530;
+    const x = cv.getContext('2d'); const g = x.createLinearGradient(0, 0, 1600, 530); g.addColorStop(0, '#DCE9E2'); g.addColorStop(1, '#F1E6D8'); x.fillStyle = g; x.fillRect(0, 0, 1600, 530);
+    x.fillStyle = 'rgba(31,94,74,.18)'; for (let i = 0; i < 7; i++) { x.beginPath(); x.arc(160 + i * 220, 265 + (i % 2 ? 60 : -60), 120, 0, Math.PI * 2); x.fill(); }
+    return cv.toDataURL('image/jpeg', 0.85);
+  });
+  await pg.close();
+  const cover = (await shop.post('/api/uploads', { data: coverData })).data.file;
+  await shop.put('/api/my/shop', { cover, about: 'Детские коляски, автокресла и игрушки. Проверяем каждый товар перед продажей, даём гарантию 14 дней.\nСамовывоз и доставка по Казани.', hours: 'Пн–Сб 10:00–20:00', address: 'Казань, ул. Баумана, 15', site: 'detstvo-shop.ru' });
+  const s1 = (await shop.post('/api/listings', { title: 'Самокат детский трёхколёсный', category: 'personal', city: 'Казань', price: '3900', photos: [(await shop.post('/api/uploads', { data: photoData })).data.file] })).data.id;
+  await admin.post(`/api/admin/listings/${s1}/restore`);
+  const s2 = (await shop.post('/api/listings', { title: 'Автокресло Britax Römer', category: 'personal', city: 'Казань', price: '18900' })).data.id;
+  await admin.post(`/api/admin/listings/${s2}/restore`);
+  await pay(await shop.post(`/api/listings/${s1}/promote`, { days: 7 }));
+  const ad = (await admin.get('/api/admin/ads?tab=marking')).data.items[0].id;
+  await admin.post(`/api/admin/ads/${ad}/erid`, { erid: '2SDnjc7Jh3Q' });
+  await pay(await shop.post(`/api/listings/${s2}/promote`, { days: 30 }));
+  const pendingPay = (await shop.post('/api/my/plan/pay', { plan: 'pro', months: 12 })).data.id;
+  for (let i = 0; i < 3; i++) await client(base).post('/api/stats/impressions', { ids: [s1, s2] }, { origin: base, 'user-agent': ua(20 + i) });
+  await client(base).post('/api/stats/view', { id: s1, src: 'ad' }, { origin: base, 'user-agent': ua(20) });
+  return { seller, buyer, admin, ids, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay };
 }
 
 function pages(d) {
@@ -161,14 +191,59 @@ function pages(d) {
     // Панель ≡ (четвёртый элемент — открыть меню перед снимком).
     ['menu', '/', d.seller, 'menu'],
     ['menu-admin', '/profile/settings', d.admin, 'menu'],
-    ['menu-guest', '/', null, 'menu']
+    ['menu-guest', '/', null, 'menu'],
+    // 1.12: для бизнеса, оплата, продвижение, реклама
+    ['business', '/business', null],
+    ['business-pro', '/business?m=12', d.shop],
+    ['business-nobiz', '/business', d.buyer],
+    ['biz-hub', '/profile/business', d.shop],
+    ['biz-hub-empty', '/profile/business', d.buyer],
+    ['biz-shop', '/profile/business/shop', d.shop],
+    ['biz-shop-locked', '/profile/business/shop', d.buyer],
+    ['biz-stats', '/profile/business/stats', d.shop],
+    ['biz-feed', '/profile/business/feed', d.shop],
+    ['pay-ok', `/pay/${d.planPay}`, d.shop],
+    ['pay-wait', `/pay/${d.pendingPay}`, d.shop],
+    ['storefront', `/u/${d.shop.user.id}`, null],
+    ['search-ad', `/search?q=${encodeURIComponent('самокат')}`, null],
+    ['listing-promo', `/l/${d.s1}`, d.shop],
+    ['promote-modal', `/l/${d.s1}`, d.shop, '[data-promote]'],
+    ['ad-info', `/search?q=${encodeURIComponent('самокат')}`, null, '[data-ad-info]'],
+    ['my-listings-promo', '/profile', d.shop],
+    ['admin-payments', '/admin?status=payments', d.admin],
+    ['admin-ads', '/admin?status=ads', d.admin],
+    ['admin-ads-active', '/admin?status=ads&tab=active', d.admin],
+    ['admin-billing', '/admin?status=billing', d.admin],
+    ['admin-user-shop', `/admin/u/${d.shop.user.id}`, d.admin]
   ];
+}
+
+// Поддельная ЮKassa: платёж создаётся «в ожидании», статус меняет seed.
+const ykPay = new Map();
+function startYookassa() {
+  let n = 0;
+  const srv = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; }).on('end', () => {
+      const send = (o) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (req.method === 'POST' && req.url === '/payments') {
+        const j = JSON.parse(body); const id = `yk-${++n}`;
+        ykPay.set(id, { id, status: 'pending', amount: j.amount, metadata: j.metadata, test: true, confirmation: { type: 'redirect', confirmation_url: `https://yoomoney.test/checkout/${id}` } });
+        return send(ykPay.get(id));
+      }
+      const m = /^\/payments\/(.+)$/.exec(req.url);
+      if (m && ykPay.has(m[1])) return send(ykPay.get(m[1]));
+      res.writeHead(404); res.end('{}');
+    });
+  });
+  return new Promise((r) => srv.listen(0, '127.0.0.1', () => r(srv)));
 }
 
 async function main() {
   fs.rmSync(SHOTS, { recursive: true, force: true });
   fs.mkdirSync(SHOTS, { recursive: true });
-  const srv = await startServer();
+  const yk = await startYookassa();
+  const srv = await startServer({ YOOKASSA_TEST_BASE: `http://127.0.0.1:${yk.address().port}` });
   const browser = await chromium.launch();
   const problems = [];
   let checked = 0;
@@ -191,10 +266,14 @@ async function main() {
         await page.goto(srv.base + url, { waitUntil: 'networkidle' });
         await page.waitForFunction(() => !document.querySelector('#app > .loader'), null, { timeout: 5000 }).catch(() => errors.push('страница не загрузилась'));
         await page.waitForTimeout(150);
-        if (open) {
+        if (open === 'menu') {
           await page.click('[data-menu]');
           await page.waitForTimeout(300);
           if (!(await page.$('.modal.drawer .pf-nav'))) errors.push('меню ≡ не открылось');
+        } else if (open) {
+          await page.click(open);
+          await page.waitForTimeout(400);
+          if (!(await page.$('.modal'))) errors.push(`окно по ${open} не открылось`);
         }
         const m = await page.evaluate(() => {
           const nav = document.querySelector('#bottom-nav');
@@ -227,6 +306,7 @@ async function main() {
   } finally {
     await browser.close();
     await srv.stop();
+    yk.close();
   }
   console.log(`\nПроверено страниц: ${checked}. Скриншоты: ${SHOTS}`);
   if (problems.length) {
