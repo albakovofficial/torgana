@@ -31,6 +31,10 @@ chown -R "$APP_USER:$APP_USER" "$DATA_DIR" /home/$APP_USER
 
 log "Ключ доступа к GitHub (только чтение)"
 KEY=/home/$APP_USER/.ssh/id_ed25519
+if [ ! -f "$KEY" ] && [ -f /root/deploy_key ]; then
+  install -o "$APP_USER" -g "$APP_USER" -m 600 /root/deploy_key "$KEY"
+  install -o "$APP_USER" -g "$APP_USER" -m 644 /root/deploy_key.pub "$KEY.pub"
+fi
 if [ ! -f "$KEY" ]; then
   sudo -u "$APP_USER" ssh-keygen -q -t ed25519 -N "" -C "torgana-server-deploy" -f "$KEY"
 fi
