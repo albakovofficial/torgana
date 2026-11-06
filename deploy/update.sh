@@ -38,14 +38,21 @@ log() {
   tail -n 300 "$LOG" > "$LOG.tmp" 2>/dev/null && mv -f "$LOG.tmp" "$LOG"
 }
 
+# Номер версии из package.json нужного коммита: «V1.0.1 (abc1234)»; без номера — только коммит.
+label() {
+  local v; v="$(git show "$1:package.json" 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).version||"")}catch{}})' 2>/dev/null)"
+  if [ -n "$v" ]; then echo "V$v (${1:0:7})"; else echo "${1:0:7}"; fi
+}
+
 # Состояние для панели: ok | failed | checked | error [сообщение]
 write_status() {
   ST="$1" MSG="${2:-}" BRANCH="$BRANCH" F="$STATUS_FILE" FAILED="$(cat "$STATE/failed" 2>/dev/null)" node -e '
     const fs = require("fs"), cp = require("child_process"), e = process.env;
     let o = {}; try { o = JSON.parse(fs.readFileSync(e.F, "utf8")); } catch {}
+    let version = ""; try { version = JSON.parse(fs.readFileSync("package.json", "utf8")).version || ""; } catch {}
     let git = []; try { git = cp.execFileSync("git", ["show", "-s", "--format=%h%n%cI%n%s", "HEAD"], { encoding: "utf8" }).split("\n"); } catch {}
     const now = new Date().toISOString();
-    Object.assign(o, { enabled: true, branch: e.BRANCH, commit: git[0] || "", date: git[1] || "", subject: (git[2] || "").slice(0, 200), checkedAt: now });
+    Object.assign(o, { enabled: true, branch: e.BRANCH, version, commit: git[0] || "", date: git[1] || "", subject: (git[2] || "").slice(0, 200), checkedAt: now });
     if (e.ST === "ok") Object.assign(o, { updatedAt: now, lastError: "", failedCommit: "" });
     if (e.ST === "failed") Object.assign(o, { lastError: e.MSG.slice(0, 300), failedCommit: e.FAILED.slice(0, 7), failedAt: now });
     o.checkError = e.ST === "error" ? e.MSG.slice(0, 300) : "";
@@ -55,7 +62,7 @@ write_status() {
 
 if [ "${1:-}" = "--status" ]; then
   echo "Ветка выпуска: $BRANCH"
-  git show -s --format='Работает версия: %h — %s (%cd)' --date=format:'%d.%m.%Y %H:%M' HEAD
+  echo "Работает версия: $(label "$(git rev-parse HEAD)") — $(git show -s --format='%s (%cd)' --date=format:'%d.%m.%Y %H:%M' HEAD)"
   [ -s "$STATE/failed" ] && echo "Не встала и пропущена: $(cut -c1-7 "$STATE/failed")"
   systemctl list-timers torgana-update.timer --no-pager 2>/dev/null | sed -n 1,2p
   echo; echo "Журнал ($LOG):"; tail -n 15 "$LOG" 2>/dev/null || echo "  пусто"
@@ -86,7 +93,7 @@ if [ "$OLD" = "$NEW" ] || [ "$NEW" = "$FAILED" ]; then write_status checked; exi
 # Старую (уже пройденную) версию пропускаем молча — например, сразу после перехода с main на release.
 if git merge-base --is-ancestor "$NEW" "$OLD"; then write_status checked; exit 0; fi
 if ! git merge-base --is-ancestor "$OLD" "$NEW"; then
-  MSG="В $BRANCH версия ${NEW:0:7}, которая не продолжает работающую ${OLD:0:7} — не ставлю. Слейте main → $BRANCH"
+  MSG="В $BRANCH версия $(label "$NEW"), которая не продолжает работающую $(label "$OLD") — не ставлю. Слейте main → $BRANCH"
   [ "$(cat "$STATE/diverged" 2>/dev/null)" = "$NEW" ] || { log "$MSG"; echo "$NEW" > "$STATE/diverged"; }
   write_status error "$MSG"
   exit 0
@@ -94,7 +101,8 @@ fi
 rm -f "$STATE/diverged"
 
 SHORT="${NEW:0:7}"
-log "Новая версия $SHORT: $(git show -s --format=%s "$NEW")"
+NEWV="$(label "$NEW")"
+log "Новая версия $NEWV: $(git show -s --format=%s "$NEW")"
 
 # 1. Проверка новой версии во временной папке — работающий сайт и его файлы пока не меняются.
 check_new() {
@@ -141,7 +149,7 @@ if [ -z "$REASON" ]; then
   if healthy; then
     rm -f "$STATE/failed"
     write_status ok
-    log "Готово: работает версия $SHORT"
+    log "Готово: работает версия $NEWV"
     exit 0
   fi
   REASON="сайт не запустился"
@@ -152,6 +160,6 @@ fi
 
 [ -s "$STATE/check.err" ] && [ "$rc" != 0 ] && tail -n 8 "$STATE/check.err" | sed 's/^/    /' >> "$LOG"
 echo "$NEW" > "$STATE/failed"
-write_status failed "Версия $SHORT не установлена: $REASON. Сайт работает на прежней версии"
-log "Версия $SHORT не установлена: $REASON — работает прежняя ${OLD:0:7}"
+write_status failed "Версия $NEWV не установлена: $REASON. Сайт работает на прежней версии"
+log "Версия $NEWV не установлена: $REASON — работает прежняя $(label "$OLD")"
 exit 1

@@ -32,6 +32,7 @@ const run = (...args) => new Promise((resolve) => {
   execFile('bash', [path.join(ROOT, 'deploy', 'update.sh'), ...args], { encoding: 'utf8', env }, (e, stdout, stderr) => resolve({ status: e ? e.code : 0, stdout, stderr }));
 });
 const version = (n, { syntax = true, tests = true } = {}) => {
+  write('package.json', `{ "name": "torgana", "version": "1.0.${n}" }\n`);
   write('server.js', syntax ? `// версия ${n}\n` : 'function (\n');
   write('public/assets/app.js', '\n');
   write('tests/api.test.js', `require('node:test')('api', () => { if (!${tests}) throw new Error('сломано'); });\n`);
@@ -71,6 +72,8 @@ test('хорошая версия из release ставится, перед эт
   const st = status();
   assert.equal(st.commit, v2.slice(0, 7));
   assert.equal(st.subject, 'Версия 2');
+  assert.equal(st.version, '1.0.2');
+  assert.match(fs.readFileSync(path.join(data, 'update/update.log'), 'utf8'), /Готово: работает версия V1\.0\.2 \([0-9a-f]{7}\)/);
   assert.equal(st.checkError, '');
   assert.ok(st.updatedAt);
   const copies = fs.readdirSync(path.join(data, 'update/db'));
@@ -94,7 +97,7 @@ test('ошибка в коде — версия не ставится и бол�
   const bad = commit('Версия 3 с ошибкой');
   assert.equal((await run()).status, 1);
   assert.equal(git(app, 'rev-parse', 'HEAD'), good, 'на сервере осталась прежняя версия');
-  assert.match(status().lastError, /ошибка в коде/);
+  assert.match(status().lastError, /Версия V1\.0\.3 \([0-9a-f]{7}\) не установлена: ошибка в коде/);
   assert.equal(status().failedCommit, bad.slice(0, 7));
   const log = fs.readFileSync(path.join(data, 'update/update.log'), 'utf8');
   assert.equal((await run()).status, 0, 'вторая проверка пропускает неудачную версию');
@@ -127,7 +130,7 @@ test('следующая исправленная версия ставится,
   assert.equal(status().lastError, '');
   const out = (await run('--status')).stdout;
   assert.match(out, /Ветка выпуска: release/);
-  assert.match(out, /Работает версия: [0-9a-f]{7} — Версия 6/);
+  assert.match(out, /Работает версия: V1\.0\.6 \([0-9a-f]{7}\) — Версия 6/);
   assert.match(out, /Готово: работает версия/);
 });
 
@@ -161,4 +164,14 @@ test('ставятся только версии новее работающей
   assert.equal((await run()).status, 0);
   assert.equal(git(app, 'log', '-1', '--format=%s'), 'Версия 7');
   assert.equal(status().checkError, '');
+});
+
+test('номер версии: patch, minor, major', () => {
+  const { bump } = require('../scripts/version');
+  assert.equal(bump('1.0.0', 'patch'), '1.0.1');
+  assert.equal(bump('1.0.9', 'patch'), '1.0.10');
+  assert.equal(bump('1.0.5', 'minor'), '1.1.0');
+  assert.equal(bump('1.4.2', 'major'), '2.0.0');
+  assert.throws(() => bump('1.0', 'patch'), /вида 1\.0\.0/);
+  assert.throws(() => bump('1.0.0', 'huge'), /patch, minor или major/);
 });
