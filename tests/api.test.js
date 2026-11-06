@@ -323,8 +323,9 @@ describe('модерация', () => {
     assert.equal((await guest.get('/api/admin/listings')).status, 401);
   });
 
-  test('отклонение с причиной, исправление и апелляция', async () => {
-    assert.equal((await admin.post(`/api/admin/listings/${ids.l2}/reject`, { reason: 'x' })).status, 400);
+  test('отклонение (причина необязательна), исправление и апелляция', async () => {
+    assert.equal((await admin.post(`/api/admin/listings/${ids.l2}/reject`, {})).status, 200, 'без причины тоже можно');
+    assert.equal((await seller.get(`/api/listings/${ids.l2}`)).data.listing.rejectReason, '');
     assert.equal((await admin.post(`/api/admin/listings/${ids.l2}/reject`, { reason: 'Контакты в тексте объявления' })).status, 200);
     assert.equal((await guest.get(`/api/listings/${ids.l2}`)).status, 404);
     const own = await seller.get(`/api/listings/${ids.l2}`);
