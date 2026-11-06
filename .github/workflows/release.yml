@@ -1,10 +1,17 @@
-# Выпуск: Actions → «Выпуск» → Run workflow. Проверяет main и сливает его в release.
+# Выпуск: Actions → «Выпуск» → Run workflow. Проверяет main, повышает номер версии (V1.0.0 → V1.0.1),
+# сливает main в release, ставит метку v1.0.1 и создаёт страницу Release со списком изменений.
 # Сервер сам забирает release в течение 30 секунд (deploy/update.sh).
 # Слияние только «вперёд» (fast-forward): если в release есть коммиты, которых нет в main, выпуск остановится.
 name: Выпуск
 
 on:
   workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Какой номер повысить: patch — 1.0.0 → 1.0.1 (обычно), minor — 1.0.5 → 1.1.0, major — 1.4.2 → 2.0.0'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 concurrency:
   group: release
@@ -25,11 +32,38 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: main → release
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Номер версии, main → release, метка
+        id: ver
         run: |
           if git ls-remote --exit-code --heads origin release >/dev/null; then
             git fetch -q origin release
             git merge-base --is-ancestor origin/release HEAD || { echo "::error::В release есть коммиты, которых нет в main. Сначала перенесите их в main."; exit 1; }
+            FROM=origin/release
+          else
+            FROM=""
           fi
-          git push origin HEAD:refs/heads/release
-          echo "Выпущено: $(git log -1 --format='%h — %s')" >> "$GITHUB_STEP_SUMMARY"
+          # Что нового с прошлого выпуска (без коммитов слияния)
+          { git log --no-merges --format='- %s' ${FROM:+$FROM..}HEAD | grep -v '^- Версия [0-9]' || true; } > notes.md
+          [ -s notes.md ] || { echo "::error::В main нет ничего нового с прошлого выпуска."; exit 1; }
+
+          V="$(node scripts/version.js '${{ inputs.bump }}')"
+          git rev-parse -q --verify "refs/tags/v$V" >/dev/null && { echo "::error::Метка v$V уже есть. Проверьте версию в package.json."; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -qam "Версия $V"
+          git tag -a "v$V" -m "V$V"
+          # Всё сразу или ничего: main, release и метка
+          git push --atomic origin HEAD:refs/heads/main HEAD:refs/heads/release "refs/tags/v$V"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Страница Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          gh release create "v$V" --title "V$V" --notes-file notes.md
+          { echo "### Выпущена V$V"; echo; cat notes.md; } >> "$GITHUB_STEP_SUMMARY"
