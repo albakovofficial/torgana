@@ -381,7 +381,8 @@ describe('модерация', () => {
 
   test('блокировка автора скрывает объявления и завершает сессии', async () => {
     assert.equal((await admin.post(`/api/admin/users/${admin.user.id}/block`, { blocked: true })).status, 400);
-    assert.equal((await admin.post(`/api/admin/users/${buyer.user.id}/block`, { blocked: true })).status, 200);
+    assert.equal((await admin.post(`/api/admin/users/${buyer.user.id}/block`, { blocked: true })).status, 400, 'без причины нельзя');
+    assert.equal((await admin.post(`/api/admin/users/${buyer.user.id}/block`, { blocked: true, reason: 'Мошенничество с предоплатой' })).status, 200);
     assert.equal((await guest.get(`/api/listings/${ids.buyerListing}`)).status, 404);
     assert.equal((await buyer.get('/api/me')).data.user, null);
     assert.equal((await guest.get(`/api/users/${buyer.user.id}`)).status, 404);

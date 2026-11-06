@@ -84,6 +84,10 @@ async function seed(base, browser) {
   const c3 = (await buyer.post('/api/conversations', { listingId: ids[4] })).data.id;
   await buyer.post(`/api/conversations/${c3}/messages`, { body: 'Добрый день! Можно забрать завтра?' });
   await seller.post(`/api/conversations/${c3}/messages`, { body: 'Да, после обеда.' });
+  // модерация: объявление с контактами в тексте (автопроверка) и заблокированный пользователь
+  await buyer.post('/api/listings', { title: 'Велосипед детский', description: 'Звоните +7 900 123-45-67 или пишите в WhatsApp', category: 'hobby', city: 'Москва', price: '4000' });
+  const spam = await registerUser(base, { name: 'Иван Спамов', email: 'spam@test.local' });
+  await admin.post(`/api/admin/users/${spam.user.id}/block`, { blocked: true, reason: 'Спам и повторные объявления' });
   return { seller, buyer, admin, ids, pending, thread, conv: conv.data.id, convReview: c3 };
 }
 
@@ -124,6 +128,10 @@ function pages(d) {
     ['admin', '/admin', d.admin],
     ['admin-mail', '/admin?status=mail', d.admin],
     ['admin-site', '/admin?status=site', d.admin],
+    ['admin-users', '/admin?status=users', d.admin],
+    ['admin-user', `/admin/u/${d.seller.user.id}`, d.admin],
+    ['admin-log', '/admin?status=log', d.admin],
+    ['admin-notify', '/admin?status=notify', d.admin],
     ['admin-pending', '/admin?status=pending', d.admin],
     ['admin-check', `/admin/l/${d.pending}`, d.admin],
     ['admin-reports', '/admin?status=reports', d.admin],

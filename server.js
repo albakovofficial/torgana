@@ -49,7 +49,8 @@ const mailer = createMailer({
   supportEmail: SUPPORT_EMAIL,
   tickMs: Number(process.env.MAIL_TICK_MS) || undefined,
   chatDelayMs: process.env.CHAT_NOTIFY_DELAY_MS ? Number(process.env.CHAT_NOTIFY_DELAY_MS) : undefined,
-  chatGapMs: process.env.CHAT_NOTIFY_GAP_MS ? Number(process.env.CHAT_NOTIFY_GAP_MS) : undefined
+  chatGapMs: process.env.CHAT_NOTIFY_GAP_MS ? Number(process.env.CHAT_NOTIFY_GAP_MS) : undefined,
+  modGapMs: process.env.MOD_NOTIFY_GAP_MS ? Number(process.env.MOD_NOTIFY_GAP_MS) : undefined
 });
 
 // ---------- помощники ----------
@@ -203,11 +204,14 @@ function route(method, pattern, handler) {
 }
 
 // Модерация (очередь, проверка «от и до», жалобы, история) и чат поддержки — в отдельных модулях.
-const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, setAvatar, str, now, norm };
-const { logEvent } = require('./lib/moderation')({ route, db, mailer, h: helpers });
+const autoChecks = require('./lib/checks')({ db, marketEstimate });
+const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, setAvatar, str, now, norm, autoChecks, OWNER_EMAIL };
+const { logEvent, audit } = require('./lib/moderation')({ route, db, mailer, h: helpers });
+helpers.audit = audit; // журнал модерации нужен и отзывам, и поддержке
 const supportChat = require('./lib/support')({ route, db, mailer, h: helpers });
 const stats = require('./lib/stats')({ route, db, h: helpers });
 const reviews = require('./lib/reviews')({ route, db, mailer, h: helpers });
+require('./lib/admin')({ route, db, h: helpers, reviews }); // сводка, пользователи, журнал, письма модератору
 
 route('GET', '/api/config', () => ({
   categories: CATEGORIES,
@@ -457,6 +461,7 @@ route('POST', '/api/listings', async (ctx) => {
   attachPhotos(u.id, id, v.photos);
   if (!u.city) db.prepare('UPDATE users SET city = ? WHERE id = ?').run(v.city, u.id);
   logEvent(id, u.id, 'created', { flags: v.flags });
+  autoChecks.run(id);
   return { id, status };
 });
 
@@ -489,6 +494,7 @@ route('PATCH', '/api/listings/:id', async (ctx) => {
   const newPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(id).map((r) => r.file);
   if (oldPhotos.join() !== newPhotos.join()) changes.photos = [oldPhotos.length, newPhotos.length];
   logEvent(id, u.id, 'edited', { changes, flags: v.flags, from: l.status });
+  autoChecks.run(id);
   return { ok: true, status };
 });
 
@@ -548,7 +554,9 @@ route('POST', '/api/uploads', async (ctx) => {
   if (!type) throw new HttpError(400, 'Файл не похож на изображение');
   const file = `${crypto.randomBytes(16).toString('hex')}.${type.ext}`;
   fs.writeFileSync(path.join(UPLOAD_DIR, file), buf);
-  db.prepare('INSERT INTO uploads (file, user_id, created_at) VALUES (?, ?, ?)').run(file, u.id, now());
+  // Отпечаток фото от браузера (dHash) — только для подсказки модератору о повторах, не для безопасности.
+  const hash = /^[0-9a-f]{16}$/.test(String(body.hash || '')) ? body.hash : '';
+  db.prepare('INSERT INTO uploads (file, user_id, hash, created_at) VALUES (?, ?, ?, ?)').run(file, u.id, hash, now());
   return { file, url: photoUrl(file) };
 });
 
@@ -846,6 +854,8 @@ setInterval(() => {
 }, 60 * 60 * 1000).unref();
 
 mailer.start();
+// Автопроверка объявлений, которые ждали проверки до появления автопроверок (один раз при запуске).
+for (const { id } of db.prepare('SELECT id FROM listings WHERE status = \'pending\' AND checks = \'\'').all()) autoChecks.run(id);
 
 server.listen(PORT, HOST, () => {
   console.log(`Торгана запущена: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
