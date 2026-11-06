@@ -1,0 +1,15 @@
+[Unit]
+Description=Torgana
+After=network.target
+
+[Service]
+User=torgana
+WorkingDirectory=/var/www/torgana
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning server.js
+Restart=always
+RestartSec=2
+Environment=NODE_ENV=production
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target

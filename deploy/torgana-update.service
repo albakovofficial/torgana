@@ -1,0 +1,7 @@
+[Unit]
+Description=Torgana auto-update from GitHub
+
+[Service]
+Type=oneshot
+User=torgana
+ExecStart=/bin/bash /var/www/torgana/deploy/update.sh

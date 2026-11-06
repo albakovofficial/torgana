@@ -1,0 +1,7 @@
+[Unit]
+Description=Torgana daily database backup
+
+[Service]
+Type=oneshot
+User=torgana
+ExecStart=/bin/bash -c 'sqlite3 /var/lib/torgana/data/torgana.db ".backup /var/lib/torgana/backups/torgana-$(date +%%F).db" && find /var/lib/torgana/backups -name "*.db" -mtime +14 -delete'
