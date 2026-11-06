@@ -26,7 +26,9 @@ const UPLOAD_DIR = path.resolve(ROOT, process.env.UPLOAD_DIR || 'uploads');
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const PUBLIC_URL = process.env.PUBLIC_URL || '';
 const SECURE_COOKIES = PUBLIC_URL.startsWith('https://');
+// Модераторы — адреса из ADMIN_EMAIL через запятую; первый адрес — владелец площадки.
 const ADMIN_EMAILS = (process.env.ADMIN_EMAIL || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+const OWNER_EMAIL = ADMIN_EMAILS[0] || '';
 const AI_KEY = process.env.ANTHROPIC_API_KEY || '';
 const AI_MODEL = process.env.AI_MODEL || 'claude-sonnet-5-5';
 const SUPPORT_EMAIL = legal.operator().email;
@@ -35,6 +37,12 @@ const PAYMENTS_ENABLED = false; // Безопасная сделка включ�
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const db = openDb(path.join(DATA_DIR, 'torgana.db'));
+// Модерация только у адресов из ADMIN_EMAIL: убранный из списка адрес теряет доступ при перезапуске сайта.
+if (ADMIN_EMAILS.length) {
+  const removed = db.prepare(`UPDATE users SET is_admin = 0 WHERE is_admin = 1 AND email NOT IN (${ADMIN_EMAILS.map(() => '?').join(',')})`).run(...ADMIN_EMAILS);
+  db.prepare(`UPDATE users SET is_admin = 1 WHERE is_admin = 0 AND email IN (${ADMIN_EMAILS.map(() => '?').join(',')})`).run(...ADMIN_EMAILS);
+  if (removed.changes) console.log(`Модерация снята у аккаунтов, которых нет в ADMIN_EMAIL: ${removed.changes}`);
+}
 const mailer = createMailer({
   db,
   baseUrl: PUBLIC_URL || `http://localhost:${PORT}`,
@@ -73,7 +81,7 @@ const photoUrl = (file) => (file ? `/uploads/${file}` : null);
 
 function publicUser(u) {
   return u ? {
-    id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, avatar: photoUrl(u.avatar), isAdmin: !!u.is_admin, createdAt: u.created_at,
+    id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, avatar: photoUrl(u.avatar), isAdmin: !!u.is_admin, isOwner: !!u.is_admin && u.email === OWNER_EMAIL, createdAt: u.created_at,
     emailVerified: !!u.email_verified, notifyMessages: !!u.notify_messages, notifyModeration: !!u.notify_moderation
   } : null;
 }

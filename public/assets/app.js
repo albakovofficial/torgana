@@ -1282,7 +1282,7 @@
     const badges = html`${S.config.mail ? (u.emailVerified
       ? html`<span class="pf-badge ok">${ic('check', 14, 2.4)} Почта подтверждена</span>`
       : html`<span class="pf-badge warn">${ic('warn', 14, 2)} Почта не подтверждена</span>`) : ''}
-      ${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 14, 2)} Модератор</span>` : ''}`;
+      ${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 14, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
     const extra = pct < 100 ? html`<div class="pf-progress">
         <div class="pf-progress-head"><strong>Профиль заполнен на ${pct}%</strong><span class="muted">Покупатели больше доверяют заполненным профилям</span></div>
         <div class="pf-bar"><i style="width:${pct}%"></i></div>
