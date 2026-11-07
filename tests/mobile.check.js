@@ -201,6 +201,8 @@ function pages(d) {
     ['confirm', '/confirm', null],
     ['category-city', '/c/personal/kazan', null],
     ['category', '/c/personal', null],
+    ['section-sub', '/c/transport/cars', null],
+    ['section-sub-city', '/c/transport/cars/moskva', null],
     ['cookie', '/', null],
     ['admin-seo', '/admin?status=seo', d.admin],
     ['confirm-code', '/confirm', null, 'code'],

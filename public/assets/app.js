@@ -785,7 +785,7 @@
     [/^\/$/, viewHome],
     [/^\/search$/, viewSearch],
     [/^\/l\/(\d+)(?:-[a-z0-9-]*)?$/, viewListing],
-    [/^\/c\/([a-z]+(?:\/[a-z0-9-]+)?)$/, viewCategory],
+    [/^\/c\/([a-z]+(?:\/[a-z0-9_-]+)?(?:\/[a-z0-9-]+)?)$/, viewCategory],
     [/^\/new$/, viewEditor],
     [/^\/edit\/(\d+)$/, viewEditor],
     [/^\/login$/, viewLogin],
@@ -973,15 +973,40 @@
   }
 
   // ================= поиск =================
-  // /c/:категория и /c/:категория/:город — страницы разделов для поисковиков; внутри — обычный поиск.
+  // Страницы разделов (как в lib/seo.js): /c/:категория, /c/:категория/:раздел, /c/:категория/:город,
+  // /c/:категория/:раздел/:город. Внутри — обычный поиск и внизу блок «О разделе».
   function viewCategory(part) {
-    const [cat, citySlug] = part.split('/');
+    const [cat, a, b] = part.split('/');
+    const sub = a && subsOf(cat).some((x) => x.id === a) ? a : '';
+    const citySlug = sub ? b : a;
     const city = citySlug ? S.config.cities.find((c) => slugify(c) === citySlug) : '';
-    if (!S.config.categories.some((c) => c.id === cat) || (citySlug && !city)) { viewNotFound(); return undefined; }
-    return viewSearch(null, new URLSearchParams({ category: cat, ...(city ? { city } : {}) }));
+    if (!S.config.categories.some((c) => c.id === cat) || (citySlug && !city) || (!sub && b)) { viewNotFound(); return undefined; }
+    return viewSearch(null, new URLSearchParams({ category: cat, ...(sub ? { sub } : {}), ...(city ? { city } : {}) }), { category: cat, sub, city });
+  }
+  // Блок «О разделе»: числа, города и соседние разделы — с сервера (/api/sections/info), из настоящих объявлений.
+  // Сумма для примера запроса — в том виде, который понимает поиск (lib/search.js: «2 млн», «800к»; дроби он не разбирает).
+  const shortSum = (n) => (n >= 1e6 ? `${Math.max(1, Math.round(n / 1e6))} млн` : n >= 1000 ? `${Math.round(n / 1000)}к` : String(n));
+  function secAbout(d) {
+    const tile = (icon, tone, v, t) => html`<div class="sa-tile"><span class="bz-ic ${tone}">${ic(icon, 19, 1.9)}</span><span><b>${v}</b><span>${t}</span></span></div>`;
+    const priced = d.count && d.min !== null && d.max !== null;
+    const word = (d.name.split(/[ ,—]+/)[0] || '').toLowerCase();
+    const example = priced && d.max > 0 ? `${word} до ${shortSum(Math.max(d.min, Math.round((d.min + d.max) / 2 / 1000) * 1000))}` : word;
+    return html`<div class="sa-main">
+        <span class="bz-label">О разделе</span><h2>${d.h1} на Торгане</h2>
+        <div class="sa-tiles">${tile('list', 'green', NF.format(d.count), plural(d.count, 'объявление', 'объявления', 'объявлений'))}${priced ? (d.min === d.max ? tile('tag', 'blue', rub(d.min), 'цена') : html`${tile('down', 'blue', rub(d.min), 'самая низкая цена')}${tile('trend', 'amber', rub(d.max), 'самая высокая')}`) : ''}</div>
+        <p>Все объявления прошли проверку модератором. Ищите обычными словами и уточняйте фильтрами: ${d.fields.length ? d.fields.join(', ') : 'раздел, город, цена и доставка'}.</p>
+        ${example ? html`<form class="sa-search" data-search role="search"><span>${ic('search', 18)}</span><label class="sr" for="sa-q">Поиск</label><input id="sa-q" name="q" type="search" placeholder="Например: ${example}" autocomplete="off" enterkeyhint="search"><button class="btn btn-accent btn-sm" type="submit">Найти</button></form>` : ''}
+        <a class="sa-safe" href="/page/safety"><span>${ic('shield', 18)}</span><span class="sa-safe-t">Договаривайтесь в чате Торганы и не вносите предоплату незнакомым продавцам.<b>Как покупать безопасно ›</b></span></a>
+      </div>
+      <div class="sa-side">
+        ${d.cities.length ? html`<div class="sa-h"><span class="bz-ic green sm">${ic('pin', 16, 2)}</span><b>${d.name} в других городах</b></div>
+        <div class="sa-chips">${d.cities.map((c) => html`<a href="${c.path}">${c.name}${c.n ? html`<span>${NF.format(c.n)}</span>` : ''}</a>`)}</div>` : ''}
+        ${d.subs.length ? html`<div class="sa-h"><span class="bz-ic violet sm">${ic('list', 16, 2)}</span><b>${d.sub ? `Рядом в разделе «${d.catName}»` : 'Разделы'}</b></div>
+        <div class="sa-links">${d.subs.map((x) => html`<a href="${x.path}"><span>${x.label}</span>${x.n ? html`<em>${NF.format(x.n)}</em>` : ''}${ic('right', 16, 2)}</a>`)}</div>` : ''}
+      </div>`;
   }
 
-  async function viewSearch(_, q) {
+  async function viewSearch(_, q, sec = null) {
     const params = Object.fromEntries(q.entries());
     const sub = subOf(params.sub) ? params.sub : '';
     const category = (sub && Object.keys(S.config.subcategories).find((c) => subsOf(c).some((x) => x.id === sub))) || params.category || '';
@@ -1040,8 +1065,17 @@
         <div class="understood" id="understood"></div>
         <div id="results">${skeletonGrid(9)}</div>
         <div class="more hidden"></div>
+        ${sec ? html`<section class="sec-about" id="sec-about" aria-label="О разделе"></section>` : ''}
       </section>
     </div>`);
+    if (sec) {
+      api('GET', `/api/sections/info?${new URLSearchParams(sec)}`).then((d) => {
+        const box = $('#sec-about'); if (!box) return;
+        box.innerHTML = String(secAbout(d));
+        const h = $('.results-head h1'); if (h) h.textContent = d.h1;
+        setTitle(d.h1);
+      }).catch(() => {});
+    }
 
     const ff = $('#filter-form');
     // Раздел и характеристики зависят от категории и раздела — перестраиваем без перезагрузки.
@@ -1303,7 +1337,7 @@
     : html`<button class="thumb ${i === 0 ? 'on' : ''}" data-t="${i}" aria-label="Фото ${i + 1}"><img src="${m.src}" alt="" loading="lazy"></button>`))}</div>` : ''}
           </div>
           <section class="sp-sec"><h2 class="h2">Характеристики</h2>
-            <nav class="sp-path" aria-label="Раздел">${specPath.map((t, k) => html`${k ? html`<span aria-hidden="true">›</span>` : ''}<a href="${k ? `/search?${new URLSearchParams({ category: l.category, sub: l.subcategory })}` : cpath(l.category)}">${t}</a>`)}</nav>
+            <nav class="sp-path" aria-label="Раздел">${specPath.map((t, k) => html`${k ? html`<span aria-hidden="true">›</span>` : ''}<a href="${k ? `/c/${l.category}/${l.subcategory}` : cpath(l.category)}">${t}</a>`)}</nav>
             ${tiles.length ? html`<div class="sp-tiles">${tiles.map((x) => html`<div class="sp-tile"><small>${x.label}</small><b>${specVal(x)}</b></div>`)}</div>` : ''}
             ${rest.length ? kv(rest) : ''}</section>
           ${l.description ? html`<section><h2 class="h2">Описание</h2><p class="desc">${l.description}</p></section>` : ''}
@@ -4974,13 +5008,7 @@
           <a class="btn btn-accent" href="/messages/support">Написать в поддержку</a></section>
         <p>Или на почту: ${contact}. Укажите ссылку на объявление или диалог, если вопрос о них. На сообщение в чате ответим там же, а если включены уведомления — дадим знать push или письмом. Реквизиты — на странице <a href="/page/contacts">«Реквизиты и контакты»</a>.</p>
         <h2>Частые вопросы</h2>
-        <div class="help-faq">
-          <div><b>Почему объявление появилось не сразу?</b><p>Каждое объявление и каждую правку проверяет модератор, а потом оно публикуется. Статус виден в профиле, в «Моих объявлениях».</p></div>
-          <div><b>Почему отклонили объявление?</b><p>Если модератор указал причину, она видна в профиле в разделе «На исправлении». Исправьте объявление или подайте апелляцию — её рассмотрит человек.</p></div>
-          <div><b>Сколько стоит размещение?</b><p>Для частных лиц — бесплатно и без лимитов. Платными могут быть только дополнительные услуги: продвижение объявления и тарифы для бизнеса.</p></div>
-          <div><b>Сколько висит объявление?</b><p>30 дней. Потом оно снимается с показа, и его можно бесплатно опубликовать снова.</p></div>
-          <div><b>Не приходит письмо от Торганы</b><p>Проверьте папку «Спам». Если письма нет и там, напишите в поддержку.</p></div>
-          <div><b>Как удалить аккаунт?</b><p>Напишите в поддержку с почты, на которую зарегистрирован аккаунт, — удалим профиль, объявления и переписку.</p></div>
+        <div class="help-faq">${(S.config.supportFaq || []).map(([t, a]) => html`<div><b>${t}</b><p>${a}</p></div>`)}
         </div>`]
     };
     const p = PAGES[slug];

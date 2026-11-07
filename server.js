@@ -11,7 +11,7 @@ const crypto = require('node:crypto');
 const { openDb } = require('./lib/db');
 const { HttpError, sendJson, readJson, parseCookies, rateLimit } = require('./lib/http');
 const auth = require('./lib/auth');
-const { CATEGORIES, CATEGORY_IDS, CITIES, PRICE_UNITS, CONDITIONS } = require('./lib/constants');
+const { CATEGORIES, CATEGORY_IDS, CITIES, PRICE_UNITS, CONDITIONS, SUPPORT_FAQ } = require('./lib/constants');
 const { norm, parseQuery, searchSpec, specSql } = require('./lib/search');
 const { suggestFromPhoto } = require('./lib/ai');
 const { createMailer } = require('./lib/mailer');
@@ -356,6 +356,14 @@ route('GET', '/api/my/business', (ctx) => {
   };
 });
 
+// Блок «О разделе» на страницах /c/…: числа, города и соседние разделы — из базы (lib/seo.js).
+route('GET', '/api/sections/info', (ctx) => {
+  const q = ctx.query;
+  const info = seo.sectionInfo({ category: q.get('category') || '', sub: q.get('sub') || '', city: q.get('city') || '' });
+  if (!info) throw new HttpError(404, 'Раздел не найден');
+  return info;
+});
+
 route('GET', '/api/config', () => ({
   categories: CATEGORIES,
   cities: CITIES,
@@ -366,6 +374,7 @@ route('GET', '/api/config', () => ({
   payments: PAYMENTS_ENABLED,
   mail: mailer.ready(),
   supportEmail: SUPPORT_EMAIL,
+  supportFaq: SUPPORT_FAQ,
   oauth: oauth.enabled(),
   billing: { ready: billing.ready(), prices: billing.prices(), boostTags: boost.TAGS, boostDays: boost.BOOST_DAYS },
   metrika: (seoSetting('seo') || {}).metrika || '',
