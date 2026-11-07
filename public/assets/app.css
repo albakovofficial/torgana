@@ -1161,8 +1161,8 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
 .biz-ok span span { font-size: 14px; color: var(--text-2); }
 
 .adm-biz { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 22px; border: 1.5px solid var(--line); }
-.adm-biz.pending { border-color: #E9C46A; background: #FFFBF0; }
-.adm-biz.verified { border-color: var(--accent); background: var(--accent-soft); }
+.adm-biz.is-pending { border-color: #E9C46A; background: #FFFBF0; }
+.adm-biz.is-verified { border-color: var(--accent); background: var(--accent-soft); }
 .adm-biz-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 16px; }
 
 .oa-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
@@ -2631,3 +2631,30 @@ body.pv-open { overflow: hidden; }
 .header-search { min-width: 0; }
 .header-search input { min-width: 0; width: 100%; }
 @media (max-width: 1100px) and (min-width: 901px) { .header-in { gap: 12px; } .hd-new { padding: 0 14px; } }
+
+/* ---------- исправления по аудиту (1.35.1) ---------- */
+/* Плашка «Включите уведомления»: в узкой колонке текст не сжимается до слова в строке — кнопка уходит вниз. */
+.nudge { position: relative; flex-wrap: wrap; row-gap: 10px; padding-right: 44px; }
+.nudge-txt { flex: 1 1 190px; }
+.nudge [data-x] { position: absolute; top: 8px; right: 8px; }
+/* Ответ на предложение цены в чате — белый текст на зелёном. */
+.msg.offer-reply.out { color: #fff; }
+.msg.offer-reply.out .t { color: rgba(255, 255, 255, .72); }
+/* Контраст: подписи, которые надо прочитать (счётчики, «обязательно», время), — не светлее --muted. */
+.ed-req, .ed-count, .bs-n, .nt-t small { color: var(--muted); }
+.pf-status .chip.zero:not(.active) { color: #7C7C78; }
+.ml-tag.wait { color: #8A5A00; }
+/* Миниатюры объявления на телефоне — одной строкой с прокруткой, а не переносом на вторую. */
+@media (max-width: 760px) {
+  .thumbs { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 10px -20px 0; padding: 0 20px 4px; }
+  .thumbs::-webkit-scrollbar { display: none; }
+  .thumbs > * { flex: none; width: 64px; height: 64px; }
+}
+/* Плашка push в панели уведомлений — кнопка под текстом, когда тесно. */
+.nt-push { flex-wrap: wrap; }
+.nt-push span { flex: 1 1 180px; }
+/* «За что цена» на телефоне — все варианты видны, переносом, без прокрутки вбок. */
+@media (max-width: 760px) { .ed-units { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; } }
+/* Значки на фото («Цена снижена», «Новое») не заезжают под сердечко. */
+.card .drop-badge, .card .sold-badge { max-width: calc(100% - 64px); overflow: hidden; text-overflow: ellipsis; }
+.ed-add small, .ed-check a small { color: var(--muted); }

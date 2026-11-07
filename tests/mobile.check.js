@@ -381,8 +381,11 @@ async function main() {
         const page = await ctx.newPage();
         const errors = [];
         page.on('pageerror', (e) => errors.push(`JS: ${e.message}`));
-        page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
+        // Несуществующая страница отдаёт 404 (1.35.1) — браузер пишет об этом в консоль, это не ошибка сайта.
+        page.on('console', (m) => { if (m.type() === 'error' && !(name === 'not-found' && /status of 404/.test(m.text()))) errors.push(`console: ${m.text()}`); });
         page.on('response', (r) => { if (r.status() >= 500) errors.push(`HTTP ${r.status()} ${r.url()}`); });
+        const http4xx = [];
+        page.on('response', (r) => { if (r.status() >= 400 && r.status() < 500 && r.url().startsWith(srv.base)) http4xx.push(`${r.status()} ${r.request().method()} ${r.url().replace(srv.base, '')}`); });
         await page.goto(srv.base + url, { waitUntil: 'networkidle' });
         await page.waitForFunction(() => !document.querySelector('#app > .loader'), null, { timeout: 5000 }).catch(() => errors.push('страница не загрузилась'));
         await page.waitForTimeout(150);
@@ -499,6 +502,9 @@ async function main() {
         if (vpName === 'desktop' && m.navVisible) errors.push('нижнее меню видно на компьютере');
         if (m.appText < 20) errors.push('страница пустая');
         if (!m.onest) errors.push('шрифт Onest не загрузился');
+        // UI_AUDIT=1 — подробный разбор страницы (не валит проверку, пишет tests/screenshots/audit.json):
+        // обрезанный и наезжающий текст, контраст, битые картинки, мелкий шрифт и кнопки, кнопки без названия, ответы 4xx.
+        if (process.env.UI_AUDIT) audit.push({ vp: vpName, name, url, http4xx: [...new Set(http4xx)], ...(await page.evaluate(auditPage)) });
         await page.screenshot({ path: path.join(SHOTS, `${vpName}-${name}.png`), fullPage: !open || /^step:\d$/.test(open) });
         checked++;
         if (errors.length) problems.push(`${vpName} ${url}\n   - ${errors.join('\n   - ')}`);
@@ -512,6 +518,7 @@ async function main() {
     yk.close();
     if (seeded && seeded.s3) { seeded.s3.srv.closeAllConnections(); seeded.s3.srv.close(); }
   }
+  if (process.env.UI_AUDIT) fs.writeFileSync(path.join(SHOTS, 'audit.json'), JSON.stringify(audit, null, 1));
   console.log(`\nПроверено страниц: ${checked}. Скриншоты: ${SHOTS}`);
   if (problems.length) {
     console.error(`\nПроблемы (${problems.length}):\n${problems.join('\n')}`);
@@ -519,6 +526,58 @@ async function main() {
   }
   console.log('Вёрстка в порядке.');
   process.exit(0); // ничего не держит процесс (поддельные серверы, таймеры)
+}
+
+const audit = [];
+// Выполняется в браузере: ищет на странице то, что видно глазом, но не ловится тестами.
+function auditPage() {
+  const vw = document.documentElement.clientWidth;
+  const vis = (el) => { const st = getComputedStyle(el); const r = el.getBoundingClientRect(); return st.visibility !== 'hidden' && st.display !== 'none' && +st.opacity > 0.05 && r.width > 0 && r.height > 0; };
+  const name = (el) => { const c = typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : ''; return el.tagName.toLowerCase() + c; };
+  const txt = (el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim();
+  const leaves = [...document.querySelectorAll('body *')].filter((el) => txt(el) && vis(el) && !el.closest('.pick-native, .sr, [aria-hidden="true"], script, style, noscript, svg, option'));
+  const rgb = (c) => { const m = c.match(/[\d.]+/g); return m ? m.map(Number) : [0, 0, 0, 1]; };
+  const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const bgOf = (el) => { for (let e = el; e; e = e.parentElement) { const st = getComputedStyle(e); if (st.backgroundImage !== 'none' && !st.backgroundImage.startsWith('linear-gradient(90deg')) return null; const c = rgb(st.backgroundColor); if ((c[3] ?? 1) > 0.5) return c; } return [255, 255, 255, 1]; };
+  const out = { clipped: [], overlap: [], contrast: [], tiny: [], smallTap: [], noName: [], brokenImg: [], offscreen: [], badText: [] };
+  for (const el of leaves) {
+    const st = getComputedStyle(el); const r = el.getBoundingClientRect(); const t = txt(el).slice(0, 40);
+    // Обрезано без многоточия и без line-clamp
+    const clipX = el.scrollWidth > el.clientWidth + 2 && st.overflowX !== 'visible' && st.textOverflow !== 'ellipsis';
+    const clipY = el.scrollHeight > el.clientHeight + 3 && st.overflowY !== 'visible' && !(st.webkitLineClamp && st.webkitLineClamp !== 'none') && el.clientHeight > 0;
+    if ((clipX || clipY) && !['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)) out.clipped.push(`${name(el)} «${t}»`);
+    // Текст вылезает за предка с overflow:hidden
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      const ps = getComputedStyle(p);
+      if (ps.overflow !== 'visible' || ps.overflowX !== 'visible') { const pr = p.getBoundingClientRect(); if (r.right > pr.right + 2 || r.left < pr.left - 2) { if (st.textOverflow !== 'ellipsis' && ps.overflowX !== 'auto' && ps.overflowX !== 'scroll') out.clipped.push(`${name(el)} «${t}» за краем ${name(p)}`); } break; }
+    }
+    if (r.right > vw + 1 && st.position !== 'fixed') out.offscreen.push(`${name(el)} «${t}»`);
+    const fs = parseFloat(st.fontSize); if (fs < 11) out.tiny.push(`${name(el)} ${fs}px «${t}»`);
+    const bg = bgOf(el);
+    if (bg) { const c = rgb(st.color); const a = c[3] ?? 1; const fg = [0, 1, 2].map((k) => c[k] * a + bg[k] * (1 - a)); const L1 = lum(fg); const L2 = lum(bg); const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
+      const large = fs >= 18 || (fs >= 14 && +st.fontWeight >= 700); if (ratio < (large ? 3 : 4.5)) out.contrast.push(`${ratio.toFixed(2)} ${name(el)} ${st.color} на rgb(${bg.slice(0, 3).join(',')}) «${t}»`); }
+  }
+  // Наезд текста на текст
+  const boxes = leaves.filter((el) => getComputedStyle(el).position !== 'fixed').map((el) => [el, el.getBoundingClientRect()]).filter(([, r]) => r.bottom > 0 && r.top < 6000);
+  for (let i = 0; i < boxes.length && out.overlap.length < 15; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const [a, ra] = boxes[i]; const [b, rb] = boxes[j];
+    if (a.contains(b) || b.contains(a)) continue;
+    const w = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left); const h = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+    if (w > 4 && h > 4) { out.overlap.push(`${name(a)} «${txt(a).slice(0, 25)}» × ${name(b)} «${txt(b).slice(0, 25)}»`); break; }
+  }
+  for (const el of document.querySelectorAll('a, button, [role="button"], input:not([type="hidden"]), select:not(.pick-native)')) {
+    if (!vis(el) || el.closest('.pick-native')) continue;
+    const r = el.getBoundingClientRect();
+    if (vw < 500 && (r.width < 30 || r.height < 30) && !el.closest('p, .muted, .legal, footer, .crumbs, .kv, .desc, .nt-t, .msg-text') && el.tagName !== 'INPUT') out.smallTap.push(`${name(el)} ${Math.round(r.width)}×${Math.round(r.height)} «${(el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 25)}»`);
+    const label = (el.innerText || '').trim() || el.getAttribute('aria-label') || el.getAttribute('title') || (el.id && document.querySelector(`label[for="${el.id}"]`)?.innerText) || el.getAttribute('placeholder') || el.querySelector('img[alt]:not([alt=""])')?.alt;
+    if (!label && !(el.tagName === 'INPUT' && ['checkbox', 'radio'].includes(el.type) && el.closest('label'))) out.noName.push(`${name(el)} ${el.outerHTML.replace(/<svg.*?<\/svg>/g, '<svg/>').slice(0, 110)}`);
+  }
+  // Текст: служебные значения и опечатки разметки, которые видны человеку
+  const body = document.body.innerText;
+  out.badText = [...new Set((body.match(/[^\n]{0,30}(undefined|NaN|\[object|null ₽|\{\{|\$\{)[^\n]{0,30}/g) || []).concat(body.match(/[^\n]{0,20}[а-яё] ,[^\n]{0,20}|[^\n]{0,20}\.\.(?!\.)[^\n]{0,10}/gi) || []))];
+  for (const im of document.querySelectorAll('img')) if (vis(im) && im.complete && im.naturalWidth === 0 && im.getAttribute('src')) out.brokenImg.push(im.getAttribute('src').slice(0, 60));
+  for (const k of Object.keys(out)) out[k] = [...new Set(out[k])].slice(0, 12);
+  return out;
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

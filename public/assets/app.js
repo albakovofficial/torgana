@@ -1775,7 +1775,7 @@
         <p>${l ? 'После сохранения объявление снова проверит модератор — обычно несколько часов. Пока идёт проверка, его не видно в поиске.' : 'Бесплатно и без лимитов. Каждое объявление проверяет модератор — обычно это несколько часов.'}</p>
         ${draft ? html`<div class="ed-draft">${ic('refresh', 16, 2)}<span>Восстановили черновик от ${when(draft.at)}</span><button type="button" class="btn btn-soft btn-sm" id="draft-drop">Начать заново</button></div>` : ''}
       </div>
-      <nav class="ed-steps" aria-label="Шаги">${ED_STEPS.map(([sid, t], i) => html`<button type="button" data-step="${i}" aria-controls="${sid}"><i></i><span>${ic('check', 14, 2.6)}${t}</span></button>`)}</nav>
+      <nav class="ed-steps" aria-label="Шаги">${ED_STEPS.map(([sid, t], i) => html`<button type="button" data-step="${i}" aria-controls="${sid}" aria-label="Шаг ${i + 1}: ${t}"><i></i><span>${ic('check', 14, 2.6)}${t}</span></button>`)}</nav>
       <div class="ed-grid">
         <form id="ed" class="ed-form" novalidate>
           ${step(1, 's-photos', 'Фото и видео', 'До 10 фото и одно видео до минуты. Первое фото — обложка в поиске.', html`<div id="photos"></div>
@@ -3207,7 +3207,7 @@
       ${list.length ? html`<div class="ml-list">${list.map((i) => {
         const [tone, label] = isExpired(i) ? ['off', 'Срок истёк'] : MY_TAG[i.status] || MY_TAG.archived;
         return html`<article class="ml-card">
-          <a href="/l/${i.id}" class="ml-img">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 26, 1.3)}</a>
+          <a href="/l/${i.id}" class="ml-img" tabindex="-1" aria-hidden="true">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 26, 1.3)}</a>
           <div class="ml-info">
             <span class="ml-tag ${tone}"><i></i>${label}</span>
             <a href="/l/${i.id}" class="ml-title">${i.title}</a>
@@ -3296,7 +3296,7 @@
     const bar = (w) => Math.max(w > 0 ? 3 : 0, Math.round(w));
     $('#box').innerHTML = String(html`<div class="st">
       <div class="st-item">
-        <a class="st-img" href="/l/${l.id}">${l.photo ? html`<img src="${l.photo}" alt="" loading="lazy">` : svg(P.image, 24, 1.4)}</a>
+        <a class="st-img" href="/l/${l.id}" tabindex="-1" aria-hidden="true">${l.photo ? html`<img src="${l.photo}" alt="" loading="lazy">` : svg(P.image, 24, 1.4)}</a>
         <div class="st-item-txt"><span class="ml-tag ${(MY_TAG[l.status] || MY_TAG.archived)[0]}"><i></i>${(MY_TAG[l.status] || MY_TAG.archived)[1]}</span>
           <a class="st-title" href="/l/${l.id}">${l.title}</a><span class="st-price">${price(l.price, l.priceUnit)}</span></div>
         <div class="st-item-act"><a class="btn btn-soft btn-sm" href="/edit/${l.id}">Изменить</a><a class="btn btn-dark btn-sm" href="/l/${l.id}">Открыть</a></div>
@@ -3673,7 +3673,7 @@
       </section>
       ${S.user && !biz ? html`<div class="banner warn biz-banner">${ic('shield', 20, 2)}<span><strong>Тарифы и «Реклама над поиском» — для ИП и компаний.</strong> Отправьте название, ИНН и ОГРН(ИП) на проверку — это бесплатно. <a href="/profile/settings#s-biz" style="text-decoration:underline">Подтвердить бизнес</a></span></div>` : ''}
       ${!ready ? html`<div class="banner soft biz-banner">${ic('clock', 20, 2)}<span><strong>Приём оплаты подключается.</strong> Цены на этой странице действуют, но оплатить пока нельзя — напишите в <a href="/messages/support" style="text-decoration:underline">поддержку</a>, если хотите подключиться первыми.</span></div>` : ''}
-      ${plan ? html`<div class="banner ok biz-banner">${ic('check', 20, 2.2)}<span>Сейчас у вас тариф <strong>«${plan.name}»</strong> до ${dateLong(plan.until)}. <a href="/profile/business" style="text-decoration:underline">Открыть «Для бизнеса»</a></span></div>` : ''}
+      ${plan ? html`<div class="banner ok biz-banner">${ic('check', 20, 2.2)}<span>Сейчас у вас тариф <strong>«${plan.name}»</strong> до ${dateLong(plan.until)} <a href="/profile/business" style="text-decoration:underline">Открыть «Для бизнеса»</a></span></div>` : ''}
 
       <section class="biz-sec">
         <div class="biz-sec-head"><div><span class="bz-label">Бесплатно для всех</span><h2>Всё для продаж — без тарифа</h2>
@@ -4173,7 +4173,7 @@
     box.innerHTML = String(html`${head}
       <form id="as" class="search adm-search">${ic('search', 18)}<label class="sr" for="aq">Поиск</label><input id="aq" name="q" placeholder="Текст объявления или email автора" value="${search}"></form>
       ${items.length ? items.map((i) => html`<div class="my-row">
-        <a href="/admin/l/${i.id}" class="my-img">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 26, 1.3)}</a>
+        <a href="/admin/l/${i.id}" class="my-img" tabindex="-1" aria-hidden="true">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 26, 1.3)}</a>
         <div class="my-info">
           <a href="/admin/l/${i.id}" class="t" style="display:block">${i.title}</a>
           <div class="p">${price(i.price, i.priceUnit)} <span class="muted" style="font-weight:500;font-size:14px">· ${catName(i.category)} · ${i.city}</span></div>
@@ -4293,7 +4293,7 @@
     const section = (title, items, empty) => html`<h3 class="adm-sub">${title}</h3>${items.length ? items : html`<p class="muted" style="margin:0">${empty}</p>`}`;
     const panes = {
       listings: d.listings.length ? d.listings.map((i) => html`<div class="my-row">
-          <a href="/admin/l/${i.id}" class="my-img">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 26, 1.3)}</a>
+          <a href="/admin/l/${i.id}" class="my-img" tabindex="-1" aria-hidden="true">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 26, 1.3)}</a>
           <div class="my-info"><span class="ml-tag ${(MY_TAG[i.status] || MY_TAG.archived)[0]}"><i></i>${STATUS_LABEL[i.status]}</span>
             <a href="/admin/l/${i.id}" class="t" style="display:block;margin-top:4px">${i.title}</a>
             <div class="m">${price(i.price, i.priceUnit)} · ${i.city} · изменено ${when(i.updatedAt)}${i.reports ? ` · жалоб: ${i.reports}` : ''}</div>
@@ -4314,7 +4314,7 @@
             <div class="pf-badges">${userBadges({ ...u, reports: d.reports.against.filter((r) => !r.resolvedAt).length })}${trustBadges({ phone: u.phoneVerified, biz: u.business && u.business.status === 'verified' ? { kind: u.business.kind === 'ip' ? 'ИП' : 'Компания', name: u.business.name } : null })}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}</div>
           </div>
         </div>
-        ${u.business ? html`<div class="adm-biz ${u.business.status}">
+        ${u.business ? html`<div class="adm-biz is-${u.business.status}">
           <div class="adm-biz-head"><b>${u.business.name}</b><span class="pf-badge ${u.business.status === 'verified' ? 'ok' : u.business.status === 'rejected' ? 'bad' : 'warn'}">${{ pending: 'ждёт проверки', verified: 'подтверждён', rejected: 'отклонён' }[u.business.status]}</span></div>
           <div class="adm-facts"><div><span>ИНН</span><b>${u.business.inn}</b></div><div><span>${u.business.kind === 'ip' ? 'ОГРНИП' : 'ОГРН'}</span><b>${u.business.ogrn}</b></div><div><span>Отправлено</span><b>${when(u.business.at)}</b></div></div>
           ${u.business.note ? html`<div class="muted" style="font-size:14px">Причина отказа: ${u.business.note}</div>` : ''}
@@ -4325,7 +4325,7 @@
           </div>
           <p class="muted" style="margin:0;font-size:13px">Найдите ИНН в выписке ФНС и сверьте название, ОГРН(ИП) и что организация или ИП действуют.</p>
         </div>` : ''}
-        ${u.plan ? html`<div class="adm-biz verified"><div class="adm-biz-head"><b>Тариф «${u.plan.name}»</b><span class="pf-badge ok">до ${dateLong(u.plan.until)}</span></div>
+        ${u.plan ? html`<div class="adm-biz is-verified"><div class="adm-biz-head"><b>Тариф «${u.plan.name}»</b><span class="pf-badge ok">до ${dateLong(u.plan.until)}</span></div>
           ${u.shop && (u.shop.about || u.shop.cover || u.shop.site) ? html`<div class="muted" style="font-size:14px">Витрина: ${u.shop.about ? `«${u.shop.about.slice(0, 140)}${u.shop.about.length > 140 ? '…' : ''}»` : 'без описания'}${u.shop.site ? ` · ${u.shop.site}` : ''}</div>
           <div class="adm-person-act"><a class="btn btn-soft btn-sm" href="/u/${u.id}" target="_blank">${ic('store', 16)}Витрина</a><button class="btn btn-line btn-sm" data-shop-clear="${u.id}">Очистить витрину</button></div>` : html`<div class="muted" style="font-size:14px">Витрина не заполнена.</div>`}
           <a href="/admin?status=payments" class="muted" style="font-size:13px;text-decoration:underline">Платежи и возвраты</a></div>` : ''}
@@ -4496,7 +4496,7 @@
       </div>
       <div class="seg adm-seg" role="tablist">${TABS.map(([k, t]) => html`<a role="tab" class="${k === tab ? 'on' : ''}" aria-selected="${k === tab ? 'true' : 'false'}" href="/admin?status=ads&tab=${k}">${t} · ${d.counts[k]}</a>`)}</div>
       ${d.items.length ? html`<div class="adm-ads">${d.items.map((a) => html`<div class="adm-ad">
-          <a class="my-img" href="${a.listingId ? `/admin/l/${a.listingId}` : '#'}">${a.photo ? html`<img src="${a.photo}" alt="" loading="lazy">` : svg(P.image, 24, 1.3)}</a>
+          <a class="my-img" href="${a.listingId ? `/admin/l/${a.listingId}` : '#'}" tabindex="-1" aria-hidden="true">${a.photo ? html`<img src="${a.photo}" alt="" loading="lazy">` : svg(P.image, 24, 1.3)}</a>
           <div class="adm-ad-body">
             <div class="adm-ad-head"><span class="ml-tag ${PROMO_STATUS[a.status][0]}"><i></i>${PROMO_STATUS[a.status][1]}</span>${a.listingStatus !== 'active' && a.status === 'active' ? html`<span class="ml-tag off"><i></i>объявление не в поиске</span>` : ''}</div>
             <a class="t" href="${a.listingId ? `/l/${a.listingId}` : '#'}" target="_blank">${a.title}</a>
