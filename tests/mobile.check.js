@@ -163,7 +163,7 @@ async function seed(base, browser) {
   const pendingPay = (await shop.post('/api/my/plan/pay', { plan: 'pro', months: 12 })).data.id;
   for (let i = 0; i < 3; i++) await client(base).post('/api/stats/impressions', { ids: [s1, s2] }, { origin: base, 'user-agent': ua(20 + i) });
   await client(base).post('/api/stats/view', { id: s1, src: 'ad' }, { origin: base, 'user-agent': ua(20) });
-  return { seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay };
+  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay };
 }
 
 function pages(d) {
@@ -298,6 +298,7 @@ function startYookassa() {
   return new Promise((r) => srv.listen(0, '127.0.0.1', () => r(srv)));
 }
 
+let seeded = null;
 async function main() {
   fs.rmSync(SHOTS, { recursive: true, force: true });
   fs.mkdirSync(SHOTS, { recursive: true });
@@ -308,6 +309,7 @@ async function main() {
   let checked = 0;
   try {
     const d = await seed(srv.base, browser);
+    seeded = d;
     for (const [vpName, vp] of Object.entries(VIEWPORTS)) {
       for (const [name, url, who, open] of pages(d)) {
         const ctx = await browser.newContext({ ...vp, locale: 'ru-RU' });
@@ -386,6 +388,7 @@ async function main() {
     await browser.close();
     await srv.stop();
     yk.close();
+    if (seeded && seeded.s3) { seeded.s3.srv.closeAllConnections(); seeded.s3.srv.close(); }
   }
   console.log(`\nПроверено страниц: ${checked}. Скриншоты: ${SHOTS}`);
   if (problems.length) {
@@ -393,6 +396,7 @@ async function main() {
     process.exit(1);
   }
   console.log('Вёрстка в порядке.');
+  process.exit(0); // ничего не держит процесс (поддельные серверы, таймеры)
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
