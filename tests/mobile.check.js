@@ -169,7 +169,12 @@ async function seed(base, browser) {
   const sofa = (await seller.get(`/api/listings/${ids[4]}`)).data.listing;
   await seller.patch(`/api/listings/${ids[4]}`, { ...sofa, photos: sofa.photos.map((u) => u.split('/').pop()), subcategory: sofa.subcategory, metro: '', video: '', exchange: true, bargain: false });
   await admin.post(`/api/admin/listings/${ids[4]}/restore`);
-  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay, scheduled };
+  // 1.21: продвижение в ленте — XL с рамкой и метками у автомобиля, рамка у коляски, метки iPhone ждут модератора.
+  const boostPay = await pay(await seller.post(`/api/listings/${car}/boost`, { xl: true, frame: true, tags: ['Отдам сегодня', 'Как новый'] }));
+  await admin.post(`/api/admin/boosts/${(await admin.get('/api/admin/boost-tags')).data.items[0].id}/tags`, { ok: true });
+  await pay(await seller.post(`/api/listings/${ids[0]}/boost`, { frame: true }));
+  await pay(await seller.post(`/api/listings/${ids[1]}/boost`, { tags: ['Есть гарантия', 'С чеком'] }));
+  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay, scheduled, boostPay };
 }
 
 function pages(d) {
@@ -295,7 +300,13 @@ function pages(d) {
     ['edit-step-publish', `/edit/${d.ids[0]}`, d.seller, 'step:5'],
     ['my-scheduled', '/profile?status=scheduled', d.seller],
     ['listing-scheduled', `/l/${d.scheduled}`, d.seller],
-    ['search-exchange', '/search?exchange=1', null]
+    ['search-exchange', '/search?exchange=1', null],
+    // 1.21: продвижение в ленте — XL, рамка, метки; выбор при подаче и «Продвинуть»; проверка меток
+    ['boost-modal', `/l/${d.ids[3]}`, d.seller, '[data-promote]'],
+    ['boost-modal-busy', `/l/${d.car}`, d.seller, '[data-promote]'],
+    ['pay-boost', `/pay/${d.boostPay}`, d.seller],
+    ['admin-tags', '/admin?status=tags', d.admin],
+    ['new-step-publish-boost', '/new', d.seller, 'step:5:boost']
   ];
 }
 
@@ -333,7 +344,9 @@ async function main() {
     const d = await seed(srv.base, browser);
     seeded = d;
     for (const [vpName, vp] of Object.entries(VIEWPORTS)) {
-      for (const [name, url, who, open] of pages(d)) {
+      // UI_ONLY=home,boost-modal — проверить только эти страницы (быстрее при правке вёрстки).
+      const only = process.env.UI_ONLY ? process.env.UI_ONLY.split(',') : null;
+      for (const [name, url, who, open] of pages(d).filter(([n]) => !only || only.includes(n))) {
         const ctx = await browser.newContext({ ...vp, locale: 'ru-RU' });
         if (who) {
           const [k, v] = who.cookie.split('=');
@@ -364,6 +377,16 @@ async function main() {
           // Пустая форма: «Далее» с фото на «Что продаёте», ещё раз «Далее» — шаг подсвечивается и не пускает дальше.
           for (let k = 0; k < 2; k++) { await page.click('[data-next] >> visible=true'); await page.waitForTimeout(300); }
           if (!(await page.$('.ed-step.cur.bad#s-what'))) errors.push('ошибки шага не подсветились');
+        } else if (open === 'step:5:boost') {
+          // Продвижение при подаче: XL и метки, одна метка выбрана — цена на кнопке, превью с XL.
+          await page.click('[data-step="5"]');
+          await page.waitForTimeout(300);
+          await page.click('.bp-opt:has([data-bk="xl"])');
+          await page.click('.bp-opt:has([data-bk="tags"])');
+          await page.click('[data-tag="Как новый"]');
+          await page.waitForTimeout(200);
+          if (!(await page.$('#preview .card.is-xl .b-tag'))) errors.push('превью без XL и метки');
+          if (!/128 ₽/.test(await page.textContent('[data-submit] >> visible=true'))) errors.push('на кнопке нет цены продвижения');
         } else if (/^step:\d$/.test(open)) {
           await page.click(`[data-step="${open.slice(5)}"]`);
           await page.waitForTimeout(400);

@@ -123,7 +123,10 @@
     feed: '<path d="M5 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/>',
     play: '<path d="M8 5.5v13l10.5-6.5z"/>',
     video: '<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="M16 10.5l5-3v9l-5-3"/>',
-    sliders: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>'
+    sliders: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
+    xl: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M14 5v14M14 12h7"/>',
+    frame: '<rect x="4" y="4" width="16" height="16" rx="4"/><rect x="7.5" y="7.5" width="9" height="9" rx="2"/>',
+    bolt: '<path d="M13 3L5 13.5h6L10 21l8-10.5h-6z"/>'
   };
   const CAT_P = {
     transport: '<path d="M3 13l2-5a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 5v4H3z"/><circle cx="7.5" cy="17" r="1.6"/><circle cx="16.5" cy="17" r="1.6"/>',
@@ -333,21 +336,30 @@
 
   // ================= карточки =================
   // it.ad — карточка из блока «Реклама»: пометка, рекламодатель и erid по кнопке «Реклама» (38-ФЗ, ст. 18.1).
+  // it.boost — продвижение в ленте (lib/boost.js): XL — на две ячейки (на телефоне — во всю ширину) с ещё двумя фото
+  // и началом описания, рамка — изумрудная обводка, tags — метки на фото. Подпись «Продвигается» — всегда.
+  const boostImg = (src, cls = '', extra = '') => html`<span class="xl-ph ${cls}">${src ? html`<img src="${src}" alt="" loading="lazy">` : svg(P.image, 28, 1.2)}${extra}</span>`;
   function card(it) {
     const meta = [it.metro ? `м. ${it.metro}` : it.city, shortWhen(it.createdAt)].filter(Boolean).join(' · ');
     const ad = it.ad;
-    return html`<div class="card${ad ? ' is-ad' : ''}">
+    const bo = !ad && it.boost && it.status !== 'sold' ? it.boost : null;
+    const xl = !!(bo && bo.xl);
+    const tags = bo && bo.tags && bo.tags.length ? bo.tags : null;
+    const side = xl ? [...(bo.photos || [])] : [];
+    return html`<div class="card${ad ? ' is-ad' : ''}${xl ? ' is-xl' : ''}${bo && bo.frame ? ' is-frame' : ''}">
       <a href="${lpath(it)}" class="card-link"${ad ? raw(` data-adid="${Number(ad.id)}"`) : ''}>
-        <div class="card-img">
-          ${it.photo ? html`<img src="${it.photo}" alt="" loading="lazy">` : svg(P.image, 40, 1.2)}
-          ${ad ? '' : it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : it.fresh ? html`<span class="tag drop-badge">Новое</span>` : it.priceWas ? html`<span class="tag drop-badge" title="Было ${price(it.priceWas, it.priceUnit)}">${ic('down', 13, 2.4)}Цена снижена</span>` : ''}
+        <div class="card-img${xl ? ' xl-img' : ''}">
+          ${xl ? boostImg(it.photo, 'main') : it.photo ? html`<img src="${it.photo}" alt="" loading="lazy">` : svg(P.image, 40, 1.2)}
+          ${xl ? html`<span class="xl-side">${boostImg(side[0])}${boostImg(side[1], '', bo.more ? html`<em>+${bo.more} фото</em>` : '')}</span>` : ''}
+          ${tags ? html`<span class="b-tags">${tags.map((t, i) => html`<span class="b-tag${i ? ' alt' : ''}">${t}</span>`)}</span>`
+    : ad ? '' : it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : it.fresh ? html`<span class="tag drop-badge">Новое</span>` : it.priceWas ? html`<span class="tag drop-badge" title="Было ${price(it.priceWas, it.priceUnit)}">${ic('down', 13, 2.4)}Цена снижена</span>` : ''}
           <span class="price-pill">${price(it.price, it.priceUnit)}</span>
           ${it.hasVideo ? html`<span class="vid-badge" title="Есть видео">${ic('play', 14, 0)}<span class="sr">Есть видео</span></span>` : ''}
         </div>
         <div class="card-body">
           <span class="card-title">${it.title}</span>
-          ${it.summary ? html`<span class="card-sum">${it.summary}</span>` : ''}
-          <span class="card-meta">${meta}${it.delivery ? html` · <span class="ok">Доставка</span>` : ''}${it.exchange ? html` · <span class="ok">Обмен</span>` : ''}</span>
+          ${xl && (bo.desc || it.summary) ? html`<span class="card-desc">${[it.summary, bo.desc].filter(Boolean).join('. ')}</span>` : it.summary ? html`<span class="card-sum">${it.summary}</span>` : ''}
+          <span class="card-meta">${meta}${it.delivery ? html` · <span class="ok">Доставка</span>` : ''}${it.exchange ? html` · <span class="ok">Обмен</span>` : ''}${bo ? html` · <span class="b-mark">Продвигается</span>` : ''}</span>
         </div>
       </a>
       <button type="button" class="fav-btn ${it.isFav ? 'on' : ''}" data-fav="${it.id}" aria-label="${it.isFav ? 'Убрать из избранного' : 'В избранное'}" aria-pressed="${it.isFav ? 'true' : 'false'}">${ic('heart', 20)}</button>
@@ -932,7 +944,8 @@
     if (l.isOwner) {
       actions = html`<div style="display:flex;flex-direction:column;gap:10px">
         ${pm ? html`<div class="promo-now ${pm.status}">${ic(pm.status === 'active' ? 'megaphone' : 'clock', 20)}<div><b>${PROMO_STATUS[pm.status][1]}</b><span>${promoLine(pm)}</span></div></div>` : ''}
-        ${l.status === 'active' && (isBiz() || pm) ? html`<button class="btn btn-accent btn-lg btn-block" data-promote>${ic('trend', 20, 2)}${pm ? 'Продлить продвижение' : 'Продвигать'}</button>` : ''}
+        ${(data.boost || []).length ? html`<div class="promo-now active">${ic('bolt', 20)}<div><b>Продвигается</b><span>${data.boost.map((b) => `${b.kinds.map((k) => BOOST.find((x) => x[0] === k)[2]).join(', ')} — ${b.tagsState === 'review' ? 'метки на проверке, ' : b.tagsState === 'off' ? 'метки не одобрены, ' : ''}${boostState(b)}`).join('; ')}</span></div></div>` : ''}
+        ${['active', 'pending', 'scheduled'].includes(l.status) && (boostOn() || pm || (data.boost || []).length) ? html`<button class="btn btn-accent btn-lg btn-block" data-promote>${ic('trend', 20, 2)}Продвинуть</button>` : ''}
         <a class="btn btn-dark btn-lg btn-block" href="/edit/${l.id}">Редактировать</a>
         ${['active', 'sold', 'archived'].includes(l.status) ? html`<a class="btn btn-soft btn-lg btn-block" href="/profile/stats/${l.id}">${ic('chart', 20)}Статистика</a>` : ''}
         ${l.status === 'active' ? html`<button class="btn btn-soft btn-lg btn-block" data-status="sold">Отметить проданным</button>` : ''}
@@ -1072,7 +1085,7 @@
     const ap = $('[data-appeal]');
     if (ap) ap.onclick = () => appealModal(l.id, () => render());
     const pr = $('[data-promote]');
-    if (pr) pr.onclick = () => promoteModal(l.id, l.title);
+    if (pr) pr.onclick = () => boostModal(l.id, l.title, pm);
     const rp = $('[data-report]');
     if (rp) {
       rp.onclick = () => {
@@ -1143,6 +1156,104 @@
   const UNIT_LABEL = { '': 'за всё', мес: 'в месяц', сутки: 'за сутки', час: 'за час', 'м²': 'за м²', шт: 'за штуку' };
   const DESC_TIPS = ['Состояние', 'Комплектация', 'Причина продажи', 'Дефекты', 'Где можно посмотреть'];
   const DRAFT_KEY = 'tg_draft';
+  // ================= продвижение в ленте (1.21) =================
+  // Один выбор для формы объявления и окна «Продвинуть»: XL-карточка, рамка, метки (до двух) и пакет «Всё в одном».
+  // Цена считается так же, как на сервере (lib/boost.js): все три — по цене пакета, если он дешевле суммы.
+  const BOOST = [['xl', 'xl', 'XL-карточка', 'Две ячейки, три фото и описание'], ['frame', 'frame', 'Яркая рамка', 'Изумрудная обводка карточки'], ['tags', 'tag', 'Метки на фото', 'До двух — после проверки модератором']];
+  const boostOn = () => !!(S.config.billing && S.config.billing.ready);
+  const boostPrices = () => (S.config.billing && S.config.billing.prices && S.config.billing.prices.boost) || { xl: 99, frame: 39, tags: 29, all: 129 };
+  function boostQuote(b) {
+    const pr = boostPrices();
+    const on = { xl: !!b.xl, frame: !!b.frame, tags: !!b.tagsOn };
+    const full = (on.xl ? pr.xl : 0) + (on.frame ? pr.frame : 0) + (on.tags ? pr.tags : 0);
+    const bundle = on.xl && on.frame && on.tags && pr.all < full;
+    return { amount: bundle ? pr.all : full, full, bundle, any: on.xl || on.frame || on.tags };
+  }
+  // Что уже идёт или оплачено (current — из /api/listings/:id): такие услуги второй раз не купить.
+  function boostBusy(current) {
+    const busy = {};
+    (current || []).forEach((b) => b.kinds.forEach((k) => { if (k !== 'tags' || b.tagsState !== 'off') busy[k] = b; }));
+    return busy;
+  }
+  const boostState = (b) => (b.status === 'waiting' ? 'с публикацией' : `до ${dateShort(b.endsAt)}`);
+  function boostPicker(busy = {}) {
+    const pr = boostPrices();
+    const sum = pr.xl + pr.frame + pr.tags;
+    const free = BOOST.filter(([k]) => !busy[k]);
+    return html`<div class="bp" data-bp>
+      <div class="bp-grid">${BOOST.map(([k, icon, t, sub]) => html`<label class="bp-opt${busy[k] ? ' busy' : ''}">
+        <span class="bp-top"><span class="bp-ic">${ic(icon, 20, 1.9)}</span><input type="checkbox" data-bk="${k}" ${busy[k] ? raw('disabled') : ''}></span>
+        <span class="bp-t"><b>${t}</b><em>${busy[k] ? (k === 'tags' && busy[k].tagsState === 'review' ? 'на проверке' : boostState(busy[k])) : rub(pr[k])}</em></span>
+        <small>${sub}</small></label>`)}</div>
+      <div class="bp-tags hidden" data-bp-tags role="group" aria-label="Метки на фото"><span class="bp-tags-h">Выберите одну или две</span>
+        ${S.config.billing.boostTags.map((t) => html`<button type="button" class="bp-chip" data-tag="${t}" aria-pressed="false">${t}</button>`)}</div>
+      ${free.length === 3 && pr.all < sum ? html`<label class="bp-all"><input type="checkbox" data-bk="all"><span class="bp-ic">${ic('bolt', 20, 1.9)}</span>
+        <span class="bp-t"><b>Всё в одном</b><small>XL, рамка и метки · <span class="bp-save">выгоднее на ${rub(sum - pr.all)}</span></small></span><em>${rub(pr.all)}</em></label>` : ''}
+    </div>`;
+  }
+  // st = { xl, frame, tagsOn, tags: [] }; onChange — после каждого изменения.
+  function bindBoostPicker(root, st, onChange) {
+    const box = $('[data-bp]', root);
+    if (!box) return;
+    const sync = () => {
+      $$('[data-bk]', box).forEach((x) => { if (x.dataset.bk !== 'all' && !x.disabled) x.checked = x.dataset.bk === 'tags' ? st.tagsOn : !!st[x.dataset.bk]; });
+      const all = $('[data-bk="all"]', box); if (all) all.checked = st.xl && st.frame && st.tagsOn;
+      $('[data-bp-tags]', box).classList.toggle('hidden', !st.tagsOn);
+      $$('[data-tag]', box).forEach((c) => { const on = st.tags.includes(c.dataset.tag); c.classList.toggle('on', on); c.setAttribute('aria-pressed', on ? 'true' : 'false'); c.disabled = !on && st.tags.length >= 2; });
+      onChange();
+    };
+    box.addEventListener('change', (e) => {
+      const k = e.target.dataset.bk;
+      if (!k) return;
+      if (k === 'all') { st.xl = st.frame = st.tagsOn = e.target.checked; } else if (k === 'tags') st.tagsOn = e.target.checked; else st[k] = e.target.checked;
+      if (!st.tagsOn) st.tags = [];
+      sync();
+    });
+    box.addEventListener('click', (e) => {
+      const c = e.target.closest('[data-tag]');
+      if (!c) return;
+      const t = c.dataset.tag;
+      st.tags = st.tags.includes(t) ? st.tags.filter((x) => x !== t) : [...st.tags, t].slice(0, 2);
+      sync();
+    });
+    sync();
+  }
+  const boostBody = (st) => ({ xl: st.xl, frame: st.frame, tags: st.tagsOn ? st.tags : [] });
+  const boostErr = (st) => (st.tagsOn && !st.tags.length ? 'Выберите метки для фото — одну или две.' : '');
+  async function boostPay(listingId, st) {
+    const r = await api('POST', `/api/listings/${listingId}/boost`, boostBody(st));
+    location.href = r.url;
+  }
+
+  // «Продвинуть» опубликованное или ждущее публикации объявление (из «Моих объявлений» и со страницы объявления).
+  async function boostModal(listingId, title, promo = null) {
+    let d;
+    try { d = await api('GET', `/api/listings/${listingId}/boost`); } catch (e) { toast(e.message, true); return; }
+    const busy = boostBusy(d.current);
+    const st = { xl: false, frame: false, tagsOn: false, tags: [] };
+    const all = Object.keys(busy).length >= 3;
+    const biz = isBiz() || promo;
+    openModal(String(html`<div class="bm"><h2>Продвижение</h2><p class="muted bm-sub">«${title}» · ${d.days} дней${d.status === 'active' ? '' : ' с публикации'}</p>
+      ${d.current.length ? html`<div class="bm-now">${d.current.map((b) => html`<div>${ic('check', 16, 2.4)}<span>${b.kinds.map((k) => BOOST.find((x) => x[0] === k)[2]).join(', ')}${b.tags.length ? ` (${b.tags.join(', ')})` : ''}</span><em>${b.tagsState === 'review' ? 'метки на проверке · ' : b.tagsState === 'off' ? 'метки не одобрены · ' : ''}${boostState(b)}</em></div>`)}</div>` : ''}
+      ${all ? html`<p class="muted">Всё уже включено.</p>` : d.ready ? boostPicker(busy) : html`<p class="muted">Оплата пока не подключена.</p>`}
+      <p class="bm-note">Порядок выдачи не меняется — карточка заметнее и подписана «Продвигается». Оплата на странице ЮKassa, чек — на ${S.user.email}. <a href="/page/terms#paid">Условия</a></p>
+      ${biz ? html`<button type="button" class="bm-biz" data-biz>${ic('megaphone', 18, 2)}<span><b>Реклама над поиском</b><small>для ИП и компаний${promo ? ` · ${PROMO_STATUS[promo.status][1].toLowerCase()}` : ''}</small></span>${ic('right', 18, 2)}</button>` : ''}
+      <div class="modal-actions"><button class="btn btn-soft" data-x>Закрыть</button>${!all && d.ready ? html`<button class="btn btn-accent" data-ok disabled>Выберите</button>` : ''}</div></div>`), (m, close) => {
+      $('[data-x]', m).onclick = close;
+      m.addEventListener('click', (e) => { if (e.target.closest('a[href]')) close(); });
+      const bz = $('[data-biz]', m); if (bz) bz.onclick = () => { close(); promoteModal(listingId, title); };
+      const ok = $('[data-ok]', m);
+      if (!ok) return;
+      bindBoostPicker(m, st, () => { const q = boostQuote(st); ok.disabled = !q.any; ok.textContent = q.any ? `Оплатить ${rub(q.amount)}` : 'Выберите'; });
+      ok.onclick = async () => {
+        const err = boostErr(st);
+        if (err) { toast(err, true); return; }
+        ok.disabled = true; ok.textContent = 'Открываем оплату…';
+        try { await boostPay(listingId, st); } catch (ex) { toast(ex.message, true); ok.disabled = false; ok.textContent = `Оплатить ${rub(boostQuote(st).amount)}`; }
+      };
+    });
+  }
+
   const ED_STEPS = [['s-photos', 'Фото'], ['s-what', 'Что продаёте'], ['s-price', 'Цена'], ['s-where', 'Где'], ['s-desc', 'Описание'], ['s-publish', 'Публикация']];
   // Публикация в выбранное время: дни на 30 вперёд и время с шагом 30 минут — по Москве (UTC+3 круглый год).
   const MSK = 3 * 3600 * 1000;
@@ -1182,6 +1293,10 @@
     const times = Array.from({ length: 48 }, (_, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`);
     const atDay = mskDay(at0 || tomorrow10);
     const atClock = new Date((at0 || tomorrow10) + MSK).toISOString().slice(11, 16);
+    // Продвижение: когда оплата подключена и объявление ещё можно показать (не продано и не снято).
+    const canBoost = boostOn() && (!l || ['active', 'pending', 'scheduled', 'rejected'].includes(l.status));
+    const busyBoost = boostBusy(l && l.boost);
+    st.boost = { xl: false, frame: false, tagsOn: false, tags: [] };
     const step = (n, sid, title, sub, body) => html`<section class="ed-step" id="${sid}"><div class="ed-step-h"><span class="ed-kick">Шаг ${n} из ${ED_STEPS.length}</span><h2>${title}</h2>${sub ? html`<p>${sub}</p>` : ''}</div><div class="ed-err" role="alert" hidden></div>${body}
       <div class="ed-nav">${n > 1 ? html`<button type="button" class="btn btn-soft" data-prev>${ic('left', 18, 2)}Назад</button>` : html`<span></span>`}${n < ED_STEPS.length
     ? html`<button type="button" class="btn btn-dark" data-next>Далее${ic('right', 18, 2)}</button>`
@@ -1249,7 +1364,10 @@
                 <small>По московскому времени. До публикации объявление видно только вам — в «Моих объявлениях» с меткой «Запланировано».</small>
               </div>
             </fieldset>` : ''}
-            <p class="ed-rules muted">Нажимая «${sendLabel}», вы соглашаетесь с <a href="/page/rules" style="text-decoration:underline">правилами площадки</a>.</p>`)}
+            ${canBoost ? html`<div class="ed-boost"><div class="ed-boost-h"><span class="label">Продвижение</span><small>по желанию · 7 дней с публикации</small></div>
+              ${boostPicker(busyBoost)}
+              <p class="ed-boost-note">${ic('lock', 14, 2)}Оплата при отправке. Не опубликуем за 7 дней — вернём деньги.</p></div>` : ''}
+            <p class="ed-rules muted">Нажимая «${sendLabel}», вы соглашаетесь с <a href="/page/rules" style="text-decoration:underline">правилами площадки</a><span id="paid-terms" class="hidden"> и <a href="/page/terms#paid" style="text-decoration:underline">условиями платных услуг</a></span>.</p>`)}
         </form>
         <aside class="ed-side">
           <div class="ed-panel">
@@ -1577,7 +1695,7 @@
     const ERR = {
       's-what': (b) => (b.title.length < 3 ? 'Напишите название — хотя бы пару слов.' : !b.category ? 'Выберите категорию.' : !b.subcategory && subsOf(b.category).length ? 'Выберите раздел — так объявление попадёт в нужные фильтры.' : ''),
       's-where': (b) => (b.city.length < 2 ? 'Укажите город.' : ''),
-      's-publish': (b) => (b.publishAt !== null && b.publishAt < Date.now() + 5 * 60 * 1000 ? 'Выберите время позже — хотя бы через несколько минут.' : '')
+      's-publish': (b) => (b.publishAt !== null && b.publishAt < Date.now() + 5 * 60 * 1000 ? 'Выберите время позже — хотя бы через несколько минут.' : boostErr(st.boost))
     };
     let saveTimer = null;
     function changed() {
@@ -1601,8 +1719,14 @@
       });
       $('#bargain-opt').classList.toggle('hidden', st.negotiable); // без цены торговаться не о чем
       const first = st.photos.find((p) => p.url && !p.loading);
+      const pb = st.boost;
+      const ready = st.photos.filter((p) => p.url && !p.loading);
+      const prevBoost = pb.xl || pb.frame || pb.tags.length ? { xl: pb.xl, frame: pb.frame, tags: pb.tags, photos: ready.slice(1, 3).map((p) => p.url), more: Math.max(0, ready.length - 3), desc: b.description.replace(/\s+/g, ' ').slice(0, 180) } : null;
       $('#preview').innerHTML = String(card({ id: 0, title: b.title || 'Название объявления', price: b.price ? Number(b.price) : null, priceUnit: b.priceUnit, city: b.city || 'Город', createdAt: Date.now(), photo: first ? first.url : null, delivery: b.delivery, exchange: b.exchange,
-        summary: attrSummary(b.subcategory, b.attrs), metro: b.metro, hasVideo: !!st.video }));
+        summary: attrSummary(b.subcategory, b.attrs), metro: b.metro, hasVideo: !!st.video, boost: prevBoost }));
+      const q = boostQuote(pb);
+      $$('[data-submit]').forEach((x) => { const t = x.id === 'dock-send' ? (l ? 'Сохранить' : 'На проверку') : sendLabel; x.textContent = q.any ? `${t} · ${rub(q.amount)}` : t; });
+      const pt = $('#paid-terms'); if (pt) pt.classList.toggle('hidden', !q.any);
       if (st.tried) for (const sid of Object.keys(ERR)) showErr(sid, ERR[sid](b));
       const has = b.title || b.photos.length || b.description || b.price;
       if (!l && !has) draftDrop();
@@ -1664,8 +1788,13 @@
       try {
         const r = l ? await api('PATCH', `/api/listings/${l.id}`, b) : await api('POST', '/api/listings', b);
         if (!l) draftDrop();
+        const lid = l ? l.id : r.id;
+        if (canBoost && boostQuote(st.boost).any) {
+          // Объявление сохранено — дальше страница оплаты ЮKassa. Не открылась — продвинуть можно позже из «Моих объявлений».
+          try { await boostPay(lid, st.boost); return; } catch (ex) { toast(`Объявление отправлено, но оплата не открылась: ${ex.message}`, true); go(`/l/${lid}`, true); return; }
+        }
         toast(b.publishAt ? 'Отправлено на проверку — опубликуем в выбранное время' : 'Отправлено на проверку модератору');
-        go(`/l/${l ? l.id : r.id}`, true);
+        go(`/l/${lid}`, true);
       } catch (ex) {
         toast(ex.message, true);
         sending = false;
@@ -1677,6 +1806,7 @@
 
     cleanup = () => { document.body.classList.remove('editing'); clearTimeout(saveTimer); if (st.video && st.video.local) URL.revokeObjectURL(st.video.local); st.video = null; };
     setCat(st.category); setCond(st.condition); setUnit(st.priceUnit); setNeg(st.negotiable);
+    if (canBoost) bindBoostPicker($('#s-publish'), st.boost, changed);
     renderPhotos(); renderVideo(); loadMetro();
     goStep(st.step);
     if (l) fetchHint();
@@ -2614,6 +2744,7 @@
             <a href="/l/${i.id}" class="ml-title">${i.title}</a>
             <div class="ml-price">${price(i.price, i.priceUnit)}</div>
             ${i.promo ? html`<span class="ml-promo ${i.promo.status}">${ic('megaphone', 13, 2)}${i.promo.status === 'active' ? `Реклама до ${dateShort(i.promo.endsAt)}` : 'Ждёт маркировки'}</span>` : ''}
+            ${(i.boost || []).map((b) => html`<span class="ml-promo ${b.status === 'active' ? 'active' : 'marking'}">${ic('bolt', 13, 2)}${b.kinds.map((k) => BOOST.find((x) => x[0] === k)[2]).join(', ')} · ${boostState(b)}${b.tagsState === 'review' ? ' · метки на проверке' : ''}</span>`)}
             <div class="ml-meta"><span title="Просмотры">${svg(P.eye, 15, 1.8)} ${NF.format(i.views)}</span><span title="В избранном">${svg(P.heart, 15, 1.8)} ${i.favCount}</span><span>${i.city} · ${shortWhen(i.createdAt)}</span>${i.status === 'active' && i.expiresAt ? html`<span title="Объявление висит 30 дней, потом его можно бесплатно опубликовать снова">${ic('clock', 15, 1.8)} до ${dateShort(i.expiresAt)}</span>` : ''}</div>
           </div>
           <div class="ml-side">
@@ -2648,7 +2779,7 @@
         if (i.status === 'sold' || i.status === 'archived') acts.push({ icon: 'refresh', label: 'Опубликовать снова', run: () => setStatus(i, 'active', 'Снова опубликовано') });
         if (i.status === 'scheduled') acts.push({ icon: 'refresh', label: 'Опубликовать сейчас', run: () => setStatus(i, 'active', 'Опубликовано') }, { icon: 'pause', label: 'Не публиковать', run: () => setStatus(i, 'archived', 'Публикация отменена') });
         if (i.status === 'rejected' && !i.appealAt && !i.appealReply) acts.push({ icon: 'chat', label: 'Подать апелляцию', run: () => appealModal(i.id, reload) });
-        if (i.status === 'active' && (isBiz() || i.promo)) acts.splice(1, 0, { icon: 'trend', label: i.promo ? 'Продлить продвижение' : 'Продвигать', run: () => promoteModal(i.id, i.title) });
+        if (['active', 'pending', 'scheduled'].includes(i.status) && (boostOn() || i.promo || (i.boost || []).length)) acts.splice(1, 0, { icon: 'trend', label: 'Продвинуть', run: () => boostModal(i.id, i.title, i.promo) });
         if (i.status === 'active') acts.push({ icon: 'share', label: 'Поделиться', run: () => shareLink(`${location.origin}${lpath(i)}`, i.title) });
         acts.push({ icon: 'trash', label: 'Удалить', danger: true, run: async () => {
           if (!(await confirmModal('Удалить объявление?', 'Объявление и фото удалятся без возможности восстановления.', 'Удалить', true))) return;
@@ -3125,16 +3256,18 @@
     let timer = null;
     cleanup = () => clearTimeout(timer);
     const draw = ({ payment: p, url }) => {
-      const back = p.kind === 'promo' ? `/l/${p.item.listingId}` : '/business';
-      const state = p.status === 'succeeded' ? ['ok', 'check', 'Оплата прошла', p.kind === 'plan' ? `Тариф «${PLAN_NAME[p.item.plan]}» подключён. Чек ЮKassa пришлёт на почту.` : 'Продвижение оплачено. Чек ЮKassa пришлёт на почту.']
+      const isBoost = p.kind === 'boost';
+      const back = p.kind === 'promo' || isBoost ? `/l/${p.item.listingId}` : '/business';
+      const home = isBoost ? ['/profile', 'Мои объявления'] : ['/profile/business', 'Для бизнеса'];
+      const state = p.status === 'succeeded' ? ['ok', 'check', 'Оплата прошла', p.kind === 'plan' ? `Тариф «${PLAN_NAME[p.item.plan]}» подключён. Чек ЮKassa пришлёт на почту.` : isBoost ? `Продвижение на 7 дней ${p.item.tags && p.item.tags.length ? '— метки появятся после проверки. ' : 'включено. '}Если объявление ещё на проверке — начнётся с публикацией.` : 'Продвижение оплачено. Чек ЮKassa пришлёт на почту.']
         : p.status === 'canceled' ? ['bad', 'close', 'Оплата не прошла', `${CANCEL_REASON[p.error] || 'Банк или ЮKassa отклонили платёж'}. Деньги не списаны.`]
           : ['wait', 'clock', 'Проверяем оплату', 'Если вы уже оплатили, страница обновится сама через несколько секунд.'];
       box.innerHTML = String(html`<div class="pay-ic ${state[0]}">${ic(state[1], 34, 2.2)}</div>
         <h1>${state[2]}</h1><p class="muted">${state[3]}</p>
         <div class="pay-sum">${[['Услуга', p.title], ['Сумма', rub(p.amount)], ...(p.method ? [['Способ', p.method]] : []), ...(p.test ? [['Режим', 'тестовый платёж ЮKassa']] : [])].map(([k, v]) => html`<div><span>${k}</span><b>${v}</b></div>`)}</div>
-        <div class="pay-act">${p.status === 'succeeded' ? html`${p.kind === 'plan' ? html`<a class="btn btn-accent" href="/profile/business/shop">Заполнить витрину</a>` : html`<a class="btn btn-accent" href="${back}">К объявлению</a>`}<a class="btn btn-soft" href="/profile/business">Для бизнеса</a>`
+        <div class="pay-act">${p.status === 'succeeded' ? html`${p.kind === 'plan' ? html`<a class="btn btn-accent" href="/profile/business/shop">Заполнить витрину</a>` : html`<a class="btn btn-accent" href="${back}">К объявлению</a>`}<a class="btn btn-soft" href="${home[0]}">${home[1]}</a>`
     : p.status === 'canceled' ? html`<a class="btn btn-dark" href="${back}">Попробовать ещё раз</a><a class="btn btn-soft" href="/messages/support">Поддержка</a>`
-      : html`${url ? html`<a class="btn btn-dark" href="${url}" data-ext>Вернуться к оплате</a>` : ''}<a class="btn btn-soft" href="/profile/business">Для бизнеса</a>`}</div>`);
+      : html`${url ? html`<a class="btn btn-dark" href="${url}" data-ext>Вернуться к оплате</a>` : ''}<a class="btn btn-soft" href="${home[0]}">${home[1]}</a>`}</div>`);
       const ext = $('[data-ext]', box); if (ext) ext.onclick = (e) => { e.preventDefault(); location.href = url; };
     };
     const poll = async () => {
@@ -3415,7 +3548,7 @@
   // ---------- оболочка модерации: меню слева (на телефоне — лента сверху) ----------
   const ADMIN_NAV = [
     ['', [['dash', 'chart', 'Сводка']]],
-    ['Проверка', [['pending', 'inbox', 'На проверке', 'pending'], ['reports', 'flag', 'Жалобы', 'reports'], ['appeals', 'reply', 'Апелляции', 'appeals'], ['reviews', 'star', 'Отзывы', 'reviews'], ['support', 'headset', 'Поддержка', 'support'], ['biz', 'shield', 'Бизнес', 'biz']]],
+    ['Проверка', [['pending', 'inbox', 'На проверке', 'pending'], ['reports', 'flag', 'Жалобы', 'reports'], ['appeals', 'reply', 'Апелляции', 'appeals'], ['reviews', 'star', 'Отзывы', 'reviews'], ['tags', 'tag', 'Метки на фото', 'tags'], ['support', 'headset', 'Поддержка', 'support'], ['biz', 'shield', 'Бизнес', 'biz']]],
     ['Объявления', [['active', 'tag', 'Опубликованные'], ['rejected', 'close', 'Отклонённые'], ['sold', 'check', 'Проданные'], ['archived', 'pause', 'Снятые']]],
     ['Люди', [['users', 'users', 'Пользователи'], ['log', 'list', 'Журнал действий']]],
     ['Деньги', [['payments', 'card', 'Платежи'], ['ads', 'megaphone', 'Реклама', 'ads'], ['billing', 'tag', 'Оплата и цены']]],
@@ -3467,6 +3600,7 @@
       seo: () => renderSeoAdmin(box),
       backup: () => renderBackupAdmin(box),
       payments: () => renderPaymentsAdmin(box, q),
+      tags: () => renderBoostTagsAdmin(box),
       ads: () => renderAdsAdmin(box, ['marking', 'active', 'ended'].includes(q.get('tab')) ? q.get('tab') : 'marking'),
       billing: () => renderBillingAdmin(box),
       log: () => renderLogAdmin(box, q),
@@ -3841,6 +3975,28 @@
     });
   }
 
+  // ---------- метки на фото (продвижение в ленте) ----------
+  // Метка должна быть правдой: «С чеком» — чек на фото, «Есть гарантия» — сказано в описании. Не одобрили — деньги за метки вернутся сами.
+  async function renderBoostTagsAdmin(box) {
+    const { items } = await api('GET', '/api/admin/boost-tags');
+    box.innerHTML = String(html`<div class="adm-head"><h1>Метки на фото</h1></div>
+      ${items.length ? html`<div class="bt-list">${items.map((b) => html`<article class="bt-item">
+        <div class="bt-photos">${b.photos.length ? b.photos.slice(0, 6).map((src) => html`<a href="${src}" target="_blank"><img src="${src}" alt="" loading="lazy"></a>`) : html`<span class="bt-none">${svg(P.image, 24, 1.3)}</span>`}</div>
+        <div class="bt-body">
+          <div class="bt-tags">${b.tags.map((t) => html`<span class="b-tag">${t}</span>`)}</div>
+          <a class="t" href="${b.listingId ? `/admin/l/${b.listingId}` : '#'}">${b.title}</a>
+          ${b.description ? html`<p class="bt-desc">${b.description.slice(0, 400)}</p>` : ''}
+          <div class="muted adm-log-meta"><a href="/admin/u/${b.user.id}">${b.user.name}</a> · ${b.status === 'waiting' ? 'ждёт публикации' : 'продвигается'} · оплачено ${when(b.createdAt)} · за метки ${rub(b.tagsPrice)}</div>
+          <div class="bt-act"><button class="btn btn-accent btn-sm" data-tag-ok="${b.id}">${ic('check', 16, 2.4)}Одобрить</button><button class="btn btn-line btn-sm" data-tag-no="${b.id}">Отклонить и вернуть ${rub(b.tagsPrice)}</button></div>
+        </div></article>`)}</div>`
+    : html`<div class="empty"><h3>Все метки проверены</h3><p>Здесь появятся метки на фото, которые продавцы выбрали при продвижении.</p></div>`}`);
+    $$('[data-tag-ok]', box).forEach((b) => { b.onclick = async () => { b.disabled = true; try { await api('POST', `/api/admin/boosts/${b.dataset.tagOk}/tags`, { ok: true }); toast('Метки включены'); render(); } catch (e) { b.disabled = false; toast(e.message, true); } }; });
+    $$('[data-tag-no]', box).forEach((b) => {
+      b.onclick = () => reasonModal({ title: 'Отклонить метки', hint: 'Причину увидит продавец. Деньги за метки вернутся автоматически, остальное продвижение продолжится.', url: `/api/admin/boosts/${b.dataset.tagNo}/tags`, extra: { ok: false }, okLabel: 'Отклонить',
+        reasons: ['Чека нет на фото', 'В описании нет гарантии', 'Метка не соответствует товару', 'Товар не новый'], placeholder: 'Причина для продавца' });
+    });
+  }
+
   // ---------- оплата: подключение ЮKassa и цены ----------
   async function renderBillingAdmin(box) {
     const d = await api('GET', '/api/admin/billing');
@@ -3867,7 +4023,8 @@
           <p class="muted" style="margin:0;font-size:14px">Новые цены сразу видны на странице «Для бизнеса»; уже оплаченное не меняется.</p>
           <h3 class="set-h3">${ic('store', 18, 2)}«Магазин»</h3><div class="price-row">${[1, 3, 12].map((m) => priceIn(`shop.${m}`, pr.shop[m], `${m} мес.`))}</div>
           <h3 class="set-h3">${ic('store', 18, 2)}«Магазин Про»</h3><div class="price-row">${[1, 3, 12].map((m) => priceIn(`pro.${m}`, pr.pro[m], `${m} мес.`))}</div>
-          <h3 class="set-h3">${ic('trend', 18, 2)}Продвижение</h3><div class="price-row">${[3, 7, 30].map((dd) => priceIn(`promo.${dd}`, pr.promo[dd], `${dd} ${plural(dd, 'день', 'дня', 'дней')}`))}</div>
+          <h3 class="set-h3">${ic('bolt', 18, 2)}Продвижение в ленте · 7 дней</h3><div class="price-row">${[['xl', 'XL'], ['frame', 'Рамка'], ['tags', 'Метки'], ['all', 'Всё в одном']].map(([k, t]) => priceIn(`boost.${k}`, pr.boost[k], t))}</div>
+          <h3 class="set-h3">${ic('megaphone', 18, 2)}Реклама над поиском</h3><div class="price-row">${[3, 7, 30].map((dd) => priceIn(`promo.${dd}`, pr.promo[dd], `${dd} ${plural(dd, 'день', 'дня', 'дней')}`))}</div>
           <div class="field"><label for="pd">Скидка на продвижение для «Магазин Про», %</label><input id="pd" name="proDiscount" class="input" inputmode="numeric" value="${pr.proDiscount}"></div>
           <div class="set-btns"><button class="btn btn-dark" type="submit">Сохранить цены</button><button type="button" class="btn btn-soft" data-defaults>Цены по умолчанию</button></div>
         </form>
@@ -3881,7 +4038,7 @@
     };
     const off = $('[data-yk-off]', box);
     if (off) off.onclick = async () => { if (!(await confirmModal('Отключить оплату?', 'Кнопки оплаты пропадут с сайта. Уже оплаченные тарифы и продвижение продолжат работать.', 'Отключить', true))) return; try { await api('PUT', '/api/admin/billing', { config: { clear: true } }); await after('Оплата отключена'); } catch (ex) { toast(ex.message, true); } };
-    const collect = (f) => { const b = { shop: {}, pro: {}, promo: {} }; for (const [k, v] of new FormData(f).entries()) { const [g, n] = k.split('.'); if (n) b[g][n] = v; else b[g] = parseInt(v, 10); } return b; };
+    const collect = (f) => { const b = { shop: {}, pro: {}, promo: {}, boost: {} }; for (const [k, v] of new FormData(f).entries()) { const [g, n] = k.split('.'); if (n) b[g][n] = v; else b[g] = parseInt(v, 10); } return b; };
     $('#prices', box).onsubmit = async (e) => { e.preventDefault(); try { await api('PUT', '/api/admin/billing', { prices: collect(e.target) }); await after('Цены сохранены'); } catch (ex) { toast(ex.message, true); } };
     $('[data-defaults]', box).onclick = async () => { try { await api('PUT', '/api/admin/billing', { prices: d.defaults }); await after('Вернули цены по умолчанию'); } catch (ex) { toast(ex.message, true); } };
   }
