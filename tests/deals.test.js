@@ -79,10 +79,10 @@ test('быстрые ответы: готовые по умолчанию, св�
   assert.ok(r.data.items.length >= 4);
   r = await seller.put('/api/my/replies', { items: ['Да, в наличии', '  ', 'Да, в наличии', 'Самовывоз — м. Кремлёвская'] });
   assert.deepEqual(r.data.items, ['Да, в наличии', 'Самовывоз — м. Кремлёвская']);
-  assert.deepEqual((await seller.get('/api/my/replies')).data, { items: ['Да, в наличии', 'Самовывоз — м. Кремлёвская'], custom: true });
+  assert.deepEqual((await seller.get('/api/my/replies')).data, { items: ['Да, в наличии', 'Самовывоз — м. Кремлёвская'], custom: true, max: 12 });
   assert.equal((await seller.put('/api/my/replies', { items: Array.from({ length: 13 }, (_, i) => `ответ ${i}`) })).status, 400);
   r = await seller.put('/api/my/replies', { items: [] });
-  assert.deepEqual(r.data, { items: [], custom: true }, 'можно убрать все');
+  assert.deepEqual(r.data, { items: [], custom: true, max: 12 }, 'можно убрать все');
   r = await seller.put('/api/my/replies', { reset: true });
   assert.equal(r.data.custom, false);
 });

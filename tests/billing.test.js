@@ -139,6 +139,27 @@ test('переход на «Магазин Про»: оставшиеся дни
   assert.ok(days > 39.8 && days < 40.1, `ожидали ≈40 дней, а не ${days}`);
 });
 
+test('плюшки тарифа: 30 быстрых ответов, значок магазина в карточке, «Про» — первым в поддержке', async () => {
+  // быстрые ответы: с тарифом до 30, без тарифа — до 12
+  const many = Array.from({ length: 30 }, (_, i) => `ответ ${i}`);
+  const r = await shop.put('/api/my/replies', { items: many });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.max, 30);
+  assert.equal((await shop.put('/api/my/replies', { items: [...many, 'лишний'] })).status, 400);
+  assert.equal((await other.put('/api/my/replies', { items: many.slice(0, 13) })).status, 400);
+  await shop.put('/api/my/replies', { reset: true });
+  // поддержка: оба ждут ответа, «Магазин Про» — выше, даже если написал раньше
+  await shop.post('/api/support/messages', { body: 'Вопрос от магазина' });
+  await other.post('/api/support/messages', { body: 'Вопрос без тарифа' });
+  const items = (await admin.get('/api/admin/support')).data.items.filter((t) => t.waiting);
+  const iShop = items.findIndex((t) => t.user.id === shop.user.id);
+  const iOther = items.findIndex((t) => t.user.id === other.user.id);
+  assert.ok(iShop >= 0 && iOther >= 0);
+  assert.ok(iShop < iOther, 'обращение «Магазина Про» — первым');
+  assert.equal(items[iShop].pro, true);
+  assert.equal(items[iOther].pro, false);
+});
+
 test('витрина магазина и публичная страница; без тарифа — нельзя', async () => {
   assert.equal((await other.put('/api/my/shop', { about: 'Магазин' })).status, 403);
   const cover = (await shop.post('/api/uploads', { data: `data:image/png;base64,${PNG_1PX}` })).data.file;

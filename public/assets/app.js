@@ -626,7 +626,7 @@
   // и началом описания, рамка — изумрудная обводка, tags — метки на фото. Подпись «Продвигается» — всегда.
   const boostImg = (src, cls = '', extra = '') => html`<span class="xl-ph ${cls}${src ? ' ph' : ''}"${src ? raw(` style="--ph:url('${esc(src)}')"`) : ''}>${src ? html`<img src="${src}" alt="" loading="lazy">` : svg(P.image, 28, 1.2)}${extra}</span>`;
   // 1.26 (вариант 7 «С продавцом»): под описанием карточки — фото и имя продавца, ★ оценка, если есть отзывы.
-  const cardSeller = (s) => html`<span class="card-seller">${ava(s, 'xs')}<span class="cs-name">${s.name}</span>${s.reviews ? html`<span class="cs-rate" title="${NF.format(s.reviews)} ${plural(s.reviews, 'отзыв', 'отзыва', 'отзывов')}">${starSvg(true, 12)}${fmtAvg({ avg: s.rating })}</span>` : ''}</span>`;
+  const cardSeller = (s) => html`<span class="card-seller">${ava(s, 'xs')}<span class="cs-name">${s.name}</span>${s.shop ? html`<span class="cs-shop" title="Магазин на Торгане">${ic('store', 12, 2.2)}<span class="sr">Магазин</span></span>` : ''}${s.reviews ? html`<span class="cs-rate" title="${NF.format(s.reviews)} ${plural(s.reviews, 'отзыв', 'отзыва', 'отзывов')}">${starSvg(true, 12)}${fmtAvg({ avg: s.rating })}</span>` : ''}</span>`;
   function card(it) {
     const meta = [it.metro ? `м. ${it.metro}` : it.city, shortWhen(it.createdAt)].filter(Boolean).join(' · ');
     const ad = it.ad;
@@ -2540,6 +2540,7 @@
   }
 
   // ---------- быстрые ответы продавца ----------
+  let qrMax = 12; // сколько шаблонов можно (сервер: 12, с тарифом магазина — 30)
   function repliesModal(items, done) {
     let list = [...items];
     openModal(String(html`<h2>Быстрые ответы</h2><p class="muted" style="margin:0 0 14px">Появляются над полем сообщения — нажмите, чтобы вставить, поправьте и отправьте.</p>
@@ -2552,14 +2553,14 @@
         $$('[data-qr-rm]', m).forEach((b) => { b.onclick = () => { list.splice(Number(b.dataset.qrRm), 1); paint(); }; });
       };
       paint();
-      const add = () => { const v = $('#qr-new', m).value.trim(); if (!v) return; if (list.length >= 12) { toast('Не больше 12 ответов', true); return; } list.push(v); $('#qr-new', m).value = ''; paint(); };
+      const add = () => { const v = $('#qr-new', m).value.trim(); if (!v) return; if (list.length >= qrMax) { toast(`Не больше ${qrMax} ответов`, true); return; } list.push(v); $('#qr-new', m).value = ''; paint(); };
       $('[data-qr-add]', m).onclick = add;
       $('#qr-new', m).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
       $('[data-x]', m).onclick = close;
-      $('[data-qr-reset]', m).onclick = async () => { try { const r = await api('PUT', '/api/my/replies', { reset: true }); close(); done(r.items); toast('Вернули стандартные ответы'); } catch (e) { toast(e.message, true); } };
+      $('[data-qr-reset]', m).onclick = async () => { try { const r = await api('PUT', '/api/my/replies', { reset: true }); close(); done(r.items, r.max); toast('Вернули стандартные ответы'); } catch (e) { toast(e.message, true); } };
       $('[data-ok]', m).onclick = async () => {
         const pending = $('#qr-new', m).value.trim(); if (pending) list.push(pending);
-        try { const r = await api('PUT', '/api/my/replies', { items: list }); close(); done(r.items); toast('Ответы сохранены'); } catch (e) { toast(e.message, true); }
+        try { const r = await api('PUT', '/api/my/replies', { items: list }); close(); done(r.items, r.max); toast('Ответы сохранены'); } catch (e) { toast(e.message, true); }
       };
     });
   }
@@ -2719,8 +2720,8 @@
       if (e.target.closest('[data-qr-edit]')) repliesModal(qrItems, paintReplies);
     });
     let qrItems = [];
-    const paintReplies = (items) => { qrItems = items; const row = $('[data-replies]', chatEl); if (row) row.innerHTML = String(repliesRow(items)); };
-    if (role === 'seller') api('GET', '/api/my/replies').then((r) => paintReplies(r.items)).catch(() => {});
+    const paintReplies = (items, max) => { qrItems = items; if (max) qrMax = max; const row = $('[data-replies]', chatEl); if (row) row.innerHTML = String(repliesRow(items)); };
+    if (role === 'seller') api('GET', '/api/my/replies').then((r) => paintReplies(r.items, r.max)).catch(() => {});
   }
 
   // ================= отзывы: общие части =================
@@ -3477,10 +3478,11 @@
   const dateShort = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   const daysLeft = (ts) => Math.max(0, Math.ceil((ts - Date.now()) / 86400000));
   const isBiz = () => !!(S.user && S.user.business && S.user.business.status === 'verified');
+  // Что даёт каждый тариф — ровно то, что работает в коде (lib/business.js, lib/deals.js, lib/support.js, lib/feed.js, lib/promo.js).
   const planFeatures = (key, pr) => ({
-    free: ['Объявления без лимитов', 'Чат с покупателями и поддержка', 'Статистика каждого объявления', 'Значок «ИП проверен» после проверки'],
-    shop: ['Витрина: обложка, описание, часы, адрес и сайт', 'Значок «Магазин» в объявлениях и профиле', 'Статистика по всем объявлениям сразу', 'Выгрузка статистики в Excel'],
-    pro: ['Всё из тарифа «Магазин»', 'Автозагрузка объявлений из фида Авито', 'Фид обновляется каждые 6 часов', pr.proDiscount ? `Скидка ${pr.proDiscount}% на продвижение` : 'Продвижение по обычной цене']
+    free: ['Объявления без лимитов, 30 дней показа', 'Чат, предложения цены и до 12 быстрых ответов', 'Статистика каждого объявления', 'Значок «ИП проверен» или «Компания проверена» после проверки'],
+    shop: ['Витрина: обложка, описание, часы, адрес и сайт', 'Значок «Магазин» в профиле, объявлениях и карточках ленты', 'Статистика по всем объявлениям за 7, 30 или 90 дней', 'Выгрузка статистики для Excel', 'До 30 быстрых ответов в чате'],
+    pro: ['Всё из тарифа «Магазин», значок «Магазин Про»', 'Автозагрузка из XML-фида в формате Авито — до 1000 объявлений, каждые 6 часов', pr.proDiscount ? `Скидка ${pr.proDiscount}% на «Рекламу над поиском»` : '«Реклама над поиском» по обычной цене', 'Обращения в поддержку — первыми в очереди']
   })[key];
 
   // Подтверждение покупки → страница оплаты ЮKassa.
@@ -3501,13 +3503,14 @@
 
   // /business — тарифы, продвижение, вопросы. Цены — с сервера (их задаёт владелец).
   const BIZ_FAQ = [
-    ['Нужно ли платить, чтобы продавать?', 'Нет. Размещение объявлений бесплатно и без лимитов для всех — и для частных лиц, и для магазинов. Тариф добавляет инструменты: витрину, общую статистику, автозагрузку.'],
-    ['Кто может подключить тариф или продвижение?', 'ИП и компании, подтвердившие данные в «Настройки → Для бизнеса»: название, ИНН и ОГРН(ИП). Модератор сверяет их с ЕГРЮЛ/ЕГРИП, обычно в течение дня. Данные нужны и для маркировки рекламы.'],
+    ['Нужно ли платить, чтобы продавать?', 'Нет. Размещение бесплатно и без лимитов для всех — и для частных лиц, и для магазинов. Тариф не открывает размещение, а добавляет инструменты: витрину, общую статистику, автозагрузку.'],
+    ['Кто может подключить тариф?', 'ИП и компании, подтвердившие данные в «Настройки → Для бизнеса»: название, ИНН и ОГРН(ИП). Модератор сверяет их с ЕГРЮЛ/ЕГРИП вручную. Подтверждение бесплатное, значок «ИП проверен» или «Компания проверена» появляется и без тарифа.'],
     ['Как оплатить?', 'На странице ЮKassa — банковской картой, через СБП и другими способами, доступными в ЮKassa. Чек придёт на почту. Автоплатежей нет: тариф продлеваете сами, когда нужно.'],
+    ['Что будет, когда тариф закончится?', 'За 3 дня придёт письмо. После окончания витрина и значок «Магазин» скрываются, а объявления остаются на месте и продолжают показываться. Продлить можно в любой момент.'],
     ['Можно ли сменить тариф?', 'Да, в любой момент. Оставшиеся дни пересчитаем по цене месяца: например, 10 дней «Магазина» превратятся в 3 дня «Магазина Про», и к ним добавится оплаченный срок.'],
-    ['Как работает продвижение?', 'Объявление показывается в блоке «Реклама» над выдачей и лентой — тем, кто ищет похожее в вашем городе. Объявления в блоке чередуются, аукциона ставок нет. Обычная выдача не меняется. Реклама маркируется по закону: пометка «Реклама», рекламодатель и токен erid.'],
-    ['Можно ли вернуть деньги?', 'Да. Напишите в поддержку — вернём стоимость неиспользованных полных дней тарифа или продвижения тем же способом, которым вы платили. Если модератор остановил продвижение из-за нарушения правил, неиспользованные дни тоже возвращаются по запросу.'],
-    ['Что такое автозагрузка?', 'В тарифе «Магазин Про» объявления загружаются из XML-файла в формате автозагрузки Авито — по ссылке, той же, что вы указываете в Авито. Новые и изменённые объявления проходят проверку модератора, пропавшие из файла — снимаются с публикации.']
+    ['Чем продвижение в ленте отличается от рекламы над поиском?', 'Продвижение в ленте доступно всем продавцам: XL-карточка, рамка или метки на фото на 7 дней, порядок выдачи не меняется. «Реклама над поиском» — для ИП и компаний: объявление показывается в отдельном блоке «Реклама» над выдачей и лентой тем, кто ищет похожее в вашем городе; аукциона ставок нет, блок маркируется по закону (пометка «Реклама», рекламодатель, erid).'],
+    ['Можно ли вернуть деньги?', 'Да. Напишите в поддержку — вернём стоимость неиспользованных полных дней тарифа или рекламы тем же способом, которым вы платили. Продвижение в ленте возвращается автоматически, если объявление не опубликовали за 7 дней после оплаты; отклонённые метки — их долей.'],
+    ['Что такое автозагрузка?', 'В тарифе «Магазин Про» объявления загружаются из XML-файла в формате автозагрузки Авито — по ссылке, той же, что вы указываете в Авито. Файл проверяется каждые 6 часов и по кнопке. Новые и изменённые объявления проходят проверку модератора, пропавшие из файла — снимаются с публикации.']
   ];
   async function viewBusiness(_, q) {
     setTitle('Для бизнеса');
@@ -3517,32 +3520,109 @@
     const plan = me && me.plan;
     const biz = !!(me && me.biz && me.biz.status === 'verified');
     let months = ['1', '3', '12'].includes(q.get('m')) ? Number(q.get('m')) : 1;
-    app.innerHTML = String(html`<div class="wrap biz">
-      <section class="biz-hero">
-        <div class="biz-hero-txt"><span class="biz-kicker">${ic('store', 16, 2)}Торгана для бизнеса</span>
-          <h1>Продавайте больше — по честным правилам</h1>
-          <p>Размещение бесплатно и без лимитов для всех. Магазинам и компаниям — витрина, общая статистика, автозагрузка из фида и продвижение по фиксированной цене, без аукционов ставок.</p>
-          <div class="biz-facts">${[['card', 'Карта и СБП через ЮKassa'], ['refresh', 'Без автоплатежей'], ['shield', 'Только проверенный бизнес']].map(([i, t]) => html`<span>${ic(i, 16, 2)}${t}</span>`)}</div>
+    const bp = pr.boost || {};
+    const feat = (icon, tone, t, d) => html`<div class="bz-feat"><span class="bz-ic ${tone}">${ic(icon, 20, 1.9)}</span><b>${t}</b><span>${d}</span></div>`;
+    const step = (n, t, d) => html`<li><span class="bz-n">${n}</span><b>${t}</b><span>${d}</span></li>`;
+    app.innerHTML = String(html`<div class="wrap biz bz">
+      <section class="bz-hero">
+        <div class="bz-hero-txt">
+          <span class="bz-kicker">${ic('store', 15, 2)}Торгана для бизнеса</span>
+          <h1>Магазин на Торгане — по честным правилам</h1>
+          <p>Размещать объявления можно бесплатно и без лимитов — и частным лицам, и компаниям. Тариф не открывает размещение, а добавляет инструменты магазина: витрину, общую статистику и автозагрузку.</p>
+          <div class="bz-cta"><a class="btn btn-accent" href="#plans">Смотреть тарифы</a>${biz ? html`<a class="btn btn-line" href="/profile/business">Мой бизнес</a>` : html`<a class="btn btn-line" href="${S.user ? '/profile/settings#s-biz' : '/login?next=/profile/settings%23s-biz'}">Подтвердить бизнес</a>`}</div>
+          <div class="bz-facts">${[['card', 'blue', 'Оплата через ЮKassa'], ['refresh', 'amber', 'Без автоплатежей'], ['shield', 'green', 'Для ИП и компаний после проверки']].map(([i, t, x]) => html`<span><span class="bz-dot ${t}">${ic(i, 14, 2.2)}</span>${x}</span>`)}</div>
+        </div>
+        <div class="bz-mini" aria-hidden="true">
+          <div class="bzm-cover"></div>
+          <div class="bzm-head"><span class="bzm-ava">${ic('store', 22, 2)}</span><span><b>Ваш магазин</b><span class="bzm-badges"><i class="g">${ic('store', 11, 2.4)}Магазин</i><i>${ic('check', 11, 3)}ИП проверен</i></span></span></div>
+          <div class="bzm-grid">${['#DCE3DF', '#E9E6E0', '#DDE4EC'].map((c) => html`<span class="bzm-card"><span style="background:${c}"></span><i></i><i class="s"></i></span>`)}</div>
+          <span class="bzm-tag">Пример</span>
         </div>
       </section>
-      ${S.user && !biz ? html`<div class="banner warn biz-banner">${ic('shield', 20, 2)}<span><strong>Тарифы и продвижение — для ИП и компаний.</strong> Отправьте название, ИНН и ОГРН(ИП) на проверку — обычно это занимает до одного дня. <a href="/profile/settings#s-biz" style="text-decoration:underline">Подтвердить бизнес</a></span></div>` : ''}
-      ${!ready ? html`<div class="banner soft biz-banner">${ic('clock', 20, 2)}<span><strong>Приём оплаты подключается.</strong> Цены уже действуют — напишите в <a href="/messages/support" style="text-decoration:underline">поддержку</a>, если хотите подключиться первыми.</span></div>` : ''}
+      ${S.user && !biz ? html`<div class="banner warn biz-banner">${ic('shield', 20, 2)}<span><strong>Тарифы и «Реклама над поиском» — для ИП и компаний.</strong> Отправьте название, ИНН и ОГРН(ИП) на проверку — это бесплатно. <a href="/profile/settings#s-biz" style="text-decoration:underline">Подтвердить бизнес</a></span></div>` : ''}
+      ${!ready ? html`<div class="banner soft biz-banner">${ic('clock', 20, 2)}<span><strong>Приём оплаты подключается.</strong> Цены на этой странице действуют, но оплатить пока нельзя — напишите в <a href="/messages/support" style="text-decoration:underline">поддержку</a>, если хотите подключиться первыми.</span></div>` : ''}
       ${plan ? html`<div class="banner ok biz-banner">${ic('check', 20, 2.2)}<span>Сейчас у вас тариф <strong>«${plan.name}»</strong> до ${dateLong(plan.until)}. <a href="/profile/business" style="text-decoration:underline">Открыть «Для бизнеса»</a></span></div>` : ''}
+
+      <section class="biz-sec">
+        <div class="biz-sec-head"><div><span class="bz-label">Бесплатно для всех</span><h2>Всё для продаж — без тарифа</h2>
+          <p class="biz-lead">Это есть у каждого продавца, и у магазинов тоже. Ничего из этого не исчезнет, если тариф закончится.</p></div></div>
+        <div class="bz-feats">
+          ${feat('tag', 'green', 'Объявления без лимитов', 'Сколько угодно объявлений. Показ — 30 дней, опубликовать снова можно бесплатно.')}
+          ${feat('shield', 'blue', 'Проверка модератором', 'Каждое объявление и каждую правку смотрит человек до публикации.')}
+          ${feat('chat', 'violet', 'Чат с покупателями', 'Фото в чате, быстрые ответы и предупреждение о мошенниках.')}
+          ${feat('trend', 'amber', 'Торг в один клик', 'Покупатель предлагает цену — вы принимаете или отклоняете одной кнопкой.')}
+          ${feat('chart', 'blue', 'Статистика объявления', 'Показы, переходы, избранное и откуда приходят покупатели.')}
+          ${feat('star', 'amber', 'Отзывы покупателей', 'Только после переписки по объявлению. На отзыв можно ответить.')}
+          ${feat('bell', 'violet', 'Подписчики', 'Те, кто подписался на вас, узнают о новых объявлениях.')}
+          ${feat('check', 'green', 'Значок проверенного бизнеса', '«ИП проверен» или «Компания проверена» после проверки ИНН и ОГРН(ИП).')}
+        </div>
+      </section>
+
+      <section class="biz-sec">
+        <div class="biz-sec-head"><div><span class="bz-label">С тарифом</span><h2>Как будет выглядеть ваш магазин</h2>
+          <p class="biz-lead">Витрина появляется вверху вашей страницы продавца, над всеми объявлениями. Здесь — пример; содержание вы заполняете сами.</p></div></div>
+        <div class="bz-shop">
+          <div class="bz-frame" aria-hidden="true">
+            <div class="bzf-cover"><span>Обложка 1600 × 530</span></div>
+            <div class="bzf-body">
+              <div class="bzf-top"><span class="bzf-ava">${ic('store', 28, 1.9)}</span>
+                <span class="bzf-name"><span class="bzf-badges"><i class="dark">${ic('store', 12, 2.2)}Магазин Про</i><i class="ok">${ic('check', 12, 3)}Компания проверена</i></span><b>Название вашего магазина</b>
+                  <span class="bzf-rate"><span class="st">${starSvg(true, 14)}</span>оценка из отзывов · подписчики</span></span>
+                <span class="bzf-btn">${ic('bell', 15, 2.2)}Подписаться</span></div>
+              <p class="bzf-about">Описание магазина — до 1500 символов: что продаёте, условия, гарантия, доставка.</p>
+              <div class="bzf-facts"><span>${ic('clock', 15)}Часы работы</span><span>${ic('pin', 15)}Адрес</span><span>${ic('link', 15)}ваш-сайт.ru</span></div>
+              <div class="bzf-grid">${['#DCE3DF', '#E9E6E0', '#DDE4EC', '#EEE3D6'].map((c) => html`<span class="bzf-card"><span class="bzf-img" style="background:${c}"></span><b></b><i></i><span class="bzf-seller"><span></span>${ic('store', 10, 2.4)}</span></span>`)}</div>
+            </div>
+          </div>
+          <ol class="bz-notes">
+            <li><span class="bz-ic green">${ic('image', 18, 1.9)}</span><span><b>Обложка и описание</b>Обложка, рассказ о магазине, часы работы, адрес и ссылка на сайт.</span></li>
+            <li><span class="bz-ic blue">${ic('store', 18, 1.9)}</span><span><b>Значок «Магазин»</b>В профиле, на странице объявления и в строке продавца на карточках ленты.</span></li>
+            <li><span class="bz-ic amber">${ic('chart', 18, 1.9)}</span><span><b>Статистика магазина</b>Показы, переходы и избранное по всем объявлениям, по дням и источникам, с выгрузкой для Excel.</span></li>
+            <li><span class="bz-ic violet">${ic('refresh', 18, 1.9)}</span><span><b>Автозагрузка в «Про»</b>Объявления подтягиваются из вашего фида — тот же XML, что для Авито.</span></li>
+          </ol>
+        </div>
+      </section>
+
       <section class="biz-sec" id="plans">
-        <div class="biz-sec-head"><h2>Тарифы</h2>
+        <div class="biz-sec-head"><div><span class="bz-label">Тарифы</span><h2>Платите только за инструменты</h2></div>
           <div class="seg" role="tablist" aria-label="Срок">${[[1, '1 месяц'], [3, '3 месяца'], [12, '12 месяцев']].map(([m, t]) => html`<button type="button" role="tab" data-m="${m}">${t}</button>`)}</div></div>
         <div class="plans" id="plan-cards"></div>
-        <p class="muted biz-small">Месяц тарифа — 30 дней. Сменить тариф можно в любой момент: оставшиеся дни пересчитаем по цене месяца.</p>
+        <p class="muted biz-small">Месяц тарифа — 30 дней. Сменить тариф можно в любой момент: оставшиеся дни пересчитаем по цене месяца. Автоплатежей нет.</p>
       </section>
+
       <section class="biz-sec">
-        <div class="biz-sec-head"><div><span class="biz-kicker dark">${ic('trend', 16, 2)}Продвижение</span><h2>Ваше объявление — первым рядом</h2>
-          <p class="biz-lead">Показываем в блоке «Реклама» над выдачей и лентой тем, кто ищет похожее в вашем городе. Обычная выдача не меняется: частные объявления не опускаются.</p></div></div>
-        <div class="promo-wrap">
-          <div class="promo-demo" aria-hidden="true">${[0, 1, 2].map((i) => html`<div class="pd-card ${i === 1 ? 'on' : ''}"><div class="pd-img"><span class="ad-mark static">Реклама</span></div><i></i><i class="s"></i></div>`)}</div>
-          <div class="promo-opts">${[3, 7, 30].map((d) => html`<div class="promo-opt"><b>${d} ${plural(d, 'день', 'дня', 'дней')}</b><span class="promo-price">${rub(pr.promo[d])}</span><small>≈ ${rub(Math.round(pr.promo[d] / d))} в день${pr.proDiscount ? html`<br>в «Магазин Про» — ${rub(Math.max(1, Math.round(pr.promo[d] * (100 - pr.proDiscount) / 100)))}` : ''}</small></div>`)}</div>
+        <div class="biz-sec-head"><div><span class="bz-label">Продвижение</span><h2>Чтобы заметили быстрее</h2>
+          <p class="biz-lead">Два вида платного продвижения. Оба — по фиксированной цене, без аукционов ставок.</p></div></div>
+        <div class="bz-promo">
+          <div class="bz-pcard">
+            <span class="bz-ic violet">${ic('xl', 20, 1.9)}</span>
+            <b class="bz-ph">Продвижение в ленте</b><span class="bz-for">Для всех продавцов · 7 дней</span>
+            <ul class="bz-prices">
+              <li><span>XL-карточка — две ячейки, больше фото</span><b>${rub(bp.xl)}</b></li>
+              <li><span>Яркая рамка</span><b>${rub(bp.frame)}</b></li>
+              <li><span>Метки на фото — после проверки модератором</span><b>${rub(bp.tags)}</b></li>
+              <li class="all"><span>Всё в одном</span><b>${rub(bp.all)}</b></li></ul>
+            <p>Порядок выдачи не меняется — карточка подписана «Продвигается». Не опубликовали объявление за 7 дней после оплаты — деньги вернутся автоматически.</p>
+          </div>
+          <div class="bz-pcard">
+            <span class="bz-ic blue">${ic('megaphone', 20, 1.9)}</span>
+            <b class="bz-ph">Реклама над поиском</b><span class="bz-for">Для ИП и компаний</span>
+            <ul class="bz-prices">${[3, 7, 30].map((d) => html`<li><span>${d} ${plural(d, 'день', 'дня', 'дней')}${pr.proDiscount ? html` · в «Про» ${rub(Math.max(1, Math.round(pr.promo[d] * (100 - pr.proDiscount) / 100)))}` : ''}</span><b>${rub(pr.promo[d])}</b></li>`)}</ul>
+            <p>Отдельный блок «Реклама» над выдачей и лентой — для тех, кто ищет похожее в вашем городе. Обычная выдача не меняется. Маркируем по закону: пометка «Реклама», рекламодатель и erid; показ начинается после регистрации в ОРД, срок идёт с запуска.</p>
+          </div>
         </div>
-        <ol class="biz-steps">${[['tag', 'Опубликуйте объявление', 'Оно проходит обычную проверку модератора'], ['trend', 'Нажмите «Продвигать»', 'В объявлении или в «Моих объявлениях» → ⋯'], ['shield', 'Мы промаркируем рекламу', 'Получим токен erid в ОРД и запустим показ'], ['chart', 'Смотрите результат', 'Показы и переходы из блока — в статистике']].map(([i, t, d], n) => html`<li><span class="bs-n">${n + 1}</span><span class="bs-ic">${ic(i, 20)}</span><b>${t}</b><small>${d}</small></li>`)}</ol>
       </section>
+
+      <section class="biz-sec">
+        <div class="biz-sec-head"><div><span class="bz-label">Подключение</span><h2>Четыре шага</h2></div></div>
+        <ol class="bz-steps">
+          ${step(1, 'Подтвердите бизнес', '«Настройки → Для бизнеса»: название, ИНН и ОГРН(ИП). Модератор сверит их с ЕГРЮЛ/ЕГРИП.')}
+          ${step(2, 'Выберите тариф', 'На 1, 3 или 12 месяцев. Оплата — на странице ЮKassa, чек придёт на почту.')}
+          ${step(3, 'Оформите витрину', 'Обложка, описание, часы, адрес и сайт — в разделе «Для бизнеса» профиля.')}
+          ${step(4, 'Подключите фид', 'В «Магазин Про» вставьте ссылку на XML — объявления загрузятся и пройдут проверку.')}
+        </ol>
+      </section>
+
       <section class="biz-sec"><div class="biz-sec-head"><h2>Вопросы и ответы</h2></div>
         <div class="faq">${BIZ_FAQ.map(([t, a]) => html`<details><summary>${t}${ic('down', 18, 2)}</summary><p>${a}</p></details>`)}</div>
         <p class="muted biz-small">Условия платных услуг — в <a href="/page/terms#paid" style="text-decoration:underline">разделе 7 Пользовательского соглашения</a>, правила рекламы — в <a href="/page/rules#ads" style="text-decoration:underline">Правилах</a>. Исполнитель — ${S.config.operator ? `${S.config.operator.name}, ИНН ${S.config.operator.inn}` : 'оператор Торганы'}.</p>
@@ -3559,13 +3639,13 @@
         return html`<button type="button" class="btn ${cls} btn-block" data-buy="${key}">${plan && plan.id === key ? `Продлить на ${months} мес.` : plan ? `Перейти на «${PLAN_NAME[key]}»` : 'Подключить'}</button>`;
       };
       $('#plan-cards').innerHTML = String(html`
-        <div class="plan free"><div class="plan-top"><h3>Частным лицам</h3><div class="plan-price"><b>0 ₽</b><span>всегда</span></div><p>Всё для продажи вещей и услуг — без ограничений.</p></div>
+        <div class="plan free"><div class="plan-top"><h3>Бесплатно</h3><div class="plan-price"><b>0 ₽</b><span>всегда</span></div><p>Для всех — частных лиц и компаний.</p></div>
           <ul>${planFeatures('free', pr).map((f) => html`<li>${ic('check', 16, 2.4)}${f}</li>`)}</ul>
           <a class="btn btn-soft btn-block" href="/new">Разместить объявление</a></div>
         ${['shop', 'pro'].map((key) => html`<div class="plan ${key} ${plan && plan.id === key ? 'current' : ''}">
           <div class="plan-top"><h3>${PLAN_NAME[key]}${plan && plan.id === key ? html`<span class="plan-cur">ваш тариф</span>` : ''}</h3>
             <div class="plan-price"><b>${rub(Math.round(pr[key][months] / months))}</b><span>в месяц</span></div>
-            <p>${months > 1 ? html`${rub(pr[key][months])} за ${months} мес.${save(key) ? html` · <span class="plan-save">выгода ${save(key)}%</span>` : ''}` : key === 'shop' ? 'Витрина и статистика для магазина.' : 'Для тех, у кого много товаров.'}</p></div>
+            <p>${months > 1 ? html`${rub(pr[key][months])} за ${months} мес.${save(key) ? html` · <span class="plan-save">выгода ${save(key)}%</span>` : ''}` : key === 'shop' ? 'Витрина и статистика для магазина.' : 'Для тех, у кого много товаров.'}</p>${key === 'pro' ? html`<span class="plan-pick">Больше всего возможностей</span>` : ''}</div>
           <ul>${planFeatures(key, pr).map((f) => html`<li>${ic('check', 16, 2.4)}${f}</li>`)}</ul>
           ${cta(key)}</div>`)}`);
       $$('[data-buy]').forEach((b) => {
@@ -4708,7 +4788,7 @@
       <div class="inbox-list">${items.length ? items.map((t) => html`<a href="/admin?status=support&t=${t.id}" class="conv ${t.id === id ? 'on' : ''}">
           ${ava(t.user)}
           <span class="conv-body"><span class="conv-top"><span>${t.user.name}</span><span>${shortWhen(t.updatedAt)}</span></span>
-            <span class="conv-title" style="display:block">${t.waiting ? 'Ждёт ответа' : 'Отвечено'}</span>
+            <span class="conv-title" style="display:block">${t.waiting ? 'Ждёт ответа' : 'Отвечено'}${t.pro ? html` · <span class="pro-mark">Магазин Про</span>` : ''}</span>
             <span class="conv-last" style="display:block">${t.lastBody}</span></span>
           ${t.unread ? html`<span class="badge">${t.unread}</span>` : ''}</a>`) : html`<div style="padding:22px" class="muted">Обращений пока нет. Пользователи пишут в закреплённый диалог «Поддержка Торганы».</div>`}</div>
       <section class="chat" id="support-chat">${id ? html`<div class="loader" style="flex:1"></div>` : html`<div class="chat-empty"><div>${supportAva(56)}<p>Выберите обращение слева.</p></div></div>`}</section>

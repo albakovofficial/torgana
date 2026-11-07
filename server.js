@@ -154,7 +154,8 @@ function sellerOfCard(r) {
   if (!r.seller_id) return null;
   const [avg, n] = String(r.seller_rating || '').split(':').map(Number);
   const name = r.seller_biz_status === 'verified' && r.seller_biz_name ? r.seller_biz_name : r.seller_name;
-  return { id: r.seller_id, name: name || 'Продавец', avatar: photoUrl(r.seller_avatar), rating: n ? avg : 0, reviews: n || 0 };
+  const shop = !!(r.seller_plan && r.seller_plan_until > now()); // 1.32: тариф «Магазин»/«Про» — значок магазина в карточке
+  return { id: r.seller_id, name: name || 'Продавец', avatar: photoUrl(r.seller_avatar), rating: n ? avg : 0, reviews: n || 0, shop };
 }
 
 const CARD_SELECT = `
@@ -164,7 +165,7 @@ const CARD_SELECT = `
     EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id = l.id AND f.user_id = ?) AS is_fav,
     (SELECT json_object('xl', MAX(b.xl), 'frame', MAX(b.frame)) FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active') AS boost,
     (SELECT b.tags FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active' AND b.tags_state = 'on' ORDER BY b.id DESC LIMIT 1) AS boost_tags,
-    u.id AS seller_id, u.name AS seller_name, u.avatar AS seller_avatar, u.biz_status AS seller_biz_status, u.biz_name AS seller_biz_name,
+    u.id AS seller_id, u.name AS seller_name, u.avatar AS seller_avatar, u.biz_status AS seller_biz_status, u.biz_name AS seller_biz_name, u.plan AS seller_plan, u.plan_until AS seller_plan_until,
     (SELECT ROUND(AVG(rv.rating), 1) || ':' || COUNT(*) FROM reviews rv WHERE rv.seller_id = u.id AND rv.status = 'published') AS seller_rating
   FROM listings l JOIN users u ON u.id = l.user_id`;
 

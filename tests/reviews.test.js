@@ -87,7 +87,7 @@ test('до проверки отзыв не виден; модератор пу�
   assert.equal((await client(srv.base).get(`/api/listings/${id}`)).data.seller.rating.count, 2);
   // 1.26: в карточке выдачи — продавец с фото и оценкой; в профиле продавца строки продавца нет
   const cardIt = (await client(srv.base).get('/api/listings?q=Велосипед')).data.items.find((x) => x.id === id);
-  assert.deepEqual(cardIt.seller, { id: anna.user.id, name: 'Анна', avatar: null, rating: 3, reviews: 2 });
+  assert.deepEqual(cardIt.seller, { id: anna.user.id, name: 'Анна', avatar: null, rating: 3, reviews: 2, shop: false });
   assert.equal((await client(srv.base).get(`/api/users/${anna.user.id}`)).data.items.find((x) => x.id === id).seller, null);
   // 1.27: в чате — оценка собеседника и город объявления (колонка справа)
   const chat = (await boris.get(`/api/conversations/${conv}`)).data;
