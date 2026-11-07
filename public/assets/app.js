@@ -337,6 +337,118 @@
     });
   }
 
+  // ================= просмотр фото (1.23) =================
+  // Фото на весь экран внутри Торганы: листание стрелками, свайпом и клавишами, увеличение двойным нажатием,
+  // колёсиком и двумя пальцами, перетаскивание увеличенного. Закрыть — крестик, Esc, нажатие на фон, свайп вниз.
+  function photoViewer(srcs, start = 0, title = '') {
+    if (!srcs.length) return;
+    let i = Math.min(Math.max(start, 0), srcs.length - 1);
+    let z = 1; let x = 0; let y = 0; // увеличение и сдвиг
+    const many = srcs.length > 1;
+    const v = document.createElement('div');
+    v.className = 'pv';
+    v.setAttribute('role', 'dialog');
+    v.setAttribute('aria-modal', 'true');
+    v.setAttribute('aria-label', title ? `Фото: ${title}` : 'Фото');
+    v.innerHTML = String(html`<div class="pv-top"><span class="pv-count" aria-live="polite"></span>${title ? html`<span class="pv-title">${title}</span>` : html`<span></span>`}
+        <button type="button" class="pv-btn" data-pv-close aria-label="Закрыть">${ic('close', 22, 2)}</button></div>
+      <div class="pv-stage"><img class="pv-img" alt="" draggable="false"></div>
+      ${many ? html`<button type="button" class="pv-btn pv-nav prev" data-pv="-1" aria-label="Предыдущее фото">${ic('left', 24, 2)}</button>
+        <button type="button" class="pv-btn pv-nav next" data-pv="1" aria-label="Следующее фото">${ic('right', 24, 2)}</button>
+        <div class="pv-thumbs">${srcs.map((src, k) => html`<button type="button" data-pv-to="${k}" aria-label="Фото ${k + 1}"><img src="${src}" alt="" loading="lazy"></button>`)}</div>` : ''}`);
+    document.body.appendChild(v);
+    document.body.classList.add('pv-open');
+    const img = $('.pv-img', v);
+    const stage = $('.pv-stage', v);
+    const prevFocus = document.activeElement;
+    const apply = (anim = true) => { img.style.transition = anim ? '' : 'none'; img.style.transform = `translate(${x}px, ${y}px) scale(${z})`; v.classList.toggle('zoomed', z > 1); };
+    const clamp = () => {
+      const r = stage.getBoundingClientRect(); const w = img.offsetWidth * z; const h = img.offsetHeight * z;
+      const mx = Math.max(0, (w - r.width) / 2); const my = Math.max(0, (h - r.height) / 2);
+      x = Math.min(mx, Math.max(-mx, x)); y = Math.min(my, Math.max(-my, y));
+    };
+    const show = (k) => {
+      i = (k + srcs.length) % srcs.length; z = 1; x = 0; y = 0; apply(false);
+      img.src = srcs[i];
+      $('.pv-count', v).textContent = many ? `${i + 1} из ${srcs.length}` : '';
+      $$('[data-pv-to]', v).forEach((b, n) => { b.classList.toggle('on', n === i); if (n === i) b.scrollIntoView({ block: 'nearest', inline: 'center' }); });
+      if (many) [srcs[(i + 1) % srcs.length], srcs[(i - 1 + srcs.length) % srcs.length]].forEach((u) => { const p = new Image(); p.src = u; });
+    };
+    const zoomAt = (nz, cx, cy) => {
+      const r = img.getBoundingClientRect();
+      const ox = cx - (r.left + r.width / 2); const oy = cy - (r.top + r.height / 2);
+      const k = nz / z;
+      x -= ox * (k - 1); y -= oy * (k - 1); z = nz;
+      if (z <= 1.01) { z = 1; x = 0; y = 0; }
+      clamp(); apply();
+    };
+    const close = () => { v.remove(); document.body.classList.remove('pv-open'); document.removeEventListener('keydown', onKey, true); if (prevFocus && prevFocus.focus) prevFocus.focus({ preventScroll: true }); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); close(); }
+      else if (e.key === 'ArrowRight' && many) show(i + 1);
+      else if (e.key === 'ArrowLeft' && many) show(i - 1);
+    };
+    document.addEventListener('keydown', onKey, true);
+    v.addEventListener('click', (e) => {
+      if (e.target.closest('[data-pv-close]')) { close(); return; }
+      const nb = e.target.closest('[data-pv]'); if (nb) { show(i + Number(nb.dataset.pv)); return; }
+      const tb = e.target.closest('[data-pv-to]'); if (tb) { show(Number(tb.dataset.pvTo)); return; }
+      if (e.target === stage && z === 1 && !moved) close(); // нажатие на фон вокруг фото
+    });
+    stage.addEventListener('dblclick', (e) => { e.preventDefault(); zoomAt(z > 1 ? 1 : 2.5, e.clientX, e.clientY); });
+    stage.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(Math.min(5, Math.max(1, z * (e.deltaY < 0 ? 1.2 : 1 / 1.2))), e.clientX, e.clientY); }, { passive: false });
+    // Пальцы и мышь: один — листать (свайп) или двигать увеличенное, два — увеличивать.
+    const pts = new Map(); let start0 = null; let pinch = null; let moved = false; let lastTap = 0;
+    stage.addEventListener('pointerdown', (e) => {
+      stage.setPointerCapture(e.pointerId);
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      moved = false;
+      if (pts.size === 1) start0 = { px: e.clientX, py: e.clientY, x, y, t: Date.now() };
+      if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; }
+    });
+    stage.addEventListener('pointermove', (e) => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        zoomAt(Math.min(5, Math.max(1, pinch.z * (Math.hypot(a.x - b.x, a.y - b.y) / pinch.d))), pinch.cx, pinch.cy);
+        moved = true; return;
+      }
+      if (!start0) return;
+      const dx = e.clientX - start0.px; const dy = e.clientY - start0.py;
+      if (Math.abs(dx) + Math.abs(dy) > 6) moved = true;
+      if (z > 1) { x = start0.x + dx; y = start0.y + dy; clamp(); apply(false); }
+      else if (moved) { img.style.transition = 'none'; img.style.transform = Math.abs(dy) > Math.abs(dx) && dy > 0 ? `translateY(${dy}px)` : `translateX(${dx}px)`; v.style.backgroundColor = Math.abs(dy) > Math.abs(dx) && dy > 0 ? `rgba(11, 11, 11, ${Math.max(0.3, 1 - dy / 400)})` : ''; }
+    });
+    const end = (e) => {
+      pts.delete(e.pointerId);
+      if (pts.size < 2) pinch = null;
+      if (pts.size || !start0) return;
+      const dx = e.clientX - start0.px; const dy = e.clientY - start0.py;
+      v.style.backgroundColor = '';
+      if (z === 1 && moved) {
+        if (dy > 110 && Math.abs(dy) > Math.abs(dx)) { close(); return; }
+        if (many && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) { show(i + (dx < 0 ? 1 : -1)); start0 = null; return; }
+        apply();
+      }
+      // Двойное касание на телефоне — увеличить или вернуть.
+      if (!moved && e.pointerType === 'touch') { const t = Date.now(); if (t - lastTap < 280) { zoomAt(z > 1 ? 1 : 2.5, e.clientX, e.clientY); lastTap = 0; } else lastTap = t; }
+      start0 = null;
+    };
+    stage.addEventListener('pointerup', end);
+    stage.addEventListener('pointercancel', end);
+    show(i);
+    $('[data-pv-close]', v).focus({ preventScroll: true });
+  }
+  // Фото из чата и модерации (ссылки data-pv-src) — тоже во встроенном просмотре.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[data-pv-src]');
+    if (!a || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    e.preventDefault();
+    const group = a.dataset.pvGroup ? $$(`a[data-pv-group="${a.dataset.pvGroup}"]`) : [a];
+    photoViewer(group.map((x) => x.dataset.pvSrc), group.indexOf(a));
+  });
+
   function confirmModal(title, text, okLabel = 'Подтвердить', danger = false) {
     return new Promise((resolve) => {
       openModal(String(html`<h2>${title}</h2><p class="muted" style="margin:0">${text}</p>
@@ -374,24 +486,26 @@
   }
 
   // ================= каркас: шапка, меню, подвал =================
+  // Шапка (1.23, вариант B): всё в одну строку — логотип, поиск с городом внутри, избранное, сообщения,
+  // уведомления, «Разместить», меню. На телефоне поиск — второй строкой на главной (см. viewHome).
   function renderHeader() {
     const path = location.pathname;
-    const isHome = path === '/';
     const q = path === '/search' ? new URLSearchParams(location.search).get('q') || '' : '';
     $('#header').innerHTML = String(html`<div class="wrap header-in">
       ${logo()}
-      ${isHome ? '' : html`<form class="search header-search" role="search" data-search>
+      <form class="search header-search" role="search" data-search>
         ${ic('search', 18)}
         <label class="sr" for="hq">Поиск по объявлениям</label>
-        <input id="hq" name="q" type="search" placeholder="Поиск по всей России" value="${q}" autocomplete="off">
+        <input id="hq" name="q" type="search" placeholder="Поиск по объявлениям" value="${q}" autocomplete="off" enterkeyhint="search">
+        <button type="button" class="hs-city" data-city-btn aria-label="Город: ${S.city || 'Вся Россия'}">${ic('pin', 15, 2)}<span>${S.city || 'Вся Россия'}</span></button>
         <button class="btn btn-accent btn-sm" type="submit">Найти</button>
-      </form>`}
+      </form>
       <nav class="header-nav" aria-label="Основное">
-        <a href="/favorites" class="nav-link hide-m">${ic('heart', 20)}<span class="nav-text">Избранное</span></a>
-        <a href="/messages" class="nav-link hide-m">${ic('chat', 20)}<span class="nav-text">Сообщения</span><span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span></a>
-        <a href="/new" class="btn btn-dark btn-sm hide-m" style="margin-left:8px">Разместить</a>
-        ${S.user ? '' : html`<a href="/login" class="nav-link hide-m" style="margin-left:4px">Войти</a>`}
-        ${S.user ? html`<button type="button" class="icon-btn bell-btn" data-bell aria-label="Уведомления" aria-haspopup="dialog">${ic('bell', 21, 1.9)}<span class="badge ${S.notices ? '' : 'hidden'}" data-notices>${S.notices || 0}</span></button>` : ''}
+        <a href="/favorites" class="icon-btn hd-ic hide-m" aria-label="Избранное" title="Избранное">${ic('heart', 21, 1.9)}</a>
+        <a href="/messages" class="icon-btn hd-ic hide-m" aria-label="Сообщения" title="Сообщения">${ic('chat', 21, 1.9)}<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span></a>
+        ${S.user ? html`<button type="button" class="icon-btn hd-ic bell-btn" data-bell aria-label="Уведомления" title="Уведомления" aria-haspopup="dialog">${ic('bell', 21, 1.9)}<span class="badge ${S.notices ? '' : 'hidden'}" data-notices>${S.notices || 0}</span></button>` : ''}
+        <a href="/new" class="btn btn-dark btn-sm hide-m hd-new">${ic('plus', 17, 2.4)}Разместить</a>
+        ${S.user ? '' : html`<a href="/login" class="nav-link hide-m">Войти</a>`}
         <button type="button" class="icon-btn menu-btn" data-menu aria-label="Меню" aria-haspopup="dialog">${ic('menu', 22, 2)}</button>
       </nav>
     </div>`);
@@ -622,6 +736,16 @@
     if (!sp.has('city') && S.city && params.city === undefined) sp.set('city', S.city);
     go(`/search?${sp}`);
   }
+  // Кнопка города в строке поиска: выбрать город и обновить страницу (лента и поиск учитывают город).
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-city-btn]');
+    if (!b) return;
+    e.preventDefault();
+    cityModal(() => {
+      renderHeader();
+      if (location.pathname === '/search') { const p = new URLSearchParams(location.search); if (S.city) p.set('city', S.city); else p.delete('city'); go(`/search?${p}`, true); } else render();
+    });
+  });
   // Все строки поиска (в шапке и на главной) — form[data-search] с полем q.
   document.addEventListener('submit', (e) => {
     const f = e.target.closest('form[data-search]');
@@ -804,16 +928,15 @@
     app.innerHTML = String(html`
       <section class="wrap home-top">
         <h1 class="sr">Торгана — объявления по всей России</h1>
-        <div class="home-find">
-          <form class="search home-search" role="search" data-search>
-            ${ic('search', 20)}
-            <label class="sr" for="q">Что вы ищете</label>
-            <input id="q" name="q" type="search" placeholder="Что вы ищете?" autocomplete="off" enterkeyhint="search">
-            <button class="btn btn-accent" type="submit">Найти</button>
-          </form>
-          <button type="button" class="city-btn" id="city-btn">${ic('pin', 18)}<span>${S.city || 'Вся Россия'}</span>${ic('down', 16, 2)}</button>
-        </div>
-        <div class="cats">${S.config.categories.map((c) => html`<a class="cat" href="${cpath(c.id, S.city)}"><span class="cat-ic">${catIc(c.id)}</span>${c.name}</a>`)}</div>
+        <form class="search home-search" role="search" data-search>
+          ${ic('search', 20)}
+          <label class="sr" for="q">Что вы ищете</label>
+          <input id="q" name="q" type="search" placeholder="Что вы ищете?" autocomplete="off" enterkeyhint="search">
+          <button type="button" class="hs-city" data-city-btn aria-label="Город: ${S.city || 'Вся Россия'}">${ic('pin', 15, 2)}<span>${S.city || 'Вся Россия'}</span></button>
+        </form>
+        <div class="cat-rail"><button type="button" class="cat-arrow prev" data-cat-scroll="-1" aria-label="Назад">${ic('left', 18, 2.2)}</button>
+          <nav class="cat-pills" aria-label="Категории"><a class="cat-pill on" href="/search${S.city ? `?city=${encodeURIComponent(S.city)}` : ''}">${ic('list', 17, 2)}Все</a>${S.config.categories.map((c) => html`<a class="cat-pill" href="${cpath(c.id, S.city)}">${catIc(c.id, 18)}${c.name}</a>`)}</nav>
+          <button type="button" class="cat-arrow next" data-cat-scroll="1" aria-label="Дальше">${ic('right', 18, 2.2)}</button></div>
       </section>
 
       <section class="wrap home-feed">
@@ -821,13 +944,19 @@
         <div id="feed" class="feed">${skeletonGrid(15)}</div>
         <div class="more hidden"></div>
       </section>`);
-    $('#city-btn').onclick = () => cityModal(() => render());
     const feed = listingFeed($('#feed'), S.city ? { city: S.city } : {}, {
       limit: 30,
       auto: true,
       empty: html`<div class="empty"><h3>${S.city ? `В городе ${S.city} пока нет объявлений` : 'Здесь появятся первые объявления'}</h3><p>Разместите своё — это бесплатно и займёт пару минут.</p><a class="btn btn-dark" href="/new">Разместить объявление</a></div>`
     });
-    cleanup = feed.stop;
+    // Стрелки ленты категорий: видны, только когда есть куда листать.
+    const rail = $('.cat-rail'); const pills = $('.cat-pills', rail);
+    const railPaint = () => { rail.classList.toggle('can-prev', pills.scrollLeft > 4); rail.classList.toggle('can-next', pills.scrollLeft + pills.clientWidth < pills.scrollWidth - 4); };
+    pills.addEventListener('scroll', railPaint, { passive: true });
+    $$('[data-cat-scroll]', rail).forEach((b) => { b.onclick = () => pills.scrollBy({ left: Number(b.dataset.catScroll) * pills.clientWidth * 0.7 }); });
+    window.addEventListener('resize', railPaint);
+    railPaint();
+    cleanup = () => { feed.stop(); window.removeEventListener('resize', railPaint); };
     await feed.first;
     await adRow($('#feed'), S.city ? { city: S.city } : {}, 'feed', S.city ? `в городе ${S.city}` : '');
   }
@@ -1213,6 +1342,12 @@
       $$('.thumb').forEach((t, j) => t.classList.toggle('on', j === idx));
     };
     if (vIdx === 0) $('#gallery').classList.add('is-video');
+    // Нажатие на фото — просмотр на весь экран внутри Торганы (видео играет на месте).
+    const photoList = media.filter((m) => !m.video).map((m) => m.src);
+    $('#gmedia').addEventListener('click', (e) => {
+      if (!e.target.closest('#gimg')) return;
+      photoViewer(photoList, photoList.indexOf(media[idx] && media[idx].src), l.title);
+    });
     $$('[data-g]').forEach((b) => { b.onclick = () => show(idx + Number(b.dataset.g)); });
     $$('[data-t]').forEach((b) => { b.onclick = () => show(Number(b.dataset.t)); });
     let tx = null;
@@ -2285,7 +2420,7 @@
         if (d !== lastDay) { lastDay = d; out += String(html`<div class="chat-day">${shortWhen(m.createdAt)}</div>`); }
         const d2 = decorate ? decorate(m) : null;
         out += d2 ? String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${d2.cls}">${d2.body}<span class="t">${hm(m.createdAt)}</span></div>`)
-          : String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${m.photo ? 'has-photo' : ''}">${m.photo ? html`<a class="msg-photo" href="${m.photo}" target="_blank" rel="noopener"><img src="${m.photo}" alt="Фото" loading="lazy"></a>` : ''}${m.body}<span class="t">${hm(m.createdAt)}</span></div>`);
+          : String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${m.photo ? 'has-photo' : ''}">${m.photo ? html`<a class="msg-photo" href="${m.photo}" target="_blank" rel="noopener" data-pv-src="${m.photo}" data-pv-group="chat"><img src="${m.photo}" alt="Фото" loading="lazy"></a>` : ''}${m.body}<span class="t">${hm(m.createdAt)}</span></div>`);
         if (scam && !m.mine && m.body && SCAM_RE.test(m.body)) $('[data-scam]', box).classList.remove('hidden');
         lastId = Math.max(lastId, m.id);
       }
@@ -4471,7 +4606,7 @@
             <ul class="chk-ul">${l.checks.map((c) => html`<li>${ic(CHECK_ICON[c.kind] || 'warn', 16, 2)}<span>${c.text}${c.ref ? html` · <a href="/admin/l/${c.ref}" target="_blank">открыть</a>` : ''}</span></li>`)}</ul></div>` : ''}
           <h1 class="mod-title">${highlight(l.title, words)}</h1>
           ${l.video ? html`<div class="mod-video"><video src="${l.video}#t=0.1" controls playsinline preload="metadata"></video><span class="muted">${ic('video', 16)}Видео — проверьте так же, как фото: только этот товар, без контактов и ссылок</span></div>` : ''}
-          <div class="mod-photos">${l.photos.length ? l.photos.map((p, i) => html`<a href="${p}" target="_blank" class="mod-photo"><img src="${p}" alt="Фото ${i + 1}" loading="lazy"><span>${i + 1}</span></a>`) : html`<div class="empty" style="padding:28px"><p style="margin:0">Без фото</p></div>`}</div>
+          <div class="mod-photos">${l.photos.length ? l.photos.map((p, i) => html`<a href="${p}" target="_blank" class="mod-photo" data-pv-src="${p}" data-pv-group="mod"><img src="${p}" alt="Фото ${i + 1}" loading="lazy"><span>${i + 1}</span></a>`) : html`<div class="empty" style="padding:28px"><p style="margin:0">Без фото</p></div>`}</div>
           <section><h2 class="h2">Описание</h2><p class="desc">${l.description ? highlight(l.description, words) : html`<span class="muted">Описания нет</span>`}</p></section>
           <section><h2 class="h2">Все поля</h2><div class="specs">${specs.map(([k, v]) => html`<div class="spec"><div class="k">${k}</div><div class="v">${v}</div></div>`)}</div></section>
           ${l.rejectReason && l.status === 'rejected' ? html`<div class="banner danger"><strong>Причина отклонения:</strong> ${l.rejectReason}</div>` : ''}
@@ -4855,7 +4990,42 @@
     return changed;
   }
   async function refreshMe() {
-    try { if (applyMe(await api('GET', '/api/me'))) { renderHeader(); renderBottomNav(); } } catch { /* офлайн */ }
+    try { if (applyMe(await api('GET', '/api/me'))) { renderHeader(); renderBottomNav(); pushAskOnce(); } } catch { /* офлайн */ }
+  }
+
+  // Разовый вопрос про уведомления (1.23): при первом заходе вошедшего человека — один раз на устройство и навсегда,
+  // обновления сайта его не повторяют (метка в localStorage). Не спрашиваем, если браузер уже знает ответ
+  // (разрешено или запрещено), push не поддерживается или уже есть подписка. Системный запрос браузера —
+  // только по нажатию «Включить»: так браузер его не прячет.
+  const ASK_KEY = 'tg_push_asked';
+  let asking = false;
+  async function pushAskOnce() {
+    if (!S.user || asking) return;
+    try { if (localStorage.getItem(ASK_KEY)) return; } catch { return; }
+    if (['/confirm', '/login', '/register', '/reset', '/forgot'].includes(location.pathname)) return;
+    asking = true;
+    const st = await pushState().catch(() => ({ ok: false }));
+    const mark = () => { try { localStorage.setItem(ASK_KEY, String(Date.now())); } catch { /* нет хранилища */ } };
+    if ((st.ok && (st.sub || st.perm !== 'default')) || (!st.ok && !st.ios)) { mark(); asking = false; return; }
+    await new Promise((r) => setTimeout(r, 1200));
+    if (!S.user || $('.modal-back')) { asking = false; return; } // занято другим окном — спросим при следующем заходе
+    mark();
+    openModal(String(html`<div class="ask-push"><span class="ask-ic">${ic('bell', 30, 1.9)}</span>
+      <h2>Включить уведомления?</h2>
+      <p>${st.ios ? 'На iPhone уведомления работают, если открыть Торгану с экрана «Домой»: «Поделиться» → «На экран «Домой»».' : 'Сообщим, когда объявление опубликуют, напишут в чате или подешевеет товар из избранного. Выключить можно в настройках.'}</p>
+      <div class="ask-act">${st.ios ? html`<button class="btn btn-dark btn-lg btn-block" data-x>Понятно</button>`
+    : html`<button class="btn btn-accent btn-lg btn-block" data-ok>Включить</button><button class="btn btn-soft btn-lg btn-block" data-x>Не сейчас</button>`}</div></div>`), (m, close) => {
+      m.classList.add('ask-modal'); m.parentElement.classList.add('ask-back');
+      $('[data-x]', m).onclick = close;
+      const ok = $('[data-ok]', m);
+      if (ok) {
+        ok.onclick = async () => {
+          ok.disabled = true;
+          try { await pushOn(); close(); toast('Уведомления включены'); } catch (e) { close(); toast(e.message, true); }
+        };
+      }
+    });
+    asking = false;
   }
 
   async function boot() {
@@ -4872,6 +5042,7 @@
     metrikaStart();
     await render();
     cookieBar();
+    pushAskOnce();
     setupPullToRefresh();
     setInterval(() => { if (S.user && document.visibilityState === 'visible') refreshMe(); }, 30000);
   }

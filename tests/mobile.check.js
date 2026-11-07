@@ -316,7 +316,10 @@ function pages(d) {
     ['listing-owner', `/l/${d.ids[0]}`, d.seller],
     ['listing-owner-car', `/l/${d.car}`, d.seller],
     ['notices', '/', d.seller, '[data-bell]'],
-    ['notices-empty', '/', d.buyer, '[data-bell]']
+    ['notices-empty', '/', d.buyer, '[data-bell]'],
+    // 1.23: фото на весь экран внутри Торганы
+    ['photo-viewer', `/l/${d.ids[0]}`, null, '#gimg'],
+    ['push-ask', '/', d.buyer, 'push-ask']
   ];
 }
 
@@ -366,6 +369,8 @@ async function main() {
         await ctx.route((u) => !u.href.startsWith(srv.base), (r) => r.fulfill({ status: 200, body: '' }));
         // Плашку cookie показываем только на своей странице проверки, на остальных — выбор уже сделан.
         if (name !== 'cookie') await ctx.addInitScript(() => { try { localStorage.setItem('tg_cookie', 'necessary'); } catch { /* нет */ } });
+        // Разовый вопрос про уведомления — только на своей странице проверки.
+        if (name !== 'push-ask') await ctx.addInitScript(() => { try { localStorage.setItem('tg_push_asked', '1'); } catch { /* нет */ } });
         const page = await ctx.newPage();
         const errors = [];
         page.on('pageerror', (e) => errors.push(`JS: ${e.message}`));
@@ -394,6 +399,14 @@ async function main() {
           await page.click(sel.startsWith('#') ? `${sel} + .pick-btn` : sel);
           await page.waitForTimeout(300);
           if (!(await page.$('.pick .pick-it'))) errors.push('список не открылся');
+        } else if (open === 'push-ask') {
+          // Первый заход вошедшего: один раз спрашиваем про уведомления; после «Не сейчас» — больше никогда.
+          await page.waitForSelector('.ask-push', { timeout: 4000 }).catch(() => errors.push('вопрос про уведомления не появился'));
+          await page.screenshot({ path: path.join(SHOTS, `${vpName}-push-ask-open.png`) });
+          await page.click('.ask-push [data-x]');
+          await page.reload({ waitUntil: 'networkidle' });
+          await page.waitForTimeout(1800);
+          if (await page.$('.ask-push')) errors.push('вопрос про уведомления повторился');
         } else if (open === 'step:5:boost') {
           // Продвижение при подаче: XL и метки, одна метка выбрана — цена на кнопке, превью с XL.
           await page.click('[data-step="5"]');
@@ -415,7 +428,7 @@ async function main() {
         } else if (open) {
           await page.click(open);
           await page.waitForTimeout(400);
-          if (!(await page.$('.modal'))) errors.push(`окно по ${open} не открылось`);
+          if (!(await page.$('.modal, .pv'))) errors.push(`окно по ${open} не открылось`);
         }
         const m = await page.evaluate(() => {
           const nav = document.querySelector('#bottom-nav');
