@@ -151,7 +151,7 @@ test('видео: загрузка частями, проверка формат
   assert.equal(l.video, `/uploads/${up.file}`);
   const adm = (await admin.get(`/api/admin/listings/${r.data.id}`)).data.listing;
   assert.equal(adm.video, l.video, 'модератор видит видео');
-  assert.deepEqual(adm.specs, [{ label: 'Тип', value: 'Горный' }]);
+  assert.deepEqual(adm.specs, [{ key: 'bikeType', label: 'Тип', value: 'Горный' }]);
   // Range: браузер просит кусок.
   const part = await fetch(`${srv.base}${l.video}`, { headers: { range: 'bytes=0-99' } });
   assert.equal(part.status, 206);

@@ -2232,3 +2232,45 @@ body.pv-open { overflow: hidden; }
 .cat-rail.can-prev .cat-pills { -webkit-mask-image: linear-gradient(90deg, transparent, #000 56px, #000 calc(100% - 56px), transparent); mask-image: linear-gradient(90deg, transparent, #000 56px, #000 calc(100% - 56px), transparent); }
 .cat-rail:not(.can-prev):not(.can-next) .cat-pills { -webkit-mask-image: none; mask-image: none; }
 @media (max-width: 900px) { .cat-arrow { display: none !important; } .cat-rail.can-prev .cat-pills { -webkit-mask-image: none; mask-image: none; } }
+
+/* ---------- характеристики, вариант A (1.24): путь, плитки, список, условия значками ---------- */
+.sp-sec { display: flex; flex-direction: column; }
+.sp-path { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 14px; font-size: 14px; color: var(--muted); }
+.sp-path a:hover { color: var(--accent); }
+.sp-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 6px; }
+.sp-tile { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border-radius: 20px; background: var(--surface); min-width: 0; }
+.sp-tile small { font-size: 13px; color: var(--muted); }
+.sp-tile b { display: flex; align-items: center; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.sp-dot { display: inline-block; flex: none; width: 12px; height: 12px; margin-right: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+.kv dd .sp-dot { margin-right: 6px; }
+.kv dd { flex-direction: row; align-items: center; justify-content: flex-end; }
+.sp-terms { display: flex; flex-wrap: wrap; gap: 8px; }
+.sp-term { display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 15px 0 12px; border-radius: 999px; background: var(--surface); font-size: 14.5px; font-weight: 600; color: var(--text); }
+.sp-term svg { color: var(--text-2); }
+.sp-term.ok { background: var(--accent-soft); color: var(--accent); }
+.sp-term.ok svg { color: var(--accent); }
+@media (max-width: 600px) { .sp-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sp-tile { padding: 14px 16px; } .sp-tile b { font-size: 17px; } .sp-term { height: 36px; font-size: 13.5px; } }
+
+/* ---------- телефон (1.24): тот же порядок и вид, что на компьютере ---------- */
+.iw-d { color: var(--text-2); font-weight: 500; }
+.iw-d::before { content: '·'; margin-right: 6px; color: var(--faint); }
+.item-where .metro + .iw-d::before { content: '·'; }
+.item-where > .iw-d:first-child::before { content: none; }
+.hs-go { display: none; }
+@media (max-width: 900px) {
+  /* Объявление: фото → название, цена и кнопки → характеристики, описание, условия → продавец (как справа на компьютере). */
+  .item { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 28px; }
+  .item-main { display: contents; }
+  .item-main > :first-child { order: 1; }
+  .item-side { order: 2; position: static; }
+  .item-main > section { order: 3; }
+  .item-side > .panel:first-child { padding: 22px 20px; border-radius: 28px; }
+  .home-search .hs-go { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border: 0; border-radius: 50%; background: var(--accent); color: #fff; }
+  .home-search { padding-right: 5px; }
+  .home-search .hs-city { max-width: 130px; }
+}
+@media (max-width: 900px) {
+  .item-side { display: contents; }
+  .item-side > :first-child { order: 2; }
+  .item-side > :not(:first-child) { order: 4; margin-top: -14px; }
+}
