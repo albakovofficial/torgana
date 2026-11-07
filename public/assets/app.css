@@ -2371,3 +2371,20 @@ body.pv-open { overflow: hidden; }
 .conv.support #support-badge { position: absolute; left: 44px; top: 8px; min-width: 18px; height: 18px; font-size: 11px; box-shadow: 0 0 0 2px var(--accent); }
 .chat-form textarea:focus { border-color: rgba(31, 94, 74, .55); box-shadow: 0 0 0 3px rgba(31, 94, 74, .1); }
 .inbox-list .conv-img.support-ava { border-radius: 50%; }
+
+/* ---------- нижнее меню на телефоне (1.28, вариант 4): открытый раздел — изумрудная «таблетка» с названием ---------- */
+@media (max-width: 900px) {
+  .bottom-nav { left: 12px; right: 12px; height: 64px; padding: 0 8px; }
+  .bottom-nav a { width: 46px; height: 46px; flex: none; }
+  .bottom-nav a.on { width: auto; padding: 0 16px 0 12px; gap: 8px; border-radius: 999px; background: rgba(31, 94, 74, .12); color: #17493A; }
+  .bottom-nav a.on::after { content: none; }
+  .bottom-nav a.plus { background: var(--accent); color: #fff; }
+  .bn-i { position: relative; display: inline-flex; }
+  .bn-t { display: none; font-size: 14px; font-weight: 650; white-space: nowrap; }
+  .bottom-nav a.on .bn-t { display: inline; }
+  .bottom-nav .badge { top: -7px; right: -9px; box-shadow: 0 0 0 2px #fff; }
+}
+@media (max-width: 359px) {
+  .bottom-nav a.on { width: 46px; padding: 0; }
+  .bottom-nav a.on .bn-t { display: none; }
+}

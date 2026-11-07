@@ -559,12 +559,14 @@
   function renderBottomNav() {
     const p = location.pathname;
     const on = (cond) => (cond ? 'on' : '');
+    // 1.28 (вариант 4): открытый раздел — прозрачная изумрудная «таблетка» с названием, остальные — иконки.
+    const item = (href, icon, label, cond, extra = '') => html`<a href="${href}" class="${on(cond)}" aria-label="${label}"${cond ? raw(' aria-current="page"') : ''}><span class="bn-i">${ic(icon, 23, cond ? 2 : 1.8)}${extra}</span><span class="bn-t" aria-hidden="true">${label}</span></a>`;
     $('#bottom-nav').innerHTML = String(html`
-      <a href="/" class="${on(p === '/' || p === '/search')}" aria-label="Главная">${ic('home', 23)}</a>
-      <a href="/favorites" class="${on(p === '/favorites')}" aria-label="Избранное">${ic('heart', 23)}</a>
-      <a href="/new" class="plus" aria-label="Разместить объявление">${ic('plus', 24, 2.2)}</a>
-      <a href="/messages" class="${on(p.startsWith('/messages'))}" aria-label="Сообщения">${ic('chat', 23)}<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span></a>
-      <a href="${S.user ? '/profile' : '/login'}" class="${on(p.startsWith('/profile') || p === '/login')}" aria-label="Профиль">${ic('user', 23)}</a>`);
+      ${item('/', 'home', 'Главная', p === '/' || p === '/search')}
+      ${item('/favorites', 'heart', 'Избранное', p === '/favorites')}
+      <a href="/new" class="plus" aria-label="Разместить объявление">${ic('plus', 22, 2.4)}</a>
+      ${item('/messages', 'chat', 'Сообщения', p.startsWith('/messages'), html`<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span>`)}
+      ${item(S.user ? '/profile' : '/login', 'user', 'Профиль', p.startsWith('/profile') || p === '/login')}`);
   }
 
   // Подвал: знак и кнопка поддержки, разделы (на телефоне раскрываются), контакты, © с реквизитами оператора, документы. Последняя колонка FOOTER_COLS — документы (их же показывает меню ≡).
