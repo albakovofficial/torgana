@@ -520,7 +520,10 @@
     S.notices = n || 0;
     $$('[data-notices]').forEach((el) => { el.textContent = S.notices > 99 ? '99+' : S.notices; el.classList.toggle('hidden', !S.notices); });
   }
-  const NOTICE_TONE = { ok: 'ok', bad: 'bad', wait: 'wait' };
+  // Цвет события (1.25): зелёный — опубликовано, красный — нужно исправить, жёлтый — отзывы и сроки,
+  // синий — оплата и возвраты, фиолетовый — продвижение.
+  const NOTICE_COLOR = { check: 'green', warn: 'red', clock: 'amber', star: 'amber', store: 'amber', card: 'blue', megaphone: 'violet', tag: 'violet', bolt: 'violet', down: 'green', shield: 'green' };
+  const noticeColor = (n) => (n.tone === 'bad' ? 'red' : NOTICE_COLOR[n.icon] || (n.tone === 'ok' ? 'green' : n.tone === 'wait' ? 'amber' : 'gray'));
   function noticeDay(ts) {
     const d = new Date(ts); const t = new Date();
     const y = new Date(t); y.setDate(t.getDate() - 1);
@@ -538,8 +541,10 @@
       const groups = [];
       d.items.forEach((n) => { const k = noticeDay(n.at); const g = groups[groups.length - 1]; if (g && g[0] === k) g[1].push(n); else groups.push([k, [n]]); });
       $('#nt-body', m).innerHTML = String(d.items.length ? html`${groups.map(([day, list]) => html`<div class="nt-day">${day}</div>
-        ${list.map((n) => html`<a class="nt-it${n.read ? '' : ' new'}" href="${n.url || '#'}"><span class="nt-ic ${NOTICE_TONE[n.tone] || ''}">${ic(P[n.icon] ? n.icon : 'bell', 19, 2)}</span>
-          <span class="nt-t"><b>${n.title}</b>${n.body ? html`<span>${n.body}</span>` : ''}<small>${hm(n.at)}</small></span></a>`)}`)}`
+        ${list.map((n) => { const col = noticeColor(n); const icn = ic(P[n.icon] ? n.icon : 'bell', n.photo ? 12 : 19, n.photo ? 2.6 : 2); return html`<a class="nt-it${n.read ? '' : ' new'}" href="${n.url || '#'}">${n.photo
+    ? html`<span class="nt-ph"><img src="${n.photo}" alt="" loading="lazy"><i class="nt-badge ${col}">${icn}</i></span>`
+    : html`<span class="nt-ic ${col}">${icn}</span>`}
+          <span class="nt-t"><b>${n.title}</b>${n.body ? html`<span>${n.body}</span>` : ''}<small>${hm(n.at)}</small></span></a>`; })}`)}`
         : html`<div class="nt-empty"><span class="nt-empty-ic">${ic('bell', 30, 1.6)}</span><b>Здесь будут уведомления</b><p>Напишем, когда объявление опубликуют, придёт отзыв или подешевеет товар из избранного.</p></div>`);
       if (d.unread) { api('POST', '/api/notices/read', {}).then((r) => setNotices(r.unread)).catch(() => {}); }
       if (S.user && 'Notification' in window && Notification.permission === 'default') {
@@ -931,8 +936,9 @@
         <form class="search home-search" role="search" data-search>
           ${ic('search', 20)}
           <label class="sr" for="q">Что вы ищете</label>
-          <input id="q" name="q" type="search" placeholder="Что вы ищете?" autocomplete="off" enterkeyhint="search">
+          <input id="q" name="q" type="search" placeholder="Поиск" autocomplete="off" enterkeyhint="search">
           <button type="button" class="hs-city" data-city-btn aria-label="Город: ${S.city || 'Вся Россия'}">${ic('pin', 15, 2)}<span>${S.city || 'Вся Россия'}</span></button>
+          <button class="hs-go" type="submit" aria-label="Найти">${ic('search', 19, 2.2)}</button>
         </form>
         <div class="cat-rail"><button type="button" class="cat-arrow prev" data-cat-scroll="-1" aria-label="Назад">${ic('left', 18, 2.2)}</button>
           <nav class="cat-pills" aria-label="Категории"><a class="cat-pill on" href="/search${S.city ? `?city=${encodeURIComponent(S.city)}` : ''}">${ic('list', 17, 2)}Все</a>${S.config.categories.map((c) => html`<a class="cat-pill" href="${cpath(c.id, S.city)}">${catIc(c.id, 18)}${c.name}</a>`)}</nav>
@@ -1206,20 +1212,21 @@
       market: html`<span class="tag"><span class="dot"></span>&nbsp;Цена в рынке</span>`,
       above: html`<span class="tag">Выше рынка</span>`
     })[market.level] : '';
-    // 1.22: два списка «название — значение»: что за товар и условия сделки.
-    const specs = [
-      ['Раздел', l.subcategory ? subName(l.subcategory) : catName(l.category)],
-      ...(l.specs || []).map((x) => [x.label, x.value]),
-      CONDITION_CATS.has(l.category) && l.condition ? ['Состояние', CONDITION_LABEL[l.condition]] : null
-    ].filter(Boolean);
+    // 1.24 (вариант A): путь раздела строкой, главное — плитками (то, что видно в карточке, состояние, цвет),
+    // остальное — списком «название — значение», условия сделки — значками.
+    const subX = subOf(l.subcategory);
+    const allSpecs = [...(l.specs || []).map((x) => ({ ...x })), ...(CONDITION_CATS.has(l.category) && l.condition ? [{ key: '_cond', label: 'Состояние', value: CONDITION_LABEL[l.condition] }] : [])];
+    const mainKeys = [...new Set(['brand', ...((subX && subX.summary) || []), '_cond', 'color'])];
+    const tiles = allSpecs.filter((x) => mainKeys.includes(x.key)).sort((a, b) => mainKeys.indexOf(a.key) - mainKeys.indexOf(b.key)).slice(0, 4);
+    const rest = allSpecs.filter((x) => !tiles.includes(x));
+    const specPath = [catName(l.category), l.subcategory ? subName(l.subcategory) : ''].filter(Boolean);
+    const specVal = (x) => (x.key === 'color' && COLOR_HEX[x.value] ? html`<i class="sp-dot" style="background:${COLOR_HEX[x.value]}"></i>${x.value}` : x.value);
+    const kv = (rows) => html`<dl class="kv">${rows.map((x) => html`<div><dt>${x.label}</dt><dd>${specVal(x)}</dd></div>`)}</dl>`;
     const terms = [
-      ['Где', html`${l.city}${l.metro ? html`<span class="kv-sub">${station}</span>` : ''}${l.district ? html`<span class="kv-sub">${l.district}</span>` : ''}`],
-      ['Доставка', l.delivery ? 'Отправит по России' : 'Только встреча'],
-      l.price !== null ? ['Торг', l.bargain ? 'Уместен' : 'Без торга'] : null,
-      l.exchange ? ['Обмен', 'Возможен'] : null,
-      ['Опубликовано', when(l.createdAt)]
+      [l.delivery ? 'truck' : 'users', l.delivery ? 'Отправит по России' : 'Только встреча', l.delivery ? 'ok' : ''],
+      l.price !== null ? ['tag', l.bargain ? 'Торг уместен' : 'Без торга', l.bargain ? 'ok' : ''] : null,
+      l.exchange ? ['refresh', 'Возможен обмен', 'ok'] : null
     ].filter(Boolean);
-    const kv = (rows) => html`<dl class="kv">${rows.map(([k, v]) => html`<div><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>`;
 
     let ownerBanner = '';
     if (l.isOwner && l.status === 'rejected') {
@@ -1290,15 +1297,20 @@
     ? html`<button class="thumb vthumb ${i === 0 ? 'on' : ''}" data-t="${i}" aria-label="Видео">${photos[0] ? html`<img src="${photos[0]}" alt="" loading="lazy">` : ''}<span>${ic('play', 16, 0)}</span></button>`
     : html`<button class="thumb ${i === 0 ? 'on' : ''}" data-t="${i}" aria-label="Фото ${i + 1}"><img src="${m.src}" alt="" loading="lazy"></button>`))}</div>` : ''}
           </div>
-          <section class="kv-sec"><h2 class="h2">Характеристики</h2>${kv(specs)}</section>
+          <section class="sp-sec"><h2 class="h2">Характеристики</h2>
+            <nav class="sp-path" aria-label="Раздел">${specPath.map((t, k) => html`${k ? html`<span aria-hidden="true">›</span>` : ''}<a href="${k ? `/search?${new URLSearchParams({ category: l.category, sub: l.subcategory })}` : cpath(l.category)}">${t}</a>`)}</nav>
+            ${tiles.length ? html`<div class="sp-tiles">${tiles.map((x) => html`<div class="sp-tile"><small>${x.label}</small><b>${specVal(x)}</b></div>`)}</div>` : ''}
+            ${rest.length ? kv(rest) : ''}</section>
           ${l.description ? html`<section><h2 class="h2">Описание</h2><p class="desc">${l.description}</p></section>` : ''}
-          <section class="kv-sec"><h2 class="h2">Условия</h2>${kv(terms)}</section>
+          <section class="sp-sec"><h2 class="h2">Условия</h2><div class="sp-terms">
+            ${terms.map(([icon, t, tone]) => html`<span class="sp-term ${tone}">${ic(icon, 17, 2)}${t}</span>`)}
+            <span class="sp-term">${l.metro ? html`<i class="sp-dot" style="background:${l.metro.color || '#C9C9C4'}"></i>${l.metro.name} · ` : ic('pin', 17, 2)}${l.city}${l.district ? `, ${l.district}` : ''}</span></div></section>
         </div>
         <aside class="item-side">
           <div class="panel panel-shadow" style="display:flex;flex-direction:column;gap:22px">
             <div style="display:flex;gap:10px;align-items:flex-start">
               <div style="flex:1;min-width:0">${l.isOwner ? html`<span class="own-state ${(isExpired(l) ? ['off'] : MY_TAG[l.status] || MY_TAG.archived)[0]}"><i></i>${isExpired(l) ? 'Срок истёк' : (MY_TAG[l.status] || MY_TAG.archived)[1]}${l.status === 'active' && l.expiresAt ? html`<em>до ${dateShort(l.expiresAt)}</em>` : ''}</span>` : ''}<h1 class="item-title">${l.title}</h1><p class="muted" style="margin:8px 0 0;font-size:14px">${l.city} · ${when(l.createdAt)}</p>
-                ${l.metro || l.district ? html`<p class="item-where">${station}${l.district ? html`<span class="iw-d">${l.metro ? html`<span class="muted">·&nbsp;</span>` : ''}${l.district}</span>` : ''}</p>` : ''}
+                ${l.metro || l.district ? html`<p class="item-where">${station}${l.district ? html`<span class="iw-d">${l.district}</span>` : ''}</p>` : ''}
                 <p class="item-counts"><span title="Просмотры">${ic('eye', 16)}<span data-views>${NF.format(l.views)} ${plural(l.views, 'просмотр', 'просмотра', 'просмотров')}</span></span><span title="В избранном">${ic('heart', 16)}<span data-favs>в избранном у ${NF.format(l.favCount)}</span></span></p></div>
               ${l.isOwner ? '' : html`<button class="icon-btn ${l.isFav ? 'on' : ''}" data-fav="${l.id}" aria-label="${l.isFav ? 'Убрать из избранного' : 'В избранное'}" aria-pressed="${l.isFav ? 'true' : 'false'}">${ic('heart', 20)}</button>`}
               <button class="icon-btn" data-share aria-label="Поделиться">${ic('share', 20)}</button>
