@@ -244,7 +244,26 @@ const billing = require('./lib/billing')({ route, db, h: helpers, mailer, baseUr
 const business = require('./lib/business')({ route, db, h: helpers, billing, mailer, stats });
 const promo = require('./lib/promo')({ route, db, h: helpers, billing, business, stats, mailer, searchSpec, specSql, categoryIds: CATEGORY_IDS });
 const feed = require('./lib/feed')({ route, db, h: helpers, business });
-helpers.business = business; // тариф и витрина — в карточке пользователя в модерации
+helpers.business = business;
+
+// Поисковики и Метрика: коды подтверждения Вебмастера и Search Console, номер счётчика — «Модерация → Поиск и статистика».
+const seoSetting = (key) => { const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(key); try { return r ? JSON.parse(r.value) : null; } catch { return null; } };
+const seo = require('./lib/seo')({ db, base: PUBLIC_URL || `http://localhost:${PORT}`, getSetting: seoSetting });
+route('GET', '/api/admin/seo', (ctx) => {
+  requireAdmin(ctx);
+  const base = PUBLIC_URL || `http://localhost:${PORT}`;
+  return { seo: { yandex: '', google: '', metrika: '', ...(seoSetting('seo') || {}) }, sitemap: `${base}/sitemap.xml`, robots: `${base}/robots.txt` };
+});
+route('PUT', '/api/admin/seo', async (ctx) => {
+  const admin = requireAdmin(ctx);
+  const b = await readJson(ctx.req);
+  const code = (v) => str(v, 120).replace(/^.*content=["']?([\w-]+)["']?.*$/s, '$1').replace(/[^\w-]/g, ''); // можно вставить весь <meta …>
+  const metrika = str(b.metrika, 20).replace(/\D/g, '');
+  const next = { yandex: code(b.yandex), google: code(b.google), metrika };
+  db.prepare('INSERT INTO settings (key, value) VALUES (\'seo\', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(JSON.stringify(next));
+  audit(admin, 'seo-settings', {}, next);
+  return { seo: next };
+}); // тариф и витрина — в карточке пользователя в модерации
 helpers.statsExtra = () => ({ ads: promo.awaiting() }); // счётчик «Реклама» в меню модерации
 
 // Раздел «Для бизнеса» в профиле: тариф, цены, витрина, автозагрузка, продвижения, платежи.
@@ -267,6 +286,7 @@ route('GET', '/api/config', () => ({
   supportEmail: SUPPORT_EMAIL,
   oauth: oauth.enabled(),
   billing: { ready: billing.ready(), prices: billing.prices() },
+  metrika: (seoSetting('seo') || {}).metrika || '',
   operator: (({ name, inn, ogrnip }) => ({ name, inn, ogrnip }))(legal.operator())
 }));
 
@@ -796,7 +816,7 @@ route('GET', '/api/users/:id', (ctx) => {
 
 // Юридические документы (реквизиты и раздел «Запрещено» подставляются на сервере).
 route('GET', '/api/pages/:slug', (ctx) => {
-  const d = legal.docs({ ai: !!AI_KEY })[ctx.params.slug];
+  const d = legal.docs({ ai: !!AI_KEY, metrika: !!(seoSetting('seo') || {}).metrika })[ctx.params.slug];
   if (!d) throw new HttpError(404, 'Страница не найдена');
   return { title: d[0], html: d[1] };
 });
@@ -839,7 +859,8 @@ const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'X-Frame-Options': 'DENY',
-  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+  // mc.yandex.ru — Яндекс.Метрика (загружается только после согласия на статистические cookie).
+  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob: https://mc.yandex.ru https://mc.yandex.com; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' https://mc.yandex.ru https://mc.yandex.com; script-src 'self' https://mc.yandex.ru; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 };
 
 function serveFile(res, filePath, cache) {
@@ -865,17 +886,26 @@ const ASSET_VERSION = crypto.createHash('sha1')
   .update(fs.readFileSync(path.join(PUBLIC_DIR, 'assets/app.js')))
   .update(fs.readFileSync(path.join(PUBLIC_DIR, 'assets/app.css')))
   .digest('hex').slice(0, 10);
-const INDEX_HTML = Buffer.from(fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
-  .replace(/(\/assets\/app\.(?:css|js))"/g, `$1?v=${ASSET_VERSION}"`));
+const INDEX_HTML = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
+  .replace(/(\/assets\/app\.(?:css|js))"/g, `$1?v=${ASSET_VERSION}"`);
 
-function serveIndex(res) {
-  res.writeHead(200, {
+// Страница приложения: заголовок, описание, карточка для мессенджеров и снимок содержимого для поисковиков (lib/seo.js).
+function serveIndex(res, pathname) {
+  let page;
+  try { page = seo.inject(INDEX_HTML, pathname); } catch (e) { console.error('seo:', e.message); page = { status: 200, html: INDEX_HTML }; }
+  const body = Buffer.from(page.html);
+  res.writeHead(page.status, {
     'Content-Type': 'text/html; charset=utf-8',
-    'Content-Length': INDEX_HTML.length,
+    'Content-Length': body.length,
     'Cache-Control': 'no-cache',
     ...SECURITY_HEADERS
   });
-  res.end(INDEX_HTML);
+  res.end(body);
+}
+function serveText(res, type, text) {
+  const body = Buffer.from(text);
+  res.writeHead(200, { 'Content-Type': type, 'Content-Length': body.length, 'Cache-Control': 'public, max-age=1800', ...SECURITY_HEADERS });
+  res.end(body);
 }
 
 function serveStatic(req, res, pathname, search) {
@@ -895,8 +925,10 @@ function serveStatic(req, res, pathname, search) {
       return;
     }
   }
+  if (pathname === '/sitemap.xml') { serveText(res, 'application/xml; charset=utf-8', seo.sitemap()); return; }
+  if (pathname === '/robots.txt') { serveText(res, 'text/plain; charset=utf-8', seo.robots()); return; }
   // Все остальные пути — страницы приложения.
-  serveIndex(res);
+  serveIndex(res, pathname);
 }
 
 // ---------- сервер ----------
