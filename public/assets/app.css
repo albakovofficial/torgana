@@ -873,66 +873,53 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
 }
 
 
-/* ---------- подвал: графит, слово «торгана» ровно по ширине содержимого ---------- */
-/* Тёмная плашка с изумрудным светом справа сверху, карточки связи, колонки, контакты со значками. */
-.footer {
-  --f-r: clamp(22px, 2.4vw, 34px); --f-line: rgba(255, 255, 255, .09); --f-mint: #8FD9BC;
-  margin: 72px clamp(8px, 1.4vw, 20px) 0; border-radius: var(--f-r) var(--f-r) 0 0; overflow: hidden; color: rgba(255, 255, 255, .7);
-  background: radial-gradient(55% 85% at 100% 0%, rgba(46, 156, 116, .30), transparent 72%), linear-gradient(180deg, #0F1613, #0B0F0E);
-}
-.footer > .wrap { padding-top: clamp(40px, 5vw, 68px); }
-.footer a { color: rgba(255, 255, 255, .78); }
-.footer a:hover { color: #fff; }
-.footer .logo, .footer .logo:hover { color: #fff; }
-.footer .logo-mark { background: #fff; }
-.footer .logo-mark path, .footer .logo-mark rect { fill: #0F1613; stroke: #0F1613; }
-.footer .logo-mark circle { fill: #fff; }
-.f-hero { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 24px 40px; padding-bottom: clamp(28px, 3.5vw, 40px); border-bottom: 1px solid var(--f-line); }
-.f-brand { display: grid; gap: 12px; justify-items: start; }
-.f-tag { margin: 0; max-width: 300px; font-size: 15px; line-height: 1.5; color: rgba(255, 255, 255, .58); }
-.f-cta { display: grid; justify-items: center; gap: 8px; }
-.f-cta small { font-size: 12.5px; color: rgba(255, 255, 255, .5); }
-.f-support { display: inline-flex; align-items: center; gap: 12px; height: 54px; padding: 0 26px 0 8px; border-radius: 999px; background: #2E9C74; color: #fff; font-size: 15px; font-weight: 600; transition: background .2s; }
-.footer .f-support, .footer .f-support:hover { color: #fff; }
-.f-support:hover { background: #33AC80; }
-.f-support-ic { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: rgba(255, 255, 255, .16); }
-.f-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 32px 40px; padding-block: clamp(32px, 4vw, 48px); }
-.fcol h4 { margin: 0 0 16px; font-size: 15px; font-weight: 700; color: #fff; }
+/* ---------- подвал (1.30, вариант 2): светло-серая плита, справа карточка «Нужна помощь?» ---------- */
+.footer { margin: 72px clamp(8px, 1.4vw, 24px) 0; border-radius: clamp(22px, 2.4vw, 32px) clamp(22px, 2.4vw, 32px) 0 0; background: var(--surface); color: var(--text-2); }
+.footer > .wrap { padding-top: clamp(32px, 4vw, 44px); }
+.footer a { color: var(--text-2); }
+.footer a:hover { color: var(--accent); }
+.f-main { display: flex; gap: 40px; align-items: flex-start; padding-bottom: clamp(24px, 3vw, 32px); }
+.f-grid { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px 32px; }
+.f-brand { display: grid; gap: 12px; justify-items: start; align-content: start; }
+.footer .logo, .footer .logo:hover { color: var(--text); }
+.f-tag { margin: 0; max-width: 260px; font-size: 14px; line-height: 1.5; color: #555; }
+.fcol h4 { margin: 0 0 14px; font-size: 13px; font-weight: 700; color: var(--text); }
 .fcol summary { list-style: none; cursor: default; display: flex; align-items: center; justify-content: space-between; }
 .fcol summary::-webkit-details-marker { display: none; }
-.fcol summary svg { display: none; color: rgba(255, 255, 255, .5); transition: transform .25s; }
-.fcol ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; font-size: 14.5px; }
-.fcol ul a { text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 4px; transition: color .2s, text-decoration-color .2s; }
-.fcol ul a:hover { text-decoration-color: var(--f-mint); }
-.f-contacts li { display: flex; align-items: center; gap: 10px; color: rgba(255, 255, 255, .7); line-height: 1.4; overflow-wrap: anywhere; }
-.f-ic { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .12); color: var(--f-mint); }
-.f-bottom { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 14px 24px; padding-block: 22px calc(24px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--f-line); font-size: 13px; line-height: 1.6; color: rgba(255, 255, 255, .45); }
+.fcol summary svg { display: none; color: var(--muted); transition: transform .25s; }
+.fcol ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 11px; font-size: 14px; }
+.f-help { flex: 0 0 300px; box-sizing: border-box; padding: 22px; border-radius: 22px; background: #fff; display: flex; flex-direction: column; gap: 12px; }
+.f-help-h { display: flex; align-items: center; gap: 10px; }
+.f-help-h b { font-size: 16px; font-weight: 700; color: var(--text); }
+.f-help-ic { width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; background: rgba(31, 94, 74, .12); color: var(--accent); }
+.f-help p { margin: 0; font-size: 13px; line-height: 1.5; color: #555; }
+.footer .f-help .btn, .footer .f-help .btn:hover { color: #fff; }
+.footer .f-mail { align-self: center; font-size: 13px; font-weight: 600; color: var(--accent); overflow-wrap: anywhere; }
+.f-bottom { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px 24px; padding-block: 18px calc(22px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid #E4E4E0; font-size: 12px; line-height: 1.6; color: var(--muted); }
 .f-copy { display: grid; }
-.f-copy b { font-weight: 600; color: rgba(255, 255, 255, .78); }
+.f-copy b { font-weight: 600; color: var(--text); }
 .f-docs { display: flex; flex-wrap: wrap; gap: 6px 20px; }
-.footer .f-docs a { font-size: 13px; color: rgba(255, 255, 255, .55); }
-.footer .f-docs a:hover { color: #fff; }
-.footer a:focus-visible, .footer summary:focus-visible { outline: 2px solid var(--f-mint); outline-offset: 3px; }
+.footer .f-docs a { font-size: 12px; color: var(--muted); }
+.footer .f-docs a:hover { color: var(--accent); }
+.footer a:focus-visible, .footer summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (max-width: 1100px) { .f-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
-  .f-hero { flex-direction: column; align-items: stretch; }
-  .f-cta { justify-items: stretch; }
-  .f-support { justify-content: center; padding-right: 22px; }
-  .f-cta small { text-align: center; }
-  .f-grid { grid-template-columns: minmax(0, 1fr); gap: 0; padding-block: 4px 16px; }
-  .fcol { border-bottom: 1px solid var(--f-line); }
-  .fcol summary { cursor: pointer; min-height: 58px; }
-  .fcol summary h4 { margin: 0; }
+  .f-main { flex-direction: column; align-items: stretch; gap: 20px; }
+  .f-help { flex-basis: auto; }
+  .f-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .f-brand { padding-bottom: 14px; }
+  .fcol { border-top: 1px solid #E4E4E0; }
+  .fcol summary { cursor: pointer; min-height: 54px; }
+  .fcol summary h4 { margin: 0; font-size: 15px; }
   .fcol summary svg { display: block; }
   .fcol[open] summary svg { transform: rotate(180deg); }
-  .fcol ul { padding-bottom: 18px; }
-  .fcol-contacts { padding-top: 20px; border-bottom: 0; }
+  .fcol ul { padding-bottom: 16px; }
   .f-bottom { flex-direction: column; align-items: flex-start; }
 }
 @media (max-width: 600px) {
   .footer { margin: 40px 6px 0; padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 }
-@media (prefers-reduced-motion: reduce) { .f-support, .fcol ul a, .fcol summary svg { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .fcol summary svg { transition: none; } }
 
 /* ---------- модерация: меню слева, разделы справа ---------- */
 .adm { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 32px; align-items: start; padding-top: 24px; padding-bottom: 64px; }

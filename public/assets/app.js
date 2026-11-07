@@ -582,22 +582,20 @@
     const mail = S.config.supportEmail;
     const cols = FOOTER_COLS.slice(0, -1);
     const docs = FOOTER_COLS[FOOTER_COLS.length - 1][1];
-    const contact = (icon, body) => html`<li><span class="f-ic">${ic(icon, 16)}</span>${body}</li>`;
     const footer = $('#footer');
+    // 1.30 (вариант 2): светло-серая плита; слева знак и разделы, справа белая карточка «Нужна помощь?».
     footer.innerHTML = String(html`<div class="wrap">
-      <div class="f-hero">
-        <div class="f-brand">${logo()}<p class="f-tag">Честная площадка объявлений по всей России</p></div>
-        <div class="f-cta">
-          <a class="f-support" href="/messages/support"><span class="f-support-ic">${ic('headset', 20)}</span>Написать в поддержку</a>
-          <small>Отвечают модераторы, а не бот</small>
+      <div class="f-main">
+        <div class="f-grid">
+          <div class="f-brand">${logo()}<p class="f-tag">Честная площадка объявлений по всей России</p></div>
+          ${cols.map(([t, ls]) => html`<details class="fcol" open><summary><h4>${t}</h4>${ic('down', 18, 2)}</summary><ul>${ls.map(([href, label]) => html`<li><a href="${href}">${label}</a></li>`)}</ul></details>`)}
         </div>
-      </div>
-      <div class="f-grid">
-        ${cols.map(([t, ls]) => html`<details class="fcol" open><summary><h4>${t}</h4>${ic('down', 18, 2)}</summary><ul>${ls.map(([href, label]) => html`<li><a href="${href}">${label}</a></li>`)}</ul></details>`)}
-        <div class="fcol fcol-contacts"><h4>Контакты</h4><ul class="f-contacts">
-          ${mail ? contact('mail', html`<a href="mailto:${mail}">${mail}</a>`) : ''}
-          ${contact('shield', html`<span>Каждое объявление проверяет модератор</span>`)}
-        </ul></div>
+        <div class="f-help">
+          <div class="f-help-h"><span class="f-help-ic">${ic('headset', 20)}</span><b>Нужна помощь?</b></div>
+          <p>Отвечают модераторы, а не бот.${mail ? ' Можно и на почту.' : ''}</p>
+          <a class="btn btn-accent btn-block" href="/messages/support">Написать в поддержку</a>
+          ${mail ? html`<a class="f-mail" href="mailto:${mail}">${mail}</a>` : ''}
+        </div>
       </div>
       <div class="f-bottom"><div class="f-copy"><b>© ${new Date().getFullYear()} Торгана</b>${op ? html`<span>${op.name}, ИНН ${op.inn}, ОГРНИП ${op.ogrnip}</span>` : ''}</div>
         <nav class="f-docs" aria-label="Документы">${docs.map(([href, label]) => html`<a href="${href}">${label}</a>`)}${Number(S.config.metrika) ? html`<a href="#" data-cookie-settings>Настройки cookie</a>` : ''}</nav></div>
