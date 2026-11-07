@@ -486,24 +486,26 @@
   }
 
   // ================= каркас: шапка, меню, подвал =================
+  // Шапка (1.23, вариант B): всё в одну строку — логотип, поиск с городом внутри, избранное, сообщения,
+  // уведомления, «Разместить», меню. На телефоне поиск — второй строкой на главной (см. viewHome).
   function renderHeader() {
     const path = location.pathname;
-    const isHome = path === '/';
     const q = path === '/search' ? new URLSearchParams(location.search).get('q') || '' : '';
     $('#header').innerHTML = String(html`<div class="wrap header-in">
       ${logo()}
-      ${isHome ? '' : html`<form class="search header-search" role="search" data-search>
+      <form class="search header-search" role="search" data-search>
         ${ic('search', 18)}
         <label class="sr" for="hq">Поиск по объявлениям</label>
-        <input id="hq" name="q" type="search" placeholder="Поиск по всей России" value="${q}" autocomplete="off">
+        <input id="hq" name="q" type="search" placeholder="Поиск по объявлениям" value="${q}" autocomplete="off" enterkeyhint="search">
+        <button type="button" class="hs-city" data-city-btn aria-label="Город: ${S.city || 'Вся Россия'}">${ic('pin', 15, 2)}<span>${S.city || 'Вся Россия'}</span></button>
         <button class="btn btn-accent btn-sm" type="submit">Найти</button>
-      </form>`}
+      </form>
       <nav class="header-nav" aria-label="Основное">
-        <a href="/favorites" class="nav-link hide-m">${ic('heart', 20)}<span class="nav-text">Избранное</span></a>
-        <a href="/messages" class="nav-link hide-m">${ic('chat', 20)}<span class="nav-text">Сообщения</span><span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span></a>
-        <a href="/new" class="btn btn-dark btn-sm hide-m" style="margin-left:8px">Разместить</a>
-        ${S.user ? '' : html`<a href="/login" class="nav-link hide-m" style="margin-left:4px">Войти</a>`}
-        ${S.user ? html`<button type="button" class="icon-btn bell-btn" data-bell aria-label="Уведомления" aria-haspopup="dialog">${ic('bell', 21, 1.9)}<span class="badge ${S.notices ? '' : 'hidden'}" data-notices>${S.notices || 0}</span></button>` : ''}
+        <a href="/favorites" class="icon-btn hd-ic hide-m" aria-label="Избранное" title="Избранное">${ic('heart', 21, 1.9)}</a>
+        <a href="/messages" class="icon-btn hd-ic hide-m" aria-label="Сообщения" title="Сообщения">${ic('chat', 21, 1.9)}<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span></a>
+        ${S.user ? html`<button type="button" class="icon-btn hd-ic bell-btn" data-bell aria-label="Уведомления" title="Уведомления" aria-haspopup="dialog">${ic('bell', 21, 1.9)}<span class="badge ${S.notices ? '' : 'hidden'}" data-notices>${S.notices || 0}</span></button>` : ''}
+        <a href="/new" class="btn btn-dark btn-sm hide-m hd-new">${ic('plus', 17, 2.4)}Разместить</a>
+        ${S.user ? '' : html`<a href="/login" class="nav-link hide-m">Войти</a>`}
         <button type="button" class="icon-btn menu-btn" data-menu aria-label="Меню" aria-haspopup="dialog">${ic('menu', 22, 2)}</button>
       </nav>
     </div>`);
@@ -734,6 +736,16 @@
     if (!sp.has('city') && S.city && params.city === undefined) sp.set('city', S.city);
     go(`/search?${sp}`);
   }
+  // Кнопка города в строке поиска: выбрать город и обновить страницу (лента и поиск учитывают город).
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-city-btn]');
+    if (!b) return;
+    e.preventDefault();
+    cityModal(() => {
+      renderHeader();
+      if (location.pathname === '/search') { const p = new URLSearchParams(location.search); if (S.city) p.set('city', S.city); else p.delete('city'); go(`/search?${p}`, true); } else render();
+    });
+  });
   // Все строки поиска (в шапке и на главной) — form[data-search] с полем q.
   document.addEventListener('submit', (e) => {
     const f = e.target.closest('form[data-search]');
@@ -916,16 +928,15 @@
     app.innerHTML = String(html`
       <section class="wrap home-top">
         <h1 class="sr">Торгана — объявления по всей России</h1>
-        <div class="home-find">
-          <form class="search home-search" role="search" data-search>
-            ${ic('search', 20)}
-            <label class="sr" for="q">Что вы ищете</label>
-            <input id="q" name="q" type="search" placeholder="Что вы ищете?" autocomplete="off" enterkeyhint="search">
-            <button class="btn btn-accent" type="submit">Найти</button>
-          </form>
-          <button type="button" class="city-btn" id="city-btn">${ic('pin', 18)}<span>${S.city || 'Вся Россия'}</span>${ic('down', 16, 2)}</button>
-        </div>
-        <div class="cats">${S.config.categories.map((c) => html`<a class="cat" href="${cpath(c.id, S.city)}"><span class="cat-ic">${catIc(c.id)}</span>${c.name}</a>`)}</div>
+        <form class="search home-search" role="search" data-search>
+          ${ic('search', 20)}
+          <label class="sr" for="q">Что вы ищете</label>
+          <input id="q" name="q" type="search" placeholder="Что вы ищете?" autocomplete="off" enterkeyhint="search">
+          <button type="button" class="hs-city" data-city-btn aria-label="Город: ${S.city || 'Вся Россия'}">${ic('pin', 15, 2)}<span>${S.city || 'Вся Россия'}</span></button>
+        </form>
+        <div class="cat-rail"><button type="button" class="cat-arrow prev" data-cat-scroll="-1" aria-label="Назад">${ic('left', 18, 2.2)}</button>
+          <nav class="cat-pills" aria-label="Категории"><a class="cat-pill on" href="/search${S.city ? `?city=${encodeURIComponent(S.city)}` : ''}">${ic('list', 17, 2)}Все</a>${S.config.categories.map((c) => html`<a class="cat-pill" href="${cpath(c.id, S.city)}">${catIc(c.id, 18)}${c.name}</a>`)}</nav>
+          <button type="button" class="cat-arrow next" data-cat-scroll="1" aria-label="Дальше">${ic('right', 18, 2.2)}</button></div>
       </section>
 
       <section class="wrap home-feed">
@@ -933,13 +944,19 @@
         <div id="feed" class="feed">${skeletonGrid(15)}</div>
         <div class="more hidden"></div>
       </section>`);
-    $('#city-btn').onclick = () => cityModal(() => render());
     const feed = listingFeed($('#feed'), S.city ? { city: S.city } : {}, {
       limit: 30,
       auto: true,
       empty: html`<div class="empty"><h3>${S.city ? `В городе ${S.city} пока нет объявлений` : 'Здесь появятся первые объявления'}</h3><p>Разместите своё — это бесплатно и займёт пару минут.</p><a class="btn btn-dark" href="/new">Разместить объявление</a></div>`
     });
-    cleanup = feed.stop;
+    // Стрелки ленты категорий: видны, только когда есть куда листать.
+    const rail = $('.cat-rail'); const pills = $('.cat-pills', rail);
+    const railPaint = () => { rail.classList.toggle('can-prev', pills.scrollLeft > 4); rail.classList.toggle('can-next', pills.scrollLeft + pills.clientWidth < pills.scrollWidth - 4); };
+    pills.addEventListener('scroll', railPaint, { passive: true });
+    $$('[data-cat-scroll]', rail).forEach((b) => { b.onclick = () => pills.scrollBy({ left: Number(b.dataset.catScroll) * pills.clientWidth * 0.7 }); });
+    window.addEventListener('resize', railPaint);
+    railPaint();
+    cleanup = () => { feed.stop(); window.removeEventListener('resize', railPaint); };
     await feed.first;
     await adRow($('#feed'), S.city ? { city: S.city } : {}, 'feed', S.city ? `в городе ${S.city}` : '');
   }
