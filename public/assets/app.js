@@ -1184,7 +1184,7 @@
     const atClock = new Date((at0 || tomorrow10) + MSK).toISOString().slice(11, 16);
     const step = (n, sid, title, sub, body) => html`<section class="ed-step" id="${sid}"><div class="ed-step-h"><span class="ed-kick">Шаг ${n} из ${ED_STEPS.length}</span><h2>${title}</h2>${sub ? html`<p>${sub}</p>` : ''}</div><div class="ed-err" role="alert" hidden></div>${body}
       <div class="ed-nav">${n > 1 ? html`<button type="button" class="btn btn-soft" data-prev>${ic('left', 18, 2)}Назад</button>` : html`<span></span>`}${n < ED_STEPS.length
-    ? html`<button type="button" class="btn btn-dark" data-next>Далее: ${ED_STEPS[n][1].toLowerCase()}${ic('right', 18, 2)}</button>`
+    ? html`<button type="button" class="btn btn-dark" data-next>Далее${ic('right', 18, 2)}</button>`
     : html`<button type="button" class="btn btn-accent" data-submit>${sendLabel}</button>`}</div></section>`;
     const opt = (name, icon, title, sub, on, id = '') => html`<label class="ed-opt" id="${id || name}-opt"><span class="ed-opt-top"><span class="ed-opt-ic">${ic(icon, 20)}</span><input type="checkbox" ${id ? raw(`id="${id}"`) : raw(`name="${name}"`)} ${on ? raw('checked') : ''}></span><b>${title}</b><small>${sub}</small></label>`;
 
@@ -1637,7 +1637,6 @@
       const last = i === ED_STEPS.length - 1;
       $('.ed-dock [data-prev]').style.visibility = i ? '' : 'hidden';
       $('#dock-next').classList.toggle('hidden', last);
-      if (!last) $('#dock-next').textContent = l ? 'Далее' : `Далее: ${ED_STEPS[i + 1][1].toLowerCase()}`;
       $('#dock-send').classList.toggle('hidden', !l && !last);
       changed();
       const top = $('.ed-steps').getBoundingClientRect().top + window.scrollY - 84;
