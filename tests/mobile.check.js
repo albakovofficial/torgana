@@ -401,9 +401,15 @@ async function main() {
           if (!(await page.$('.pick .pick-it'))) errors.push('список не открылся');
         } else if (open === 'push-ask') {
           // Первый заход вошедшего: один раз спрашиваем про уведомления; после «Не сейчас» — больше никогда.
-          await page.waitForSelector('.ask-push', { timeout: 4000 }).catch(() => errors.push('вопрос про уведомления не появился'));
-          await page.screenshot({ path: path.join(SHOTS, `${vpName}-push-ask-open.png`) });
-          await page.click('.ask-push [data-x]');
+          // Если браузер проверки не умеет push (так бывает в GitHub Actions), вопроса быть не должно — но метка ставится.
+          const shown = await page.waitForSelector('.ask-push', { timeout: 4000 }).then(() => true).catch(() => false);
+          if (shown) {
+            await page.screenshot({ path: path.join(SHOTS, `${vpName}-push-ask-open.png`) });
+            await page.click('.ask-push [data-x]');
+          } else {
+            const st = await page.evaluate(() => ({ asked: !!localStorage.getItem('tg_push_asked'), push: 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && Notification.permission === 'default' }));
+            if (st.push || !st.asked) errors.push('вопрос про уведомления не появился');
+          }
           await page.reload({ waitUntil: 'networkidle' });
           await page.waitForTimeout(1800);
           if (await page.$('.ask-push')) errors.push('вопрос про уведомления повторился');
