@@ -4089,10 +4089,10 @@
   }
 
   // Модерация → Почта: подключение SMTP, проверка письмом, журнал отправки.
-  function renderMailAdmin(box, { config: c, stats: st }) {
+  function renderMailAdmin(box, { config: c, stats: st, codes }) {
     const SECURITY = [['ssl', 'SSL (обычно порт 465)'], ['starttls', 'STARTTLS (порт 587 или 2525)']];
     const STATUS = { pending: 'в очереди', sent: 'отправлено', failed: 'не доставлено' };
-    const KIND = { verify: 'Подтверждение email', reset: 'Восстановление пароля', message: 'Новое сообщение', moderation: 'Модерация', review: 'Отзывы', support: 'Ответ поддержки', account: 'Блокировка аккаунта', mod: 'Модератору о новом', billing: 'Оплата и тарифы', code: 'Код подтверждения', test: 'Проверка' };
+    const KIND = { device: 'Код для модерации', ops: 'Владельцу о сбое', verify: 'Подтверждение email', reset: 'Восстановление пароля', message: 'Новое сообщение', moderation: 'Модерация', review: 'Отзывы', support: 'Ответ поддержки', account: 'Блокировка аккаунта', mod: 'Модератору о новом', billing: 'Оплата и тарифы', code: 'Код подтверждения', test: 'Проверка' };
     const domain = (c.from || 'no-reply@torgana.ru').split('@')[1];
     box.innerHTML = String(html`
       <div class="stats">
@@ -4120,6 +4120,11 @@
           <p class="muted" style="margin:0;font-size:13px">Чтобы письма не попадали в спам, домен ${domain} подтверждается в SMTP.BZ, а в DNS домена добавляются записи SPF и DKIM, которые выдаст сервис.</p>
         </form>
         <div style="display:flex;flex-direction:column;gap:20px">
+          <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+            <h2 class="h2" style="margin:0">Коды по почте</h2>
+            <label class="switch"><span>Спрашивать код из письма<small>6 цифр при регистрации и входе с неподтверждённой почтой, код для входа в модерацию с нового устройства</small></span><input type="checkbox" id="m-codes" ${codes ? raw('checked') : ''} ${c.ready ? '' : raw('disabled')}><span class="track"></span></label>
+            ${codes ? '' : html`<div class="banner warn" style="font-size:14px">${c.ready ? 'Коды выключены: регистрация и вход — без кода, модерация — без подтверждения устройства. Включите, когда тестовое письмо дойдёт до почты.' : 'Почта не подключена — коды не отправить, поэтому они выключены.'}</div>`}
+          </div>
           <form class="panel" id="mt" style="display:flex;flex-direction:column;gap:14px">
             <h2 class="h2" style="margin:0">Проверка</h2>
             <p class="muted" style="margin:0;font-size:14px">Отправим тестовое письмо сразу, минуя очередь, и покажем ответ почтового сервиса.</p>
@@ -4142,6 +4147,11 @@
           </div>
         </div>
       </div>`);
+    const mc = $('#m-codes', box);
+    mc.onchange = async () => {
+      if (mc.checked && !(await confirmModal('Включить коды по почте?', 'Убедитесь, что тестовое письмо дошло: иначе новые пользователи не смогут зарегистрироваться, а вы — войти в модерацию с нового устройства.', 'Включить'))) { mc.checked = false; return; }
+      try { await api('PUT', '/api/admin/mail/codes', { on: mc.checked }); toast(mc.checked ? 'Коды включены' : 'Коды выключены'); render(); } catch (ex) { mc.checked = !mc.checked; toast(ex.message, true); }
+    };
     const f = $('#mf', box);
     // Selectel закрывает исходящий порт 465 — SMTP.BZ подключаем через 2525 со STARTTLS (как в ALBAKOV).
     $('#preset', box).onclick = () => { f.host.value = 'connect.smtp.bz'; f.port.value = '2525'; f.security.value = 'starttls'; if (!f.from.value) f.from.value = 'no-reply@torgana.ru'; if (!f.fromName.value) f.fromName.value = 'Торгана'; f.user.focus(); };
