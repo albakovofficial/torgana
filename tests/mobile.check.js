@@ -163,7 +163,13 @@ async function seed(base, browser) {
   const pendingPay = (await shop.post('/api/my/plan/pay', { plan: 'pro', months: 12 })).data.id;
   for (let i = 0; i < 3; i++) await client(base).post('/api/stats/impressions', { ids: [s1, s2] }, { origin: base, 'user-agent': ua(20 + i) });
   await client(base).post('/api/stats/view', { id: s1, src: 'ad' }, { origin: base, 'user-agent': ua(20) });
-  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay };
+  // 1.20: проверенное объявление ждёт выбранного времени; обмен — у дивана.
+  const scheduled = (await seller.post('/api/listings', { title: 'Палатка двухместная', category: 'hobby', city: 'Казань', price: '6500', exchange: true, publishAt: Date.now() + 26 * 3600 * 1000 })).data.id;
+  await admin.post(`/api/admin/listings/${scheduled}/restore`);
+  const sofa = (await seller.get(`/api/listings/${ids[4]}`)).data.listing;
+  await seller.patch(`/api/listings/${ids[4]}`, { ...sofa, photos: sofa.photos.map((u) => u.split('/').pop()), subcategory: sofa.subcategory, metro: '', video: '', exchange: true, bargain: false });
+  await admin.post(`/api/admin/listings/${ids[4]}/restore`);
+  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay, scheduled };
 }
 
 function pages(d) {
@@ -282,7 +288,14 @@ function pages(d) {
     ['settings-biz-ok', '/profile/settings#s-biz', d.shop],
     ['settings-account', '/profile/settings#s-acc', d.seller],
     ['settings-city', '/profile/settings#s-city', d.buyer],
-    ['user-own', `/u/${d.seller.user.id}`, d.seller]
+    ['user-own', `/u/${d.seller.user.id}`, d.seller],
+    // 1.20: подача по шагам, торг и обмен, публикация в выбранное время
+    ['new-step-price', '/new', d.seller, 'step:2'],
+    ['new-step-publish', '/new', d.seller, 'step:5'],
+    ['edit-step-publish', `/edit/${d.ids[0]}`, d.seller, 'step:5'],
+    ['my-scheduled', '/profile?status=scheduled', d.seller],
+    ['listing-scheduled', `/l/${d.scheduled}`, d.seller],
+    ['search-exchange', '/search?exchange=1', null]
   ];
 }
 
@@ -348,9 +361,13 @@ async function main() {
           await page.keyboard.type('12');
           if ((await page.$$('.code-box')).length !== 6) errors.push('нет шести клеток для кода');
         } else if (open === 'submit') {
-          await page.click('.ed-dock [data-submit], .ed-panel [data-submit] >> visible=true');
-          await page.waitForTimeout(500);
-          if (!(await page.$('.ed-step.bad'))) errors.push('ошибки формы не подсветились');
+          // Пустая форма: «Далее» с фото на «Что продаёте», ещё раз «Далее» — шаг подсвечивается и не пускает дальше.
+          for (let k = 0; k < 2; k++) { await page.click('[data-next] >> visible=true'); await page.waitForTimeout(300); }
+          if (!(await page.$('.ed-step.cur.bad#s-what'))) errors.push('ошибки шага не подсветились');
+        } else if (/^step:\d$/.test(open)) {
+          await page.click(`[data-step="${open.slice(5)}"]`);
+          await page.waitForTimeout(400);
+          if (!(await page.$(`.ed-step.cur`))) errors.push('шаг не открылся');
         } else if (open === '#gvbtn') {
           await page.click(open);
           await page.waitForTimeout(300);

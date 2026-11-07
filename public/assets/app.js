@@ -347,7 +347,7 @@
         <div class="card-body">
           <span class="card-title">${it.title}</span>
           ${it.summary ? html`<span class="card-sum">${it.summary}</span>` : ''}
-          <span class="card-meta">${meta}${it.delivery ? html` · <span class="ok">Доставка</span>` : ''}</span>
+          <span class="card-meta">${meta}${it.delivery ? html` · <span class="ok">Доставка</span>` : ''}${it.exchange ? html` · <span class="ok">Обмен</span>` : ''}</span>
         </div>
       </a>
       <button type="button" class="fav-btn ${it.isFav ? 'on' : ''}" data-fav="${it.id}" aria-label="${it.isFav ? 'Убрать из избранного' : 'В избранное'}" aria-pressed="${it.isFav ? 'true' : 'false'}">${ic('heart', 20)}</button>
@@ -682,7 +682,7 @@
     }
     if (params.metro) activeChips.push([`м. ${params.metro}`, without('metro')]);
     const subChips = category && !sub ? subsOf(category) : [];
-    const nFilters = ['category', 'city', 'min', 'max', 'delivery', 'metro'].filter((k) => params[k]).length + (sub ? 1 : 0) + Object.keys(params).filter((k) => k.startsWith('a_') && params[k]).length;
+    const nFilters = ['category', 'city', 'min', 'max', 'delivery', 'bargain', 'exchange', 'metro'].filter((k) => params[k]).length + (sub ? 1 : 0) + Object.keys(params).filter((k) => k.startsWith('a_') && params[k]).length;
     app.innerHTML = String(html`<div class="wrap search-page">
       <aside class="filters collapsed" id="filters">
         <button type="button" class="btn btn-soft btn-block" id="filters-toggle" style="display:none">${ic('filter', 18)}Фильтры${nFilters ? html`<span class="f-count">${nFilters}</span>` : ''}</button>
@@ -701,7 +701,7 @@
           <div class="field"><span class="label">Цена, ₽</span>
             <div class="row"><label class="sr" for="f-min">Цена от</label><input id="f-min" name="min" class="input" inputmode="numeric" placeholder="от" value="${params.min || ''}">
             <label class="sr" for="f-max">Цена до</label><input id="f-max" name="max" class="input" inputmode="numeric" placeholder="до" value="${params.max || ''}"></div></div>
-          <label class="switch"><span>С доставкой</span><input type="checkbox" name="delivery" value="1" ${params.delivery === '1' ? raw('checked') : ''}><span class="track"></span></label>
+          ${[['delivery', 'С доставкой'], ['bargain', 'Торг уместен'], ['exchange', 'Возможен обмен']].map(([k, t]) => html`<label class="switch"><span>${t}</span><input type="checkbox" name="${k}" value="1" ${params[k] === '1' ? raw('checked') : ''}><span class="track"></span></label>`)}
           <button class="btn btn-dark btn-block" type="submit">Показать</button>
           <a href="/search${params.q ? `?q=${encodeURIComponent(params.q)}` : ''}" class="btn btn-soft btn-block">Сбросить</a>
         </form>
@@ -796,7 +796,7 @@
 
   // ---------- сохранённые поиски ----------
   // Параметры поиска в том же виде, что хранит сервер: только эти поля, без пустых, в этом порядке.
-  const SEARCH_KEYS = ['q', 'category', 'sub', 'city', 'metro', 'min', 'max', 'delivery'];
+  const SEARCH_KEYS = ['q', 'category', 'sub', 'city', 'metro', 'min', 'max', 'delivery', 'bargain', 'exchange'];
   const searchParams = (p) => {
     const x = subOf(p.sub);
     const attrs = x ? Object.keys(p).filter((k) => /^a_[A-Za-z]+(_min|_max)?$/.test(k) && x.fields.some((f) => k.replace(/^a_|_min$|_max$/g, '') === f.key)).sort() : [];
@@ -905,6 +905,8 @@
       l.metro ? ['Метро', station] : null,
       l.district ? ['Район', l.district] : null,
       ['Доставка', l.delivery ? 'Отправит по России' : 'Только встреча'],
+      l.price !== null ? ['Торг', l.bargain ? 'Уместен' : 'Без торга'] : null,
+      l.exchange ? ['Обмен', 'Возможен'] : null,
       ['Опубликовано', when(l.createdAt)]
     ].filter(Boolean);
 
@@ -917,8 +919,12 @@
     } else if (l.isOwner && l.status === 'pending') {
       ownerBanner = html`<div class="banner warn"><strong>Объявление на проверке.</strong> Каждое объявление перед публикацией проверяет модератор — обычно это занимает несколько часов${S.config.mail ? ', о решении напишем на почту' : ''}.
         ${l.flags ? html`Оно похоже на товар из раздела «${l.flags}» <a href="/page/rules" style="text-decoration:underline">правил</a> — проверим внимательнее.` : ''}</div>`;
+    } else if (l.isOwner && l.status === 'scheduled') {
+      ownerBanner = html`<div class="banner ok"><strong>Проверено — опубликуем ${atTime(l.publishAt)} (мск).</strong> До этого объявление видите только вы. Опубликовать раньше можно кнопкой справа.</div>`;
     } else if (l.isOwner && l.status === 'archived') {
-      ownerBanner = html`<div class="banner soft"><strong>Объявление снято с публикации.</strong> Его не видят покупатели.</div>`;
+      ownerBanner = isExpired(l)
+        ? html`<div class="banner soft"><strong>Прошло 30 дней — объявление снято.</strong> Если ещё актуально, опубликуйте снова: это бесплатно, оно окажется среди свежих.</div>`
+        : html`<div class="banner soft"><strong>Объявление снято с публикации.</strong> Его не видят покупатели.</div>`;
     }
 
     let actions;
@@ -930,14 +936,15 @@
         <a class="btn btn-dark btn-lg btn-block" href="/edit/${l.id}">Редактировать</a>
         ${['active', 'sold', 'archived'].includes(l.status) ? html`<a class="btn btn-soft btn-lg btn-block" href="/profile/stats/${l.id}">${ic('chart', 20)}Статистика</a>` : ''}
         ${l.status === 'active' ? html`<button class="btn btn-soft btn-lg btn-block" data-status="sold">Отметить проданным</button>` : ''}
-        ${l.status === 'sold' || l.status === 'archived' ? html`<button class="btn btn-soft btn-lg btn-block" data-status="active">Опубликовать снова</button>` : ''}
-        ${l.status === 'active' ? html`<button class="btn btn-line btn-block" data-status="archived">Снять с публикации</button>` : ''}
+        ${l.status === 'sold' || l.status === 'archived' ? html`<button class="btn ${isExpired(l) ? 'btn-accent' : 'btn-soft'} btn-lg btn-block" data-status="active">Опубликовать снова</button>` : ''}
+        ${l.status === 'scheduled' ? html`<button class="btn btn-accent btn-lg btn-block" data-status="active">Опубликовать сейчас</button>` : ''}
+        ${l.status === 'active' || l.status === 'scheduled' ? html`<button class="btn btn-line btn-block" data-status="archived">${l.status === 'scheduled' ? 'Не публиковать' : 'Снять с публикации'}</button>` : ''}
         <button class="btn btn-danger btn-block" data-delete>Удалить</button>
       </div>`;
     } else if (l.status === 'active') {
       actions = html`<div style="display:flex;flex-direction:column;gap:10px">
         <button class="btn btn-accent btn-lg btn-block" data-write>${ic('chat', 20)}Написать продавцу</button>
-        ${l.price ? html`<button class="btn btn-soft btn-lg btn-block" data-offer>${ic('tag', 19, 2)}Предложить цену</button>` : ''}
+        ${l.price && l.bargain ? html`<button class="btn btn-soft btn-lg btn-block" data-offer>${ic('tag', 19, 2)}Предложить цену</button>` : ''}
         <button class="btn btn-line btn-block" data-report>${ic('warn', 18)}Пожаловаться</button>
       </div>`;
     } else {
@@ -1050,7 +1057,7 @@
       b.onclick = async () => {
         try {
           await api('PATCH', `/api/listings/${l.id}`, { status: b.dataset.status });
-          toast({ sold: 'Отмечено как проданное', active: 'Объявление снова опубликовано', archived: 'Снято с публикации' }[b.dataset.status]);
+          toast({ sold: 'Отмечено как проданное', active: l.status === 'scheduled' ? 'Объявление опубликовано' : 'Объявление снова опубликовано', archived: l.status === 'scheduled' ? 'Публикация отменена' : 'Снято с публикации' }[b.dataset.status]);
           render();
         } catch (e) { toast(e.message, true); }
       };
@@ -1129,12 +1136,19 @@
   }
 
   // ================= новое объявление и правка =================
-  // Пять шагов (фото, что продаёте, цена, где, описание). На компьютере справа — превью карточки,
-  // что осталось заполнить и кнопка; на телефоне кнопка закреплена внизу вместо нижнего меню.
-  // Новое объявление пишется в черновик в браузере (tg_draft) — закрыли страницу, ничего не потеряли.
+  // Шесть шагов по одному на экране: фото, что продаёте, цена (торг, обмен), где, описание, публикация (сразу или в выбранное время).
+  // Сверху полоска шагов — можно перейти к любому; «Далее» проверяет обязательное на текущем шаге.
+  // На компьютере справа — превью карточки, что осталось заполнить и кнопка; на телефоне внизу «‹» и «Далее» вместо нижнего меню.
+  // Новое объявление пишется в черновик в браузере (tg_draft) вместе с шагом — закрыли страницу, ничего не потеряли.
   const UNIT_LABEL = { '': 'за всё', мес: 'в месяц', сутки: 'за сутки', час: 'за час', 'м²': 'за м²', шт: 'за штуку' };
   const DESC_TIPS = ['Состояние', 'Комплектация', 'Причина продажи', 'Дефекты', 'Где можно посмотреть'];
   const DRAFT_KEY = 'tg_draft';
+  const ED_STEPS = [['s-photos', 'Фото'], ['s-what', 'Что продаёте'], ['s-price', 'Цена'], ['s-where', 'Где'], ['s-desc', 'Описание'], ['s-publish', 'Публикация']];
+  // Публикация в выбранное время: дни на 30 вперёд и время с шагом 30 минут — по Москве (UTC+3 круглый год).
+  const MSK = 3 * 3600 * 1000;
+  const mskDay = (ts) => new Date(ts + MSK).toISOString().slice(0, 10);
+  const mskTs = (day, time) => Date.parse(`${day}T${time}:00Z`) - MSK;
+  const dayLabelLong = (day) => { const t = new Date(`${day}T12:00:00Z`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC' }); return t[0].toUpperCase() + t.slice(1); };
   const draftLoad = () => { try { const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); return d && Date.now() - d.at < 20 * 3600 * 1000 ? d : null; } catch { return null; } };
   const draftSave = (d) => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...d, at: Date.now() })); } catch { /* приватный режим */ } };
   const draftDrop = () => { try { localStorage.removeItem(DRAFT_KEY); } catch { /* нет хранилища */ } };
@@ -1155,10 +1169,24 @@
       photos: (src.photos || []).filter((p) => p.file),
       category: src.category || '', condition: src.condition || '', priceUnit: src.priceUnit || '',
       sub: src.subcategory || '', attrs: { ...(src.attrs || {}) }, video: srcVideo,
-      negotiable: !!src.negotiable, busy: 0, tried: false
+      negotiable: !!src.negotiable, busy: 0, tried: false,
+      step: Math.min(Math.max(Number(src.step) || 0, 0), ED_STEPS.length - 1)
     };
     const units = S.config.priceUnits || [''];
-    const step = (n, sid, title, sub, body) => html`<section class="ed-step" id="${sid}"><div class="ed-step-h"><span class="ed-n">${n}</span><div><h2>${title}</h2>${sub ? html`<p>${sub}</p>` : ''}</div></div><div class="ed-err" role="alert" hidden></div>${body}</section>`;
+    const sendLabel = l ? 'Сохранить' : 'Отправить на проверку';
+    // Время публикации выбирают, пока объявление ещё не опубликовано.
+    const canSchedule = !l || ['pending', 'scheduled', 'rejected'].includes(l.status);
+    const at0 = src.publishAt && src.publishAt > Date.now() ? src.publishAt : null;
+    const tomorrow10 = mskTs(mskDay(Date.now() + 24 * 3600 * 1000), '10:00');
+    const days = Array.from({ length: 31 }, (_, i) => mskDay(Date.now() + i * 24 * 3600 * 1000));
+    const times = Array.from({ length: 48 }, (_, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`);
+    const atDay = mskDay(at0 || tomorrow10);
+    const atClock = new Date((at0 || tomorrow10) + MSK).toISOString().slice(11, 16);
+    const step = (n, sid, title, sub, body) => html`<section class="ed-step" id="${sid}"><div class="ed-step-h"><span class="ed-kick">Шаг ${n} из ${ED_STEPS.length}</span><h2>${title}</h2>${sub ? html`<p>${sub}</p>` : ''}</div><div class="ed-err" role="alert" hidden></div>${body}
+      <div class="ed-nav">${n > 1 ? html`<button type="button" class="btn btn-soft" data-prev>${ic('left', 18, 2)}Назад</button>` : html`<span></span>`}${n < ED_STEPS.length
+    ? html`<button type="button" class="btn btn-dark" data-next>Далее: ${ED_STEPS[n][1].toLowerCase()}${ic('right', 18, 2)}</button>`
+    : html`<button type="button" class="btn btn-accent" data-submit>${sendLabel}</button>`}</div></section>`;
+    const opt = (name, icon, title, sub, on, id = '') => html`<label class="ed-opt" id="${id || name}-opt"><span class="ed-opt-top"><span class="ed-opt-ic">${ic(icon, 20)}</span><input type="checkbox" ${id ? raw(`id="${id}"`) : raw(`name="${name}"`)} ${on ? raw('checked') : ''}></span><b>${title}</b><small>${sub}</small></label>`;
 
     app.innerHTML = String(html`<div class="wrap ed">
       <div class="ed-head">
@@ -1167,6 +1195,7 @@
         <p>${l ? 'После сохранения объявление снова проверит модератор — обычно несколько часов. Пока идёт проверка, его не видно в поиске.' : 'Бесплатно и без лимитов. Каждое объявление проверяет модератор — обычно это несколько часов.'}</p>
         ${draft ? html`<div class="ed-draft">${ic('refresh', 16, 2)}<span>Восстановили черновик от ${when(draft.at)}</span><button type="button" class="btn btn-soft btn-sm" id="draft-drop">Начать заново</button></div>` : ''}
       </div>
+      <nav class="ed-steps" aria-label="Шаги">${ED_STEPS.map(([sid, t], i) => html`<button type="button" data-step="${i}" aria-controls="${sid}"><i></i><span>${ic('check', 14, 2.6)}${t}</span></button>`)}</nav>
       <div class="ed-grid">
         <form id="ed" class="ed-form" novalidate>
           ${step(1, 's-photos', 'Фото и видео', 'До 10 фото и одно видео до минуты. Первое фото — обложка в поиске.', html`<div id="photos"></div>
@@ -1184,13 +1213,15 @@
             <div class="ed-attrs hidden" id="attrs"></div>
             <div class="field hidden" id="cond-field"><span class="label">Состояние</span><div class="ed-seg" role="radiogroup" aria-label="Состояние">
               ${[['new', 'Новое'], ['used', 'Б/у'], ['', 'Не указывать']].map(([v, t]) => html`<button type="button" role="radio" data-cond="${v}">${t}</button>`)}</div></div>`)}
-          ${step(3, 's-price', 'Цена', '', html`
-            <div class="ed-price">
-              <div class="ed-money"><label class="sr" for="price">Цена в рублях</label><input id="price" name="price" class="input" inputmode="numeric" autocomplete="off" placeholder="0" value="${src.price !== null && src.price !== undefined && src.price !== '' ? NF.format(Number(String(src.price).replace(/\D/g, ''))) : ''}"><span>₽</span></div>
-              <label class="ed-neg"><input type="checkbox" id="neg" ${st.negotiable ? raw('checked') : ''}><span class="track"></span><span>Договорная</span></label>
-            </div>
+          ${step(3, 's-price', 'Сколько стоит?', 'Цена и условия сделки — покупатели видят их сразу', html`
+            <div class="ed-money"><label class="sr" for="price">Цена в рублях</label><input id="price" name="price" class="input" inputmode="numeric" autocomplete="off" placeholder="0" value="${src.price !== null && src.price !== undefined && src.price !== '' ? NF.format(Number(String(src.price).replace(/\D/g, ''))) : ''}"><span>₽</span></div>
             ${units.length > 1 ? html`<div class="ed-seg ed-units" role="radiogroup" aria-label="За что цена">${units.map((u) => html`<button type="button" role="radio" data-unit="${u}">${UNIT_LABEL[u] || `за ${u}`}</button>`)}</div>` : ''}
-            <div class="ed-hint hidden" id="price-hint"></div>`)}
+            <div class="ed-hint hidden" id="price-hint"></div>
+            <div class="field"><span class="label">Условия сделки</span><div class="ed-opts">
+              ${opt('bargain', 'chat', 'Торг уместен', 'Покупатели смогут предложить свою цену — кнопкой «Предложить цену»', src.bargain !== false)}
+              ${opt('exchange', 'refresh', 'Возможен обмен', 'Покажем «Обмен» в объявлении и в фильтрах поиска', !!src.exchange)}
+              ${opt('', 'info', 'Договорная', 'Цену не показываем — договоритесь в чате', st.negotiable, 'neg')}
+            </div></div>`)}
           ${step(4, 's-where', 'Где', '', html`
             <div class="field"><label for="city">Город</label>
               <div class="ed-icon-input">${ic('pin', 18)}<input id="city" name="city" class="input" list="cities" autocomplete="address-level2" value="${src.city || S.user.city || S.city || ''}" placeholder="Начните вводить город"></div>
@@ -1205,7 +1236,20 @@
           ${step(5, 's-desc', 'Описание', 'Честное описание экономит время и вам, и покупателю.', html`
             <div class="ed-tips" aria-label="Что написать">${DESC_TIPS.map((t) => html`<button type="button" class="chip" data-tip="${t}">${ic('plus', 14, 2.2)}${t}</button>`)}</div>
             <div class="ed-input"><label for="desc" class="sr">Описание</label><textarea id="desc" name="description" class="textarea" maxlength="4000" placeholder="Состояние, комплектация, причина продажи, особенности">${src.description || ''}</textarea><span class="ed-count" id="desc-count"></span></div>`)}
-          <p class="ed-rules muted">Нажимая «${l ? 'Сохранить' : 'Отправить на проверку'}», вы соглашаетесь с <a href="/page/rules" style="text-decoration:underline">правилами площадки</a>.</p>
+          ${step(6, 's-publish', 'Публикация', 'Объявление в любом случае сначала проверит модератор', html`
+            <div class="ed-note">${ic('clock', 20)}<span>${l && l.status === 'active' && l.expiresAt ? html`Опубликовано до <b>${dateShort(l.expiresAt)}</b>. Правка срок не меняет: после проверки объявление вернётся в поиск.` : html`Объявление висит <b>30 дней бесплатно</b>. Потом — «Опубликовать снова» в один клик, тоже бесплатно.`}</span></div>
+            ${canSchedule ? html`<fieldset class="ed-when"><legend class="label">Когда опубликовать</legend>
+              <div class="ed-opts">
+                <label class="ed-opt row"><input type="radio" name="pub-when" value="now" ${at0 ? '' : raw('checked')}><span><b>Сразу после проверки</b><small>Обычно это несколько часов</small></span></label>
+                <label class="ed-opt row"><input type="radio" name="pub-when" value="later" ${at0 ? raw('checked') : ''}><span><b>В выбранное время</b><small>Например, утром в выходной — когда больше покупателей</small></span></label>
+              </div>
+              <div class="ed-when-at ${at0 ? '' : 'hidden'}" id="when-at">
+                <div class="field"><label for="w-day">День</label><select id="w-day" class="select">${days.map((d) => html`<option value="${d}" ${d === atDay ? raw('selected') : ''}>${dayLabelLong(d)}</option>`)}</select></div>
+                <div class="field"><label for="w-time">Время</label><select id="w-time" class="select">${times.map((t) => html`<option value="${t}" ${t === atClock ? raw('selected') : ''}>${t}</option>`)}</select></div>
+                <small>По московскому времени. До публикации объявление видно только вам — в «Моих объявлениях» с меткой «Запланировано».</small>
+              </div>
+            </fieldset>` : ''}
+            <p class="ed-rules muted">Нажимая «${sendLabel}», вы соглашаетесь с <a href="/page/rules" style="text-decoration:underline">правилами площадки</a>.</p>`)}
         </form>
         <aside class="ed-side">
           <div class="ed-panel">
@@ -1213,12 +1257,12 @@
             <div class="ed-preview" id="preview" aria-hidden="true"></div>
             <div class="ed-ready"><div class="ed-ready-h"><b id="ready-n"></b><span id="ready-t"></span></div><div class="ed-bar-track"><i id="ready-bar"></i></div>
               <ul class="ed-check" id="check"></ul><small class="ed-req">* обязательно, остальное — по желанию</small></div>
-            <button type="button" class="btn btn-dark btn-lg btn-block" data-submit>${l ? 'Сохранить' : 'Отправить на проверку'}</button>
+            <button type="button" class="btn btn-dark btn-lg btn-block" data-submit>${sendLabel}</button>
             <a class="btn btn-soft btn-block" href="${l ? `/l/${l.id}` : '/profile'}">Отмена</a>
           </div>
         </aside>
       </div>
-      <div class="ed-dock"><div class="ed-dock-txt"><b id="dock-n"></b><span id="dock-t"></span></div><button type="button" class="btn btn-dark" data-submit>${l ? 'Сохранить' : 'На проверку'}</button></div>
+      <div class="ed-dock"><button type="button" class="icon-btn" data-prev aria-label="Назад">${ic('left', 20, 2)}</button><button type="button" class="btn btn-dark" data-next id="dock-next">Далее</button><button type="button" class="btn btn-accent" data-submit id="dock-send">${l ? 'Сохранить' : 'На проверку'}</button></div>
     </div>`);
     document.body.classList.add('editing');
     const form = $('#ed');
@@ -1506,13 +1550,17 @@
     });
 
     // ---------- готовность, превью, черновик ----------
+    // Не form.when: у элементов в браузерах появился свой метод when() (Observable API).
+    const laterOn = () => canSchedule && !!$('input[name="pub-when"][value="later"]:checked');
     const body = () => ({
       title: form.title.value.trim(), category: st.category, condition: CONDITION_CATS.has(st.category) ? st.condition : '',
       price: st.negotiable ? '' : priceDigits(), priceUnit: st.priceUnit, city: form.city.value.trim(),
       delivery: form.delivery.checked, description: form.description.value.trim(),
       photos: st.photos.filter((p) => p.file).map((p) => p.file),
       subcategory: st.sub, attrs: st.attrs, metro: $('#metro-field').classList.contains('hidden') ? '' : form.metro.value,
-      district: form.district.value.trim(), video: st.video && st.video.file ? st.video.file : ''
+      district: form.district.value.trim(), video: st.video && st.video.file ? st.video.file : '',
+      bargain: form.bargain.checked, exchange: form.exchange.checked,
+      publishAt: laterOn() ? mskTs($('#w-day').value, $('#w-time').value) : null
     });
     // Заполнены ли главные характеристики (те, что видны в карточке).
     const attrsDone = (b) => { const x = subOf(b.subcategory); return !x || !x.summary.length || x.summary.every((k) => b.attrs[k] !== undefined); };
@@ -1526,7 +1574,11 @@
       ['s-where', 'Город', (b) => b.city.length >= 2, true],
       ['s-desc', 'Описание', (b) => b.description.length >= 20, false]
     ];
-    const ERR = { 's-what': (b) => (b.title.length < 3 ? 'Напишите название — хотя бы пару слов.' : !b.category ? 'Выберите категорию.' : !b.subcategory && subsOf(b.category).length ? 'Выберите раздел — так объявление попадёт в нужные фильтры.' : ''), 's-where': (b) => (b.city.length < 2 ? 'Укажите город.' : '') };
+    const ERR = {
+      's-what': (b) => (b.title.length < 3 ? 'Напишите название — хотя бы пару слов.' : !b.category ? 'Выберите категорию.' : !b.subcategory && subsOf(b.category).length ? 'Выберите раздел — так объявление попадёт в нужные фильтры.' : ''),
+      's-where': (b) => (b.city.length < 2 ? 'Укажите город.' : ''),
+      's-publish': (b) => (b.publishAt !== null && b.publishAt < Date.now() + 5 * 60 * 1000 ? 'Выберите время позже — хотя бы через несколько минут.' : '')
+    };
     let saveTimer = null;
     function changed() {
       const b = body();
@@ -1539,17 +1591,22 @@
       $('#ready-n').textContent = `Заполнено на ${pct}%`;
       $('#ready-t').textContent = missing.length ? `осталось: ${missing.join(', ')}` : soft.length ? 'можно отправлять' : 'всё готово';
       $('#ready-bar').style.width = `${pct}%`;
-      $('#dock-n').textContent = missing.length ? `Осталось: ${missing.join(', ')}` : 'Можно отправлять';
-      $('#dock-t').textContent = missing.length ? `заполнено на ${pct}%` : soft.length ? `советуем добавить: ${soft.join(', ')}` : 'модератор проверит за несколько часов';
       $('#check').innerHTML = String(html`${CHECK.map(([sid, t, ok, req]) => html`<li class="${ok(b) ? 'ok' : ''}"><a href="#${sid}" data-goto="${sid}">${ic(ok(b) ? 'check' : 'plus', 15, 2.4)}${t}${req ? '*' : ''}</a></li>`)}`);
-      $$('[data-goto]').forEach((a) => { a.onclick = (e) => { e.preventDefault(); $(`#${a.dataset.goto}`).scrollIntoView({ behavior: 'smooth', block: 'start' }); }; });
+      $$('[data-goto]').forEach((a) => { a.onclick = (e) => { e.preventDefault(); goStep(ED_STEPS.findIndex(([sid]) => sid === a.dataset.goto)); }; });
+      // Шаг готов, если всё на нём заполнено; последний — когда готово обязательное.
+      $$('[data-step]').forEach((x) => {
+        const sid = ED_STEPS[Number(x.dataset.step)][0];
+        const own = CHECK.filter((c) => c[0] === sid);
+        x.classList.toggle('done', sid === 's-publish' ? !missing.length : own.length ? own.every((c) => c[2](b)) : false);
+      });
+      $('#bargain-opt').classList.toggle('hidden', st.negotiable); // без цены торговаться не о чем
       const first = st.photos.find((p) => p.url && !p.loading);
-      $('#preview').innerHTML = String(card({ id: 0, title: b.title || 'Название объявления', price: b.price ? Number(b.price) : null, priceUnit: b.priceUnit, city: b.city || 'Город', createdAt: Date.now(), photo: first ? first.url : null, delivery: b.delivery,
+      $('#preview').innerHTML = String(card({ id: 0, title: b.title || 'Название объявления', price: b.price ? Number(b.price) : null, priceUnit: b.priceUnit, city: b.city || 'Город', createdAt: Date.now(), photo: first ? first.url : null, delivery: b.delivery, exchange: b.exchange,
         summary: attrSummary(b.subcategory, b.attrs), metro: b.metro, hasVideo: !!st.video }));
       if (st.tried) for (const sid of Object.keys(ERR)) showErr(sid, ERR[sid](b));
       const has = b.title || b.photos.length || b.description || b.price;
       if (!l && !has) draftDrop();
-      if (!l && has) { clearTimeout(saveTimer); saveTimer = setTimeout(() => draftSave({ ...b, price: b.price, negotiable: st.negotiable, photos: st.photos.filter((p) => p.file).map((p) => ({ file: p.file, url: p.url })), video: st.video && st.video.file ? { file: st.video.file, url: st.video.url, duration: st.video.duration } : null }), 400); }
+      if (!l && has) { clearTimeout(saveTimer); saveTimer = setTimeout(() => draftSave({ ...b, price: b.price, negotiable: st.negotiable, step: st.step, photos: st.photos.filter((p) => p.file).map((p) => ({ file: p.file, url: p.url })), video: st.video && st.video.file ? { file: st.video.file, url: st.video.url, duration: st.video.duration } : null }), 400); }
     }
     const showErr = (sid, msg) => { const s = $(`#${sid}`); s.classList.toggle('bad', !!msg); const e = $('.ed-err', s); e.hidden = !msg; e.innerHTML = msg ? String(html`${ic('warn', 16, 2)}${msg}`) : ''; };
     form.title.oninput = () => { changed(); fetchHintSoon(); };
@@ -1557,6 +1614,38 @@
     form.district.oninput = changed;
     form.description.oninput = changed;
     form.delivery.onchange = changed;
+    form.bargain.onchange = changed;
+    form.exchange.onchange = changed;
+    if (canSchedule) {
+      $$('input[name="pub-when"]').forEach((r) => { r.onchange = () => { $('#when-at').classList.toggle('hidden', !laterOn()); changed(); }; });
+      $('#w-day').onchange = changed; $('#w-time').onchange = changed;
+    }
+
+    // ---------- шаги ----------
+    const focusErr = (sid) => {
+      const b = body();
+      const f = sid === 's-what' && b.title.length < 3 ? form.title : sid === 's-where' ? form.city : sid === 's-what' && b.category && !b.subcategory ? $('[data-sub]') : sid === 's-publish' ? $('#w-time') : null;
+      if (f) setTimeout(() => f.focus({ preventScroll: true }), 60);
+    };
+    // check — «Далее» не пускает дальше, пока на текущем шаге не заполнено обязательное.
+    function goStep(i, check = false) {
+      const sid = ED_STEPS[st.step][0];
+      if (check && i > st.step && ERR[sid] && ERR[sid](body())) { st.tried = true; changed(); focusErr(sid); return; }
+      st.step = i;
+      ED_STEPS.forEach(([x], k) => $(`#${x}`).classList.toggle('cur', k === i));
+      $$('[data-step]').forEach((x) => { const on = Number(x.dataset.step) === i; x.classList.toggle('cur', on); if (on) x.setAttribute('aria-current', 'step'); else x.removeAttribute('aria-current'); });
+      const last = i === ED_STEPS.length - 1;
+      $('.ed-dock [data-prev]').style.visibility = i ? '' : 'hidden';
+      $('#dock-next').classList.toggle('hidden', last);
+      if (!last) $('#dock-next').textContent = l ? 'Далее' : `Далее: ${ED_STEPS[i + 1][1].toLowerCase()}`;
+      $('#dock-send').classList.toggle('hidden', !l && !last);
+      changed();
+      const top = $('.ed-steps').getBoundingClientRect().top + window.scrollY - 84;
+      if (window.scrollY > top) window.scrollTo({ top, behavior: 'smooth' });
+    }
+    $$('[data-next]').forEach((b) => { b.onclick = () => goStep(Math.min(st.step + 1, ED_STEPS.length - 1), true); });
+    $$('[data-prev]').forEach((b) => { b.onclick = () => goStep(Math.max(st.step - 1, 0)); });
+    $$('[data-step]').forEach((b) => { b.onclick = () => goStep(Number(b.dataset.step), true); });
     const dd = $('#draft-drop');
     if (dd) dd.onclick = () => { draftDrop(); render(); };
 
@@ -1570,18 +1659,13 @@
       const b = body();
       const bad = Object.keys(ERR).find((sid) => ERR[sid](b));
       changed();
-      if (bad) {
-        $(`#${bad}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
-        const f = bad === 's-what' && b.title.length < 3 ? form.title : bad === 's-where' ? form.city : bad === 's-what' && b.category && !b.subcategory ? $('[data-sub]') : null;
-        if (f) setTimeout(() => f.focus({ preventScroll: true }), 350);
-        return;
-      }
+      if (bad) { goStep(ED_STEPS.findIndex(([sid]) => sid === bad)); focusErr(bad); return; }
       sending = true;
       $$('[data-submit]').forEach((x) => { x.disabled = true; });
       try {
         const r = l ? await api('PATCH', `/api/listings/${l.id}`, b) : await api('POST', '/api/listings', b);
         if (!l) draftDrop();
-        toast('Отправлено на проверку модератору');
+        toast(b.publishAt ? 'Отправлено на проверку — опубликуем в выбранное время' : 'Отправлено на проверку модератору');
         go(`/l/${l ? l.id : r.id}`, true);
       } catch (ex) {
         toast(ex.message, true);
@@ -1595,7 +1679,7 @@
     cleanup = () => { document.body.classList.remove('editing'); clearTimeout(saveTimer); if (st.video && st.video.local) URL.revokeObjectURL(st.video.local); st.video = null; };
     setCat(st.category); setCond(st.condition); setUnit(st.priceUnit); setNeg(st.negotiable);
     renderPhotos(); renderVideo(); loadMetro();
-    changed();
+    goStep(st.step);
     if (l) fetchHint();
   }
 
@@ -2119,7 +2203,7 @@
     const data = await api('GET', `/api/conversations/${convId}`);
     const { listing: l, other } = data;
     const role = data.conversation.role;
-    const canOffer = role === 'buyer' && l.status === 'active';
+    const canOffer = role === 'buyer' && l.status === 'active' && (l.bargain || l.price === null); // продавец указал «без торга» — кнопки ₽ нет
     const reviewBar = (rv) => {
       if (!rv) return '';
       if (rv.status) return html`<div class="rv-bar-chat done">${ic('check', 16, 2.4)}<span>${rv.status === 'pending' ? 'Ваш отзыв о продавце на проверке.' : rv.status === 'published' ? 'Ваш отзыв о продавце опубликован.' : 'Вы уже оставили отзыв по этому объявлению.'}</span><a href="/profile/reviews?tab=mine">Мои отзывы</a></div>`;
@@ -2280,8 +2364,10 @@
   }
 
   // ================= профиль =================
-  const MY_STATUS = { active: 'Активные', pending: 'На проверке', rejected: 'На исправлении', sold: 'Проданные', archived: 'Сняты' };
-  const MY_TAG = { active: ['ok', 'Опубликовано'], pending: ['wait', 'На проверке'], rejected: ['bad', 'Нужно исправить'], sold: ['dark', 'Продано'], archived: ['off', 'Снято'] };
+  const MY_STATUS = { active: 'Активные', scheduled: 'Запланированы', pending: 'На проверке', rejected: 'На исправлении', sold: 'Проданные', archived: 'Сняты' };
+  const MY_TAG = { active: ['ok', 'Опубликовано'], scheduled: ['wait', 'Запланировано'], pending: ['wait', 'На проверке'], rejected: ['bad', 'Нужно исправить'], sold: ['dark', 'Продано'], archived: ['off', 'Снято'] };
+  const isExpired = (i) => i.status === 'archived' && i.expiresAt && i.expiresAt <= Date.now(); // прошло 30 дней
+  const atTime = (ts) => new Date(ts).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' });
 
   // Насколько заполнен профиль: имя есть всегда, дальше фото, город и (если есть почта) подтверждённый email.
   function profileTodo(u) {
@@ -2510,7 +2596,7 @@
   }
 
   function renderMyListings(items, status, reload) {
-    const groups = { active: [], pending: [], rejected: [], sold: [], archived: [] };
+    const groups = { active: [], scheduled: [], pending: [], rejected: [], sold: [], archived: [] };
     items.forEach((i) => (groups[i.status] || groups.archived).push(i));
     const list = groups[status] || [];
     const tips = [
@@ -2519,9 +2605,9 @@
       ['chat', 'Отвечайте быстро', 'Первые часы после публикации — самые активные.']
     ];
     $('#box').innerHTML = String(html`
-      ${items.length ? html`<div class="pf-status" role="tablist">${Object.keys(MY_STATUS).map((k) => html`<a class="chip ${k === status ? 'active' : ''} ${groups[k].length ? '' : 'zero'}" href="/profile?status=${k}">${MY_STATUS[k]}<span class="cnt">${groups[k].length}</span></a>`)}</div>` : ''}
+      ${items.length ? html`<div class="pf-status" role="tablist">${Object.keys(MY_STATUS).filter((k) => k !== 'scheduled' || groups.scheduled.length || status === k).map((k) => html`<a class="chip ${k === status ? 'active' : ''} ${groups[k].length ? '' : 'zero'}" href="/profile?status=${k}">${MY_STATUS[k]}<span class="cnt">${groups[k].length}</span></a>`)}</div>` : ''}
       ${list.length ? html`<div class="ml-list">${list.map((i) => {
-        const [tone, label] = MY_TAG[i.status] || MY_TAG.archived;
+        const [tone, label] = isExpired(i) ? ['off', 'Срок истёк'] : MY_TAG[i.status] || MY_TAG.archived;
         return html`<article class="ml-card">
           <a href="/l/${i.id}" class="ml-img">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 26, 1.3)}</a>
           <div class="ml-info">
@@ -2529,13 +2615,16 @@
             <a href="/l/${i.id}" class="ml-title">${i.title}</a>
             <div class="ml-price">${price(i.price, i.priceUnit)}</div>
             ${i.promo ? html`<span class="ml-promo ${i.promo.status}">${ic('megaphone', 13, 2)}${i.promo.status === 'active' ? `Реклама до ${dateShort(i.promo.endsAt)}` : 'Ждёт маркировки'}</span>` : ''}
-            <div class="ml-meta"><span title="Просмотры">${svg(P.eye, 15, 1.8)} ${NF.format(i.views)}</span><span title="В избранном">${svg(P.heart, 15, 1.8)} ${i.favCount}</span><span>${i.city} · ${shortWhen(i.createdAt)}</span></div>
+            <div class="ml-meta"><span title="Просмотры">${svg(P.eye, 15, 1.8)} ${NF.format(i.views)}</span><span title="В избранном">${svg(P.heart, 15, 1.8)} ${i.favCount}</span><span>${i.city} · ${shortWhen(i.createdAt)}</span>${i.status === 'active' && i.expiresAt ? html`<span title="Объявление висит 30 дней, потом его можно бесплатно опубликовать снова">${ic('clock', 15, 1.8)} до ${dateShort(i.expiresAt)}</span>` : ''}</div>
           </div>
           <div class="ml-side">
             ${i.status === 'rejected' ? html`<a class="btn btn-dark btn-sm hide-xs" href="/edit/${i.id}">Исправить</a>` : ''}
+            ${isExpired(i) ? html`<button type="button" class="btn btn-accent btn-sm hide-xs" data-repost="${i.id}">Опубликовать снова</button>` : ''}
             ${['active', 'sold', 'archived'].includes(i.status) ? html`<a class="icon-btn ml-more" href="/profile/stats/${i.id}" aria-label="Статистика объявления" title="Статистика">${ic('chart', 20, 2)}</a>` : ''}
             <button type="button" class="icon-btn ml-more" data-more="${i.id}" aria-label="Действия с объявлением">${svg(P.more, 20, 2.2)}</button>
           </div>
+          ${i.status === 'scheduled' ? html`<div class="ml-note ok">${ic('clock', 15, 2)} Проверено — опубликуем ${atTime(i.publishAt)} (мск). Видно только вам.</div>` : ''}
+          ${isExpired(i) ? html`<div class="ml-note soft">Прошло 30 дней, объявление снято. Если ещё актуально — опубликуйте снова: бесплатно, окажется среди свежих.</div>` : ''}
           ${i.status === 'pending' ? html`<div class="ml-note warn">${i.flags ? `Проверяем внимательнее: похоже на «${i.flags}». ` : ''}Модератор проверит объявление — обычно это несколько часов.</div>` : ''}
           ${i.status === 'rejected' ? html`<div class="ml-note bad"><strong>Причина:</strong> ${i.rejectReason || 'не указана'}${i.appealAt ? ' · апелляция отправлена' : ''}${i.appealReply ? html`<br><strong>Ответ на апелляцию:</strong> ${i.appealReply}` : ''}</div>` : ''}
         </article>`;
@@ -2547,9 +2636,10 @@
           <a class="btn btn-dark" href="/new">${ic('plus', 18, 2.2)}Разместить объявление</a>
           <div class="pf-tips">${tips.map(([icn, t, d]) => html`<div class="pf-tip"><span>${ic(icn, 20)}</span><div><b>${t}</b><p>${d}</p></div></div>`)}</div>
         </div>`
-      : html`<div class="pf-empty sm"><h3>Здесь пусто</h3><p>${{ active: 'Нет опубликованных объявлений.', pending: 'Сейчас ничего не ждёт проверки.', rejected: 'Нет объявлений, которые нужно исправить.', sold: 'Отметьте объявление «Продано», и оно появится здесь.', archived: 'Снятые с публикации объявления появятся здесь.' }[status]}</p></div>`}`);
+      : html`<div class="pf-empty sm"><h3>Здесь пусто</h3><p>${{ active: 'Нет опубликованных объявлений.', scheduled: 'Нет объявлений, ждущих выбранного времени.', pending: 'Сейчас ничего не ждёт проверки.', rejected: 'Нет объявлений, которые нужно исправить.', sold: 'Отметьте объявление «Продано», и оно появится здесь.', archived: 'Снятые с публикации объявления появятся здесь.' }[status]}</p></div>`}`);
     const byId = Object.fromEntries(items.map((i) => [String(i.id), i]));
     const setStatus = async (i, st, msg) => { try { await api('PATCH', `/api/listings/${i.id}`, { status: st }); toast(msg); reload(); } catch (e) { toast(e.message, true); } };
+    $$('[data-repost]').forEach((b) => { b.onclick = () => setStatus(byId[b.dataset.repost], 'active', 'Снова опубликовано — на 30 дней'); });
     $$('[data-more]').forEach((b) => {
       b.onclick = () => {
         const i = byId[b.dataset.more];
@@ -2557,6 +2647,7 @@
         if (['active', 'sold', 'archived'].includes(i.status)) acts.splice(1, 0, { icon: 'chart', label: 'Статистика', href: `/profile/stats/${i.id}` });
         if (i.status === 'active') acts.push({ icon: 'check', label: 'Отметить «Продано»', run: () => setStatus(i, 'sold', 'Отмечено как проданное') }, { icon: 'pause', label: 'Снять с публикации', run: () => setStatus(i, 'archived', 'Снято с публикации') });
         if (i.status === 'sold' || i.status === 'archived') acts.push({ icon: 'refresh', label: 'Опубликовать снова', run: () => setStatus(i, 'active', 'Снова опубликовано') });
+        if (i.status === 'scheduled') acts.push({ icon: 'refresh', label: 'Опубликовать сейчас', run: () => setStatus(i, 'active', 'Опубликовано') }, { icon: 'pause', label: 'Не публиковать', run: () => setStatus(i, 'archived', 'Публикация отменена') });
         if (i.status === 'rejected' && !i.appealAt && !i.appealReply) acts.push({ icon: 'chat', label: 'Подать апелляцию', run: () => appealModal(i.id, reload) });
         if (i.status === 'active' && (isBiz() || i.promo)) acts.splice(1, 0, { icon: 'trend', label: i.promo ? 'Продлить продвижение' : 'Продвигать', run: () => promoteModal(i.id, i.title) });
         if (i.status === 'active') acts.push({ icon: 'share', label: 'Поделиться', run: () => shareLink(`${location.origin}${lpath(i)}`, i.title) });
@@ -3320,7 +3411,7 @@
     ${i.appealAt ? html`<button class="btn btn-line btn-sm" data-deny="${i.id}">Отказать по апелляции</button>` : ''}
     ${['active', 'sold', 'archived'].includes(i.status) ? html`<button class="btn btn-danger btn-sm" data-reject="${i.id}">Снять с публикации</button>` : ''}
     ${i.reports ? html`<button class="btn btn-soft btn-sm" data-dismiss="${i.id}">Закрыть жалобы</button>` : ''}`;
-  const STATUS_LABEL = { pending: 'На проверке', active: 'Опубликовано', rejected: 'Отклонено', sold: 'Продано', archived: 'Снято' };
+  const STATUS_LABEL = { pending: 'На проверке', scheduled: 'Запланировано', active: 'Опубликовано', rejected: 'Отклонено', sold: 'Продано', archived: 'Снято' };
 
   // ---------- оболочка модерации: меню слева (на телефоне — лента сверху) ----------
   const ADMIN_NAV = [
@@ -3997,8 +4088,8 @@
     return raw(out + esc(text.slice(pos)));
   }
 
-  const FIELD = { title: 'название', description: 'описание', category: 'категория', price: 'цена', priceUnit: 'единица цены', city: 'город', condition: 'состояние', delivery: 'доставка', photos: 'фото' };
-  const fieldVal = (k, v) => (k === 'category' ? catName(v) : k === 'price' ? price(v, '') : k === 'delivery' ? (v ? 'есть' : 'нет') : k === 'condition' ? CONDITION_LABEL[v] : v === '' ? '—' : String(v));
+  const FIELD = { title: 'название', description: 'описание', category: 'категория', price: 'цена', priceUnit: 'единица цены', city: 'город', condition: 'состояние', delivery: 'доставка', bargain: 'торг', exchange: 'обмен', photos: 'фото' };
+  const fieldVal = (k, v) => (k === 'category' ? catName(v) : k === 'price' ? price(v, '') : ['delivery', 'bargain', 'exchange'].includes(k) ? (v ? 'есть' : 'нет') : k === 'condition' ? CONDITION_LABEL[v] : v === '' ? '—' : String(v));
   function eventText(e) {
     const d = e.data;
     switch (e.kind) {
@@ -4006,6 +4097,8 @@
       case 'edited': return html`Изменено и отправлено на проверку${Object.keys(d.changes || {}).length ? html`<ul class="tl-changes">${Object.entries(d.changes).map(([k, [a, b]]) => html`<li><strong>${FIELD[k] || k}:</strong> ${k === 'description' ? 'текст изменён' : k === 'photos' ? `${a} → ${b}` : html`${fieldVal(k, a)} → ${fieldVal(k, b)}`}</li>`)}</ul>` : ''}`;
       case 'status': return html`Автор: ${{ active: 'снова опубликовал', sold: 'отметил «продано»', archived: 'снял с публикации' }[d.status] || d.status}`;
       case 'approved': return 'Опубликовано после проверки';
+      case 'published': return 'Опубликовано в выбранное автором время';
+      case 'expired': return 'Снято: прошло 30 дней';
       case 'rejected': return html`<span class="danger-t">Отклонено:</span> ${d.reason}`;
       case 'appeal': return html`Апелляция: «${d.text}»`;
       case 'appeal-denied': return html`Отказ по апелляции: ${d.reason}`;
