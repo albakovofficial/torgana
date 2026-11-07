@@ -79,6 +79,7 @@ function requireUser(ctx) {
 
 // Модерация: с 1.18 — ещё и подтверждённое устройство (lib/ops.js: код из письма, помним 30 дней).
 let opsApi = null;
+let boostApi = null; // lib/boost.js — подключается ниже, нужен cardFromRow и publishListing
 function requireAdmin(ctx) {
   if (opsApi) return opsApi.requireAdmin(ctx);
   const u = requireUser(ctx);
@@ -141,7 +142,8 @@ function cardFromRow(r) {
     photo: photoUrl(r.photo),
     createdAt: r.created_at,
     isFav: !!r.is_fav,
-    priceWas: priceWasOf(r)
+    priceWas: priceWasOf(r),
+    boost: boostApi ? boostApi.cardExtra(r) : null // XL, рамка, метки (lib/boost.js)
   };
 }
 
@@ -149,7 +151,9 @@ const CARD_SELECT = `
   SELECT l.id, l.title, l.price, l.price_unit, l.city, l.category, l.delivery, l.exchange, l.status, l.created_at, l.price_was, l.price_drop_at,
     l.subcategory, l.attrs, l.metro, l.video,
     (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
-    EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id = l.id AND f.user_id = ?) AS is_fav
+    EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id = l.id AND f.user_id = ?) AS is_fav,
+    (SELECT json_object('xl', MAX(b.xl), 'frame', MAX(b.frame)) FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active') AS boost,
+    (SELECT b.tags FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active' AND b.tags_state = 'on' ORDER BY b.id DESC LIMIT 1) AS boost_tags
   FROM listings l JOIN users u ON u.id = l.user_id`;
 
 // Текст для поиска: название, описание, подкатегория и характеристики из списков («Toyota», «Автомат»).
@@ -177,7 +181,8 @@ function marketEstimate({ id = 0, category, title, priceUnit }) {
   return { median: median(rows.map((r) => r.price)), count: rows.length };
 }
 
-function validateListing(body) {
+// strict — форма объявления (1.22): главные характеристики раздела обязательны; автозагрузка из фида — без strict.
+function validateListing(body, { strict = false } = {}) {
   const title = str(body.title, 80);
   const description = str(body.description, 4000);
   const category = str(body.category, 40);
@@ -197,7 +202,7 @@ function validateListing(body) {
   // Подкатегория — из списка своей категории; характеристики — только её поля.
   const subcategory = taxonomy.SUB[body.subcategory] && taxonomy.SUB[body.subcategory].category === category ? body.subcategory : '';
   let attrs = {};
-  try { attrs = taxonomy.cleanAttrs(subcategory, body.attrs); } catch (e) { throw new HttpError(400, e.message); }
+  try { attrs = taxonomy.cleanAttrs(subcategory, body.attrs, { strict }); } catch (e) { throw new HttpError(400, e.message); }
   // Метро — только станция этого города из справочника; если справочника пока нет — сохраняем как есть.
   let station = str(body.metro, 60);
   if (station && metro.has(city) && !metro.isStation(city, station)) throw new HttpError(400, 'Выберите станцию метро из списка');
@@ -290,6 +295,9 @@ helpers.categoryIds = CATEGORY_IDS;
 const billing = require('./lib/billing')({ route, db, h: helpers, mailer, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, testBase: process.env.YOOKASSA_TEST_BASE || '' });
 const business = require('./lib/business')({ route, db, h: helpers, billing, mailer, stats });
 const promo = require('./lib/promo')({ route, db, h: helpers, billing, business, stats, mailer, searchSpec, specSql, categoryIds: CATEGORY_IDS });
+// Продвижение в ленте и поиске для всех продавцов: XL-карточка, рамка, метки на фото (1.21.0).
+const boost = require('./lib/boost')({ route, db, h: helpers, billing });
+boostApi = boost;
 const feed = require('./lib/feed')({ route, db, h: helpers, business });
 const deals = require('./lib/deals')({ route, db, h: helpers, alerts }); // предложение цены, быстрые ответы, подписки
 // Коды по почте (6 цифр при регистрации и входе, код для модерации) можно временно выключить в «Модерация → Почта»,
@@ -323,7 +331,7 @@ route('PUT', '/api/admin/seo', async (ctx) => {
   audit(admin, 'seo-settings', {}, next);
   return { seo: next };
 }); // тариф и витрина — в карточке пользователя в модерации
-helpers.statsExtra = () => ({ ads: promo.awaiting() }); // счётчик «Реклама» в меню модерации
+helpers.statsExtra = () => ({ ads: promo.awaiting(), tags: boost.awaiting() }); // счётчики «Реклама» и «Метки на фото» в меню модерации
 
 // Раздел «Для бизнеса» в профиле: тариф, цены, витрина, автозагрузка, продвижения, платежи.
 route('GET', '/api/my/business', (ctx) => {
@@ -346,7 +354,7 @@ route('GET', '/api/config', () => ({
   mail: mailer.ready(),
   supportEmail: SUPPORT_EMAIL,
   oauth: oauth.enabled(),
-  billing: { ready: billing.ready(), prices: billing.prices() },
+  billing: { ready: billing.ready(), prices: billing.prices(), boostTags: boost.TAGS, boostDays: boost.BOOST_DAYS },
   metrika: (seoSetting('seo') || {}).metrika || '',
   operator: (({ name, inn, ogrnip }) => ({ name, inn, ogrnip }))(legal.operator())
 }));
@@ -356,7 +364,7 @@ route('GET', '/api/metro', (ctx) => ({ stations: metro.stations(ctx.query.get('c
 
 route('GET', '/api/me', (ctx) => {
   const unread = ctx.user ? unreadCount(ctx.user.id) + supportChat.unreadFor(ctx.user.id) : 0;
-  return { user: publicUser(ctx.user), unread, fresh: ctx.user ? alerts.freshCounts(ctx.user.id) : null };
+  return { user: publicUser(ctx.user), unread, fresh: ctx.user ? alerts.freshCounts(ctx.user.id) : null, notices: ctx.user ? alerts.unreadNotices(ctx.user.id) : 0 };
 });
 
 route('POST', '/api/auth/register', async (ctx) => {
@@ -603,7 +611,8 @@ route('GET', '/api/listings/:id', (ctx) => {
       followers: deals.followers(seller.id), following: deals.isFollowing(ctx.user ? ctx.user.id : 0, seller.id) },
     similar,
     market,
-    promo: isOwner ? promo.currentOf(id) : null
+    promo: isOwner ? promo.currentOf(id) : null,
+    boost: isOwner ? boost.ownerView(id) : null
   };
 });
 
@@ -661,6 +670,7 @@ function publishListing(id, fresh = false) {
     expires_at = CASE WHEN ? OR expires_at IS NULL OR expires_at <= ? THEN ? ELSE expires_at END, updated_at = ? WHERE id = ?`)
     .run(fresh ? 1 : 0, t, t, fresh ? 1 : 0, t, t + LISTING_TTL, t, id);
   alerts.onPublished(id); // сохранённые поиски, подписчики, снижение цены
+  if (boostApi) boostApi.onPublished(id); // оплаченное продвижение начинается с публикации
 }
 helpers.publishListing = publishListing;
 
@@ -675,7 +685,8 @@ function listingTick() {
   }
   const expired = db.prepare(`SELECT id FROM listings WHERE status = 'active' AND expires_at <= ?
     AND id NOT IN (SELECT listing_id FROM feed_items WHERE gone = 0 AND listing_id IS NOT NULL)
-    AND id NOT IN (SELECT listing_id FROM promotions WHERE status IN ('active', 'marking') AND listing_id IS NOT NULL)`).all(t);
+    AND id NOT IN (SELECT listing_id FROM promotions WHERE status IN ('active', 'marking') AND listing_id IS NOT NULL)
+    AND id NOT IN (SELECT listing_id FROM boosts WHERE status = 'active' AND listing_id IS NOT NULL)`).all(t);
   for (const { id } of expired) {
     db.prepare('UPDATE listings SET status = \'archived\', updated_at = ? WHERE id = ?').run(t, id);
     logEvent(id, null, 'expired', {});
@@ -687,7 +698,7 @@ helpers.validateListing = validateListing;
 route('POST', '/api/listings', async (ctx) => {
   const u = requireUser(ctx);
   rateLimit(`create:${u.id}`, 30, 60 * 60 * 1000);
-  const v = validateListing(await readJson(ctx.req));
+  const v = validateListing(await readJson(ctx.req), { strict: true });
   video.check(u.id, v.video);
   const id = createListing(u, v);
   return { id, status: 'pending' };
@@ -710,7 +721,7 @@ route('PATCH', '/api/listings/:id', async (ctx) => {
     const r = db.prepare('SELECT status, expires_at FROM listings WHERE id = ?').get(id);
     return { ok: true, status: r.status, expiresAt: r.expires_at };
   }
-  const v = validateListing(body);
+  const v = validateListing(body, { strict: true });
   if (v.video && v.video !== l.video) video.check(u.id, v.video);
   updateListing(u, l, v);
   return { ok: true, status: 'pending' };
@@ -749,7 +760,7 @@ route('GET', '/api/my/listings', (ctx) => {
   return {
     items: rows.map((r) => ({
       ...cardFromRow(r), views: r.views, favCount: r.fav_count, rejectReason: r.reject_reason, publishAt: r.publish_at, expiresAt: r.expires_at,
-      appealText: r.appeal_text, appealAt: r.appeal_at, appealReply: r.appeal_reply, flags: r.flags, promo: promo.currentOf(r.id)
+      appealText: r.appeal_text, appealAt: r.appeal_at, appealReply: r.appeal_reply, flags: r.flags, promo: promo.currentOf(r.id), boost: boost.ownerView(r.id)
     }))
   };
 });

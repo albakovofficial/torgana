@@ -123,7 +123,10 @@
     feed: '<path d="M5 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/>',
     play: '<path d="M8 5.5v13l10.5-6.5z"/>',
     video: '<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="M16 10.5l5-3v9l-5-3"/>',
-    sliders: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>'
+    sliders: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
+    xl: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M14 5v14M14 12h7"/>',
+    frame: '<rect x="4" y="4" width="16" height="16" rx="4"/><rect x="7.5" y="7.5" width="9" height="9" rx="2"/>',
+    bolt: '<path d="M13 3L5 13.5h6L10 21l8-10.5h-6z"/>'
   };
   const CAT_P = {
     transport: '<path d="M3 13l2-5a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 5v4H3z"/><circle cx="7.5" cy="17" r="1.6"/><circle cx="16.5" cy="17" r="1.6"/>',
@@ -207,6 +210,133 @@
     return close;
   }
 
+  // ================= выбор из списка (1.22) =================
+  // Вместо системного выпадающего списка: на телефоне — шторка снизу, на компьютере — меню под полем.
+  // Поиск — когда вариантов больше 10. items: [{ value, label, sub, color }].
+  function pickList({ anchor, title = '', items, value = '', onPick, search = items.length > 10, placeholder = 'Найти' }) {
+    const mobile = window.matchMedia('(max-width: 600px)').matches;
+    const wrap = document.createElement('div');
+    wrap.className = mobile ? 'pick-back' : 'pick-layer';
+    const dot = (c) => (c ? html`<i class="pick-dot" style="background:${c}"></i>` : '');
+    const row = (it) => html`<button type="button" role="option" class="pick-it${it.value === value ? ' on' : ''}" data-v="${it.value}" aria-selected="${it.value === value ? 'true' : 'false'}">${dot(it.color)}<span class="pick-t"><b>${it.label}</b>${it.sub ? html`<small>${it.sub}</small>` : ''}</span>${it.value === value ? ic('check', 18, 2.4) : ''}</button>`;
+    wrap.innerHTML = String(html`<div class="pick ${mobile ? 'sheet' : 'pop'}" role="dialog" aria-label="${title || 'Выбор'}">
+      ${mobile ? html`<div class="pick-grip"></div>${title ? html`<div class="pick-h">${title}</div>` : ''}` : ''}
+      ${search ? html`<label class="pick-search">${ic('search', 18)}<input type="search" placeholder="${placeholder}" autocomplete="off" enterkeyhint="done"></label>` : ''}
+      <div class="pick-list" role="listbox">${items.map(row)}</div><div class="pick-empty" hidden>Ничего не нашлось</div></div>`);
+    document.body.appendChild(wrap);
+    const box = $('.pick', wrap);
+    if (!mobile) {
+      const r = anchor.getBoundingClientRect();
+      const w = Math.max(r.width, 260);
+      const below = window.innerHeight - r.bottom - 12;
+      const h = Math.min(380, Math.max(below, r.top - 12));
+      box.style.width = `${w}px`;
+      box.style.left = `${Math.min(Math.max(8, r.left), window.innerWidth - w - 8)}px`;
+      box.style.maxHeight = `${h}px`;
+      if (below >= Math.min(260, box.scrollHeight) || below >= r.top) box.style.top = `${r.bottom + 6}px`; else box.style.bottom = `${window.innerHeight - r.top + 6}px`;
+    }
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); window.removeEventListener('resize', close); if (!mobile) window.removeEventListener('scroll', onScroll, true); anchor.focus({ preventScroll: true }); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); close(); }
+      if (e.key === 'Enter' && e.target.closest('.pick-search')) { e.preventDefault(); const f = $('.pick-it:not([hidden])', box); if (f) f.click(); }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const list = $$('.pick-it:not([hidden])', box);
+        const i = list.indexOf(document.activeElement);
+        const n = list[Math.min(list.length - 1, Math.max(0, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+        if (n) n.focus();
+      }
+    };
+    const onScroll = (e) => { if (!box.contains(e.target)) close(); };
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', close);
+    if (!mobile) setTimeout(() => window.addEventListener('scroll', onScroll, true), 0);
+    wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) close(); });
+    box.addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) { close(); onPick(b.dataset.v); } });
+    const q = $('.pick-search input', box);
+    if (q) {
+      const norm = (t) => t.toLowerCase().replace(/ё/g, 'е');
+      q.oninput = () => {
+        const t = norm(q.value.trim()); let any = false;
+        $$('.pick-it', box).forEach((b) => { const ok = !t || norm(b.textContent).includes(t); b.hidden = !ok; any = any || ok; });
+        $('.pick-empty', box).hidden = any;
+      };
+      if (!mobile) q.focus();
+    }
+    const cur = $('.pick-it.on', box);
+    if (cur) cur.scrollIntoView({ block: 'center' });
+    if (!q) (cur || $('.pick-it', box)).focus({ preventScroll: true });
+  }
+  // Любой <select class="select"> на сайте показывается кнопкой с pickList; сам select остаётся в форме (значение, change).
+  function enhanceSelect(sel) {
+    if (sel.dataset.enh || sel.multiple) return;
+    sel.dataset.enh = '1';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `pick-btn${sel.classList.contains('adm-select') ? ' sm' : ''}`;
+    if (sel.getAttribute('style')) b.setAttribute('style', sel.getAttribute('style'));
+    const lab = sel.id ? document.querySelector(`label[for="${sel.id}"]`) : null;
+    if (lab) { b.setAttribute('aria-label', lab.textContent.trim()); lab.addEventListener('click', (e) => { e.preventDefault(); b.click(); }); }
+    sel.classList.add('pick-native');
+    sel.tabIndex = -1;
+    sel.setAttribute('aria-hidden', 'true');
+    sel.after(b);
+    const paint = () => {
+      const o = sel.selectedOptions[0];
+      b.disabled = sel.disabled;
+      b.classList.toggle('empty', !sel.value);
+      b.innerHTML = String(html`${o && o.dataset.color ? html`<i class="pick-dot" style="background:${o.dataset.color}"></i>` : ''}<span>${o ? o.textContent : ''}</span>${ic('down', 18, 2)}`);
+    };
+    sel._paint = paint;
+    paint();
+    new MutationObserver(paint).observe(sel, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled'] });
+    sel.addEventListener('change', paint);
+    b.onclick = () => pickList({
+      anchor: b, title: lab ? lab.textContent.trim() : '', value: sel.value,
+      items: [...sel.options].map((o) => ({ value: o.value, label: o.textContent, sub: o.dataset.line || '', color: o.dataset.color || '' })),
+      onPick: (v) => { if (sel.value === v) return; sel.value = v; sel.dispatchEvent(new Event('change', { bubbles: true })); paint(); }
+    });
+  }
+  new MutationObserver(() => $$('select.select:not([data-enh])').forEach(enhanceSelect)).observe(document.body, { childList: true, subtree: true });
+
+  // ================= характеристики (1.22) =================
+  // Короткие списки — чипсами, длинные — частые значения чипсами и «Все N» с поиском, цвета — кружками.
+  // Одна разметка для формы объявления и фильтров поиска.
+  const COLOR_HEX = { Чёрный: '#141414', Белый: '#FFFFFF', Серый: '#9A9A96', Серебристый: '#C9CDD2', Бежевый: '#E5D5BA', Коричневый: '#7A5235', Красный: '#C8312B', Оранжевый: '#EE7B30', Жёлтый: '#F2C94C', Зелёный: '#2E8B57', Голубой: '#86C8F0', Синий: '#2D4F9E', Фиолетовый: '#7B4FB8', Розовый: '#F2A7C3', Золотой: '#D4AF37',
+    Разноцветный: 'conic-gradient(#C8312B, #F2C94C, #2E8B57, #2D4F9E, #7B4FB8, #C8312B)' };
+  const optLabel = (f, o) => (f.key === 'rooms' && o !== 'Студия' ? `${o}${o === '5+' ? ' комн.' : '-комн.'}` : o);
+  function attrChoice(f, v, { filter = false } = {}) {
+    const has = v !== undefined && v !== null && v !== '';
+    const head = html`<span class="label">${f.label}${f.req && !filter ? html`<i class="rq">*</i>` : ''}${f.color && has ? html`<em class="av-val">${v}</em>` : ''}</span>`;
+    if (f.color) {
+      return html`<div class="field wide av" data-field="${f.key}">${head}<div class="av-sw-row" role="radiogroup" aria-label="${f.label}">${f.options.map((o) => html`<button type="button" role="radio" class="av-sw${o === v ? ' on' : ''}" data-av="${o}" title="${o}" aria-label="${o}" aria-checked="${o === v ? 'true' : 'false'}" style="--sw:${COLOR_HEX[o] || '#ccc'}"></button>`)}</div></div>`;
+    }
+    const long = f.popular && f.options.length > f.popular.length;
+    const shown = long ? [...f.popular, ...(has && !f.popular.includes(v) ? [v] : [])] : f.options;
+    return html`<div class="field wide av" data-field="${f.key}">${head}<div class="av-chips" role="radiogroup" aria-label="${f.label}">
+      ${shown.map((o) => html`<button type="button" role="radio" class="av-chip${o === v ? ' on' : ''}" data-av="${o}" aria-checked="${o === v ? 'true' : 'false'}">${optLabel(f, o)}</button>`)}
+      ${long ? html`<button type="button" class="av-chip av-all" data-av-more>${filter ? 'Все' : `Все ${f.options.length}`}${ic('down', 15, 2.2)}</button>` : ''}</div></div>`;
+  }
+  // get(key) / set(key, value|undefined) — где хранится значение (состояние формы или скрытые поля фильтров).
+  function bindAttrChoices(box, fields, get, set, opts = {}) {
+    const paint = (key) => {
+      const f = fields.find((x) => x.key === key);
+      const el = $(`[data-field="${key}"]`, box);
+      if (f && el) el.outerHTML = String(attrChoice(f, get(key), opts));
+    };
+    box.addEventListener('click', (e) => {
+      const fieldEl = e.target.closest('[data-field]');
+      if (!fieldEl) return;
+      const key = fieldEl.dataset.field;
+      const f = fields.find((x) => x.key === key);
+      if (!f) return;
+      const b = e.target.closest('[data-av]');
+      if (b) { set(key, get(key) === b.dataset.av ? undefined : b.dataset.av); paint(key); return; }
+      const m = e.target.closest('[data-av-more]');
+      if (m) pickList({ anchor: m, title: f.label, value: get(key) || '', items: f.options.map((o) => ({ value: o, label: optLabel(f, o) })), onPick: (val) => { set(key, val); paint(key); } });
+    });
+  }
+
   function confirmModal(title, text, okLabel = 'Подтвердить', danger = false) {
     return new Promise((resolve) => {
       openModal(String(html`<h2>${title}</h2><p class="muted" style="margin:0">${text}</p>
@@ -261,10 +391,49 @@
         <a href="/messages" class="nav-link hide-m">${ic('chat', 20)}<span class="nav-text">Сообщения</span><span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span></a>
         <a href="/new" class="btn btn-dark btn-sm hide-m" style="margin-left:8px">Разместить</a>
         ${S.user ? '' : html`<a href="/login" class="nav-link hide-m" style="margin-left:4px">Войти</a>`}
+        ${S.user ? html`<button type="button" class="icon-btn bell-btn" data-bell aria-label="Уведомления" aria-haspopup="dialog">${ic('bell', 21, 1.9)}<span class="badge ${S.notices ? '' : 'hidden'}" data-notices>${S.notices || 0}</span></button>` : ''}
         <button type="button" class="icon-btn menu-btn" data-menu aria-label="Меню" aria-haspopup="dialog">${ic('menu', 22, 2)}</button>
       </nav>
     </div>`);
     $('[data-menu]', $('#header')).onclick = openMenu;
+    const bell = $('[data-bell]', $('#header'));
+    if (bell) bell.onclick = openNotices;
+  }
+
+  // ================= уведомления (1.22) =================
+  // Колокольчик: решения модерации, отзывы, оплата, продвижение, снижение цен. Панель справа, по дням.
+  function setNotices(n) {
+    S.notices = n || 0;
+    $$('[data-notices]').forEach((el) => { el.textContent = S.notices > 99 ? '99+' : S.notices; el.classList.toggle('hidden', !S.notices); });
+  }
+  const NOTICE_TONE = { ok: 'ok', bad: 'bad', wait: 'wait' };
+  function noticeDay(ts) {
+    const d = new Date(ts); const t = new Date();
+    const y = new Date(t); y.setDate(t.getDate() - 1);
+    if (d.toDateString() === t.toDateString()) return 'Сегодня';
+    if (d.toDateString() === y.toDateString()) return 'Вчера';
+    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', ...(d.getFullYear() !== t.getFullYear() ? { year: 'numeric' } : {}) });
+  }
+  async function openNotices() {
+    openModal(String(html`<div class="nt-top"><h2>Уведомления</h2><button type="button" class="icon-btn" data-x aria-label="Закрыть">${ic('close', 20, 2)}</button></div><div class="nt-body" id="nt-body"><div class="loader"></div></div>`), async (m, close) => {
+      m.classList.add('drawer', 'nt-drawer'); m.parentElement.classList.add('drawer-back'); m.setAttribute('aria-label', 'Уведомления');
+      $('[data-x]', m).onclick = close;
+      m.addEventListener('click', (e) => { if (e.target.closest('a[href]')) close(); });
+      let d;
+      try { d = await api('GET', '/api/notices'); } catch (e) { $('#nt-body', m).innerHTML = String(html`<p class="muted">${e.message}</p>`); return; }
+      const groups = [];
+      d.items.forEach((n) => { const k = noticeDay(n.at); const g = groups[groups.length - 1]; if (g && g[0] === k) g[1].push(n); else groups.push([k, [n]]); });
+      $('#nt-body', m).innerHTML = String(d.items.length ? html`${groups.map(([day, list]) => html`<div class="nt-day">${day}</div>
+        ${list.map((n) => html`<a class="nt-it${n.read ? '' : ' new'}" href="${n.url || '#'}"><span class="nt-ic ${NOTICE_TONE[n.tone] || ''}">${ic(P[n.icon] ? n.icon : 'bell', 19, 2)}</span>
+          <span class="nt-t"><b>${n.title}</b>${n.body ? html`<span>${n.body}</span>` : ''}<small>${hm(n.at)}</small></span></a>`)}`)}`
+        : html`<div class="nt-empty"><span class="nt-empty-ic">${ic('bell', 30, 1.6)}</span><b>Здесь будут уведомления</b><p>Напишем, когда объявление опубликуют, придёт отзыв или подешевеет товар из избранного.</p></div>`);
+      if (d.unread) { api('POST', '/api/notices/read', {}).then((r) => setNotices(r.unread)).catch(() => {}); }
+      if (S.user && 'Notification' in window && Notification.permission === 'default') {
+        const box = $('#nt-body', m);
+        box.insertAdjacentHTML('afterbegin', String(html`<div class="nt-push">${ic('bell', 18, 2)}<span>Включите push — узнаете о публикации сразу, даже когда сайт закрыт.</span><button type="button" class="btn btn-dark btn-sm" data-push-on>Включить</button></div>`));
+        $('[data-push-on]', box).onclick = async (e) => { e.currentTarget.disabled = true; try { await pushOn(); toast('Push включены'); $('.nt-push', box).remove(); } catch (ex) { toast(ex.message, true); e.currentTarget.disabled = false; } };
+      }
+    });
   }
 
   function renderBottomNav() {
@@ -333,21 +502,30 @@
 
   // ================= карточки =================
   // it.ad — карточка из блока «Реклама»: пометка, рекламодатель и erid по кнопке «Реклама» (38-ФЗ, ст. 18.1).
+  // it.boost — продвижение в ленте (lib/boost.js): XL — на две ячейки (на телефоне — во всю ширину) с ещё двумя фото
+  // и началом описания, рамка — изумрудная обводка, tags — метки на фото. Подпись «Продвигается» — всегда.
+  const boostImg = (src, cls = '', extra = '') => html`<span class="xl-ph ${cls}${src ? ' ph' : ''}"${src ? raw(` style="--ph:url('${esc(src)}')"`) : ''}>${src ? html`<img src="${src}" alt="" loading="lazy">` : svg(P.image, 28, 1.2)}${extra}</span>`;
   function card(it) {
     const meta = [it.metro ? `м. ${it.metro}` : it.city, shortWhen(it.createdAt)].filter(Boolean).join(' · ');
     const ad = it.ad;
-    return html`<div class="card${ad ? ' is-ad' : ''}">
+    const bo = !ad && it.boost && it.status !== 'sold' ? it.boost : null;
+    const xl = !!(bo && bo.xl);
+    const tags = bo && bo.tags && bo.tags.length ? bo.tags : null;
+    const side = xl ? [...(bo.photos || [])] : [];
+    return html`<div class="card${ad ? ' is-ad' : ''}${xl ? ' is-xl' : ''}${bo && bo.frame ? ' is-frame' : ''}">
       <a href="${lpath(it)}" class="card-link"${ad ? raw(` data-adid="${Number(ad.id)}"`) : ''}>
-        <div class="card-img">
-          ${it.photo ? html`<img src="${it.photo}" alt="" loading="lazy">` : svg(P.image, 40, 1.2)}
-          ${ad ? '' : it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : it.fresh ? html`<span class="tag drop-badge">Новое</span>` : it.priceWas ? html`<span class="tag drop-badge" title="Было ${price(it.priceWas, it.priceUnit)}">${ic('down', 13, 2.4)}Цена снижена</span>` : ''}
+        <div class="card-img${xl ? ' xl-img' : it.photo ? ' ph' : ''}"${!xl && it.photo ? raw(` style="--ph:url('${esc(it.photo)}')"`) : ''}>
+          ${xl ? boostImg(it.photo, 'main') : it.photo ? html`<img src="${it.photo}" alt="" loading="lazy">` : svg(P.image, 40, 1.2)}
+          ${xl ? html`<span class="xl-side">${boostImg(side[0])}${boostImg(side[1], '', bo.more ? html`<em>+${bo.more} фото</em>` : '')}</span>` : ''}
+          ${tags ? html`<span class="b-tags">${tags.map((t, i) => html`<span class="b-tag${i ? ' alt' : ''}">${t}</span>`)}</span>`
+    : ad ? '' : it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : it.fresh ? html`<span class="tag drop-badge">Новое</span>` : it.priceWas ? html`<span class="tag drop-badge" title="Было ${price(it.priceWas, it.priceUnit)}">${ic('down', 13, 2.4)}Цена снижена</span>` : ''}
           <span class="price-pill">${price(it.price, it.priceUnit)}</span>
           ${it.hasVideo ? html`<span class="vid-badge" title="Есть видео">${ic('play', 14, 0)}<span class="sr">Есть видео</span></span>` : ''}
         </div>
         <div class="card-body">
           <span class="card-title">${it.title}</span>
-          ${it.summary ? html`<span class="card-sum">${it.summary}</span>` : ''}
-          <span class="card-meta">${meta}${it.delivery ? html` · <span class="ok">Доставка</span>` : ''}${it.exchange ? html` · <span class="ok">Обмен</span>` : ''}</span>
+          ${xl && (bo.desc || it.summary) ? html`<span class="card-desc">${[it.summary, bo.desc].filter(Boolean).join('. ')}</span>` : it.summary ? html`<span class="card-sum">${it.summary}</span>` : ''}
+          <span class="card-meta">${meta}${it.delivery ? html` · <span class="ok">Доставка</span>` : ''}${it.exchange ? html` · <span class="ok">Обмен</span>` : ''}${bo ? html` · <span class="b-mark">Продвигается</span>` : ''}</span>
         </div>
       </a>
       <button type="button" class="fav-btn ${it.isFav ? 'on' : ''}" data-fav="${it.id}" aria-label="${it.isFav ? 'Убрать из избранного' : 'В избранное'}" aria-pressed="${it.isFav ? 'true' : 'false'}">${ic('heart', 20)}</button>
@@ -735,14 +913,17 @@
         ${subs.length ? html`<div class="field"><label for="f-sub">Раздел</label><select id="f-sub" name="sub" class="select"><option value="">Все разделы</option>
           ${subs.map((y) => html`<option value="${y.id}" ${y.id === sb ? raw('selected') : ''}>${y.name}</option>`)}</select></div>` : ''}
         ${x ? x.fields.map((f) => (f.type === 'select'
-    ? html`<div class="field"><label for="fa-${f.key}">${f.label}</label><select id="fa-${f.key}" name="a_${f.key}" class="select"><option value="">Любой</option>
-        ${f.options.map((o) => html`<option value="${o}" ${o === val(`a_${f.key}`) ? raw('selected') : ''}>${o}</option>`)}</select></div>`
+    ? html`<input type="hidden" name="a_${f.key}" value="${val(`a_${f.key}`)}">${attrChoice(f, val(`a_${f.key}`), { filter: true })}`
     : html`<div class="field"><span class="label">${f.label}${f.unit ? `, ${f.unit}` : ''}</span><div class="row">
         <label class="sr" for="fa-${f.key}-min">${f.label} от</label><input id="fa-${f.key}-min" name="a_${f.key}_min" class="input" inputmode="numeric" placeholder="от" value="${val(`a_${f.key}_min`)}">
         <label class="sr" for="fa-${f.key}-max">${f.label} до</label><input id="fa-${f.key}-max" name="a_${f.key}_max" class="input" inputmode="numeric" placeholder="до" value="${val(`a_${f.key}_max`)}"></div></div>`)) : ''}`);
       const fs = $('#f-sub');
       if (fs) fs.onchange = () => renderExtra(cat, fs.value);
     };
+    // Характеристики-списки в фильтрах — чипсами; значение лежит в скрытом поле a_<ключ>.
+    bindAttrChoices($('#f-extra'), { find: (fn) => (subOf(($('#f-sub') || {}).value || '') || { fields: [] }).fields.find(fn) },
+      (k) => { const i = $(`#f-extra input[name="a_${k}"]`); return i ? i.value : ''; },
+      (k, v) => { const i = $(`#f-extra input[name="a_${k}"]`); if (i) i.value = v || ''; }, { filter: true });
     renderExtra(category, sub);
     $('#f-cat').onchange = (e) => renderExtra(e.target.value, '');
     // Метро — когда в городе есть метро (справочник hh.ru).
@@ -753,7 +934,7 @@
       const list = await metroOf(city);
       if (!list.length || $('#f-city').value.trim() !== city) return;
       box.innerHTML = String(html`<div class="field"><label for="f-mt">Метро</label><select id="f-mt" name="metro" class="select"><option value="">Любая станция</option>
-        ${list.map((m) => html`<option value="${m.name}" ${m.name === params.metro ? raw('selected') : ''}>${m.name}</option>`)}</select></div>`);
+        ${list.map((m) => html`<option value="${m.name}" data-color="${m.color}" data-line="${m.line}" ${m.name === params.metro ? raw('selected') : ''}>${m.name}</option>`)}</select></div>`);
     };
     renderMetro();
     $('#f-city').addEventListener('change', renderMetro);
@@ -889,26 +1070,27 @@
     const vIdx = l.video ? media.length - 1 : -1;
     const mediaEl = (m) => (m.video
       ? html`<video class="g-video" src="${m.src}#t=0.1" controls playsinline preload="metadata"></video>`
-      : html`<img id="gimg" src="${m.src}" alt="${l.title}">`);
+      : html`<span class="g-ph" style="--ph:url('${m.src}')" aria-hidden="true"></span><img id="gimg" src="${m.src}" alt="${l.title}">`);
     const station = l.metro ? html`<span class="metro"><i style="--mline:${l.metro.color || '#C9C9C4'}"></i>${l.metro.name}</span>` : '';
     const marketChip = market ? ({
       below: html`<span class="tag accent">Ниже рынка</span>`,
       market: html`<span class="tag"><span class="dot"></span>&nbsp;Цена в рынке</span>`,
       above: html`<span class="tag">Выше рынка</span>`
     })[market.level] : '';
+    // 1.22: два списка «название — значение»: что за товар и условия сделки.
     const specs = [
-      ['Категория', catName(l.category)],
-      l.subcategory ? ['Раздел', subName(l.subcategory)] : null,
+      ['Раздел', l.subcategory ? subName(l.subcategory) : catName(l.category)],
       ...(l.specs || []).map((x) => [x.label, x.value]),
-      CONDITION_CATS.has(l.category) && l.condition ? ['Состояние', CONDITION_LABEL[l.condition]] : null,
-      ['Город', l.city],
-      l.metro ? ['Метро', station] : null,
-      l.district ? ['Район', l.district] : null,
+      CONDITION_CATS.has(l.category) && l.condition ? ['Состояние', CONDITION_LABEL[l.condition]] : null
+    ].filter(Boolean);
+    const terms = [
+      ['Где', html`${l.city}${l.metro ? html`<span class="kv-sub">${station}</span>` : ''}${l.district ? html`<span class="kv-sub">${l.district}</span>` : ''}`],
       ['Доставка', l.delivery ? 'Отправит по России' : 'Только встреча'],
       l.price !== null ? ['Торг', l.bargain ? 'Уместен' : 'Без торга'] : null,
       l.exchange ? ['Обмен', 'Возможен'] : null,
       ['Опубликовано', when(l.createdAt)]
     ].filter(Boolean);
+    const kv = (rows) => html`<dl class="kv">${rows.map(([k, v]) => html`<div><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>`;
 
     let ownerBanner = '';
     if (l.isOwner && l.status === 'rejected') {
@@ -930,16 +1112,25 @@
     let actions;
     const pm = data.promo;
     if (l.isOwner) {
-      actions = html`<div style="display:flex;flex-direction:column;gap:10px">
+      // 1.22: карточка автора — главное действие крупно, остальное плитками, «Удалить» — тихой ссылкой внизу.
+      const tile = (attrs, icon, label, cls = '') => html`<button type="button" class="own-act ${cls}" ${raw(attrs)}>${ic(icon, 20, 1.9)}<span>${label}</span></button>`;
+      const tiles = [
+        ['active', 'sold', 'archived'].includes(l.status) ? html`<a class="own-act" href="/profile/stats/${l.id}">${ic('chart', 20, 1.9)}<span>Статистика</span></a>` : '',
+        l.status === 'active' ? tile('data-status="sold"', 'check', 'Продано') : '',
+        l.status === 'active' ? tile('data-status="archived"', 'pause', 'Снять') : '',
+        l.status === 'scheduled' ? tile('data-status="archived"', 'pause', 'Не публиковать') : '',
+        l.status === 'sold' || (l.status === 'archived' && !isExpired(l)) ? tile('data-status="active"', 'refresh', 'Опубликовать снова') : ''
+      ].filter((x) => String(x));
+      const canPromote = ['active', 'pending', 'scheduled'].includes(l.status) && (boostOn() || pm || (data.boost || []).length);
+      actions = html`<div class="own">
         ${pm ? html`<div class="promo-now ${pm.status}">${ic(pm.status === 'active' ? 'megaphone' : 'clock', 20)}<div><b>${PROMO_STATUS[pm.status][1]}</b><span>${promoLine(pm)}</span></div></div>` : ''}
-        ${l.status === 'active' && (isBiz() || pm) ? html`<button class="btn btn-accent btn-lg btn-block" data-promote>${ic('trend', 20, 2)}${pm ? 'Продлить продвижение' : 'Продвигать'}</button>` : ''}
-        <a class="btn btn-dark btn-lg btn-block" href="/edit/${l.id}">Редактировать</a>
-        ${['active', 'sold', 'archived'].includes(l.status) ? html`<a class="btn btn-soft btn-lg btn-block" href="/profile/stats/${l.id}">${ic('chart', 20)}Статистика</a>` : ''}
-        ${l.status === 'active' ? html`<button class="btn btn-soft btn-lg btn-block" data-status="sold">Отметить проданным</button>` : ''}
-        ${l.status === 'sold' || l.status === 'archived' ? html`<button class="btn ${isExpired(l) ? 'btn-accent' : 'btn-soft'} btn-lg btn-block" data-status="active">Опубликовать снова</button>` : ''}
+        ${(data.boost || []).length ? html`<div class="promo-now active">${ic('bolt', 20)}<div><b>Продвигается</b><span>${data.boost.map((b) => `${b.kinds.map((k) => BOOST.find((x) => x[0] === k)[2]).join(', ')} — ${b.tagsState === 'review' ? 'метки на проверке, ' : b.tagsState === 'off' ? 'метки не одобрены, ' : ''}${boostState(b)}`).join('; ')}</span></div></div>` : ''}
+        ${isExpired(l) ? html`<button class="btn btn-accent btn-lg btn-block" data-status="active">${ic('refresh', 20, 2)}Опубликовать снова</button>` : ''}
         ${l.status === 'scheduled' ? html`<button class="btn btn-accent btn-lg btn-block" data-status="active">Опубликовать сейчас</button>` : ''}
-        ${l.status === 'active' || l.status === 'scheduled' ? html`<button class="btn btn-line btn-block" data-status="archived">${l.status === 'scheduled' ? 'Не публиковать' : 'Снять с публикации'}</button>` : ''}
-        <button class="btn btn-danger btn-block" data-delete>Удалить</button>
+        <a class="btn btn-dark btn-lg btn-block" href="/edit/${l.id}">${ic('edit', 19, 2)}${l.status === 'rejected' ? 'Исправить' : 'Редактировать'}</a>
+        ${canPromote ? html`<button type="button" class="own-promo" data-promote><span class="own-promo-ic">${ic('bolt', 20, 2)}</span><span><b>Продвинуть</b><small>XL, рамка, метки · от ${rub(Math.min(...Object.values(boostPrices())))}</small></span>${ic('right', 18, 2)}</button>` : ''}
+        ${tiles.length ? html`<div class="own-acts n${tiles.length}">${tiles}</div>` : ''}
+        <button type="button" class="own-del" data-delete>${ic('trash', 16, 2)}Удалить объявление</button>
       </div>`;
     } else if (l.status === 'active') {
       actions = html`<div style="display:flex;flex-direction:column;gap:10px">
@@ -970,13 +1161,14 @@
     ? html`<button class="thumb vthumb ${i === 0 ? 'on' : ''}" data-t="${i}" aria-label="Видео">${photos[0] ? html`<img src="${photos[0]}" alt="" loading="lazy">` : ''}<span>${ic('play', 16, 0)}</span></button>`
     : html`<button class="thumb ${i === 0 ? 'on' : ''}" data-t="${i}" aria-label="Фото ${i + 1}"><img src="${m.src}" alt="" loading="lazy"></button>`))}</div>` : ''}
           </div>
-          <section><h2 class="h2">Характеристики</h2><div class="specs">${specs.map(([k, v]) => html`<div class="spec"><div class="k">${k}</div><div class="v">${v}</div></div>`)}</div></section>
+          <section class="kv-sec"><h2 class="h2">Характеристики</h2>${kv(specs)}</section>
           ${l.description ? html`<section><h2 class="h2">Описание</h2><p class="desc">${l.description}</p></section>` : ''}
+          <section class="kv-sec"><h2 class="h2">Условия</h2>${kv(terms)}</section>
         </div>
         <aside class="item-side">
           <div class="panel panel-shadow" style="display:flex;flex-direction:column;gap:22px">
             <div style="display:flex;gap:10px;align-items:flex-start">
-              <div style="flex:1;min-width:0"><h1 class="item-title">${l.title}</h1><p class="muted" style="margin:8px 0 0;font-size:14px">${l.city} · ${when(l.createdAt)}</p>
+              <div style="flex:1;min-width:0">${l.isOwner ? html`<span class="own-state ${(isExpired(l) ? ['off'] : MY_TAG[l.status] || MY_TAG.archived)[0]}"><i></i>${isExpired(l) ? 'Срок истёк' : (MY_TAG[l.status] || MY_TAG.archived)[1]}${l.status === 'active' && l.expiresAt ? html`<em>до ${dateShort(l.expiresAt)}</em>` : ''}</span>` : ''}<h1 class="item-title">${l.title}</h1><p class="muted" style="margin:8px 0 0;font-size:14px">${l.city} · ${when(l.createdAt)}</p>
                 ${l.metro || l.district ? html`<p class="item-where">${station}${l.district ? html`<span class="iw-d">${l.metro ? html`<span class="muted">·&nbsp;</span>` : ''}${l.district}</span>` : ''}</p>` : ''}
                 <p class="item-counts"><span title="Просмотры">${ic('eye', 16)}<span data-views>${NF.format(l.views)} ${plural(l.views, 'просмотр', 'просмотра', 'просмотров')}</span></span><span title="В избранном">${ic('heart', 16)}<span data-favs>в избранном у ${NF.format(l.favCount)}</span></span></p></div>
               ${l.isOwner ? '' : html`<button class="icon-btn ${l.isFav ? 'on' : ''}" data-fav="${l.id}" aria-label="${l.isFav ? 'Убрать из избранного' : 'В избранное'}" aria-pressed="${l.isFav ? 'true' : 'false'}">${ic('heart', 20)}</button>`}
@@ -986,7 +1178,7 @@
               ${marketChip ? html`<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${marketChip}<span class="muted" style="font-size:13px">по ${market.count} ${plural(market.count, 'похожему объявлению', 'похожим объявлениям', 'похожим объявлениям')}</span></div>` : ''}
             </div>
             ${actions}
-            <div style="display:flex;flex-direction:column;gap:14px">
+            <div style="display:${l.isOwner ? 'none' : 'flex'};flex-direction:column;gap:14px">
               ${S.config.payments
     ? html`<div class="note"><span style="color:var(--accent)">${ic('shield', 22)}</span><div><strong>Безопасная сделка.</strong> Продавец получит деньги, только когда вы заберёте и проверите товар.</div></div>`
     : html`<div class="note"><span style="color:var(--accent)">${ic('shield', 22)}</span><div><strong>Общайтесь в чате Торганы.</strong> Так переписка сохранится, а мы сможем помочь при споре.</div></div>`}
@@ -1072,7 +1264,7 @@
     const ap = $('[data-appeal]');
     if (ap) ap.onclick = () => appealModal(l.id, () => render());
     const pr = $('[data-promote]');
-    if (pr) pr.onclick = () => promoteModal(l.id, l.title);
+    if (pr) pr.onclick = () => boostModal(l.id, l.title, pm);
     const rp = $('[data-report]');
     if (rp) {
       rp.onclick = () => {
@@ -1143,6 +1335,104 @@
   const UNIT_LABEL = { '': 'за всё', мес: 'в месяц', сутки: 'за сутки', час: 'за час', 'м²': 'за м²', шт: 'за штуку' };
   const DESC_TIPS = ['Состояние', 'Комплектация', 'Причина продажи', 'Дефекты', 'Где можно посмотреть'];
   const DRAFT_KEY = 'tg_draft';
+  // ================= продвижение в ленте (1.21) =================
+  // Один выбор для формы объявления и окна «Продвинуть»: XL-карточка, рамка, метки (до двух) и пакет «Всё в одном».
+  // Цена считается так же, как на сервере (lib/boost.js): все три — по цене пакета, если он дешевле суммы.
+  const BOOST = [['xl', 'xl', 'XL-карточка', 'Две ячейки, три фото и описание'], ['frame', 'frame', 'Яркая рамка', 'Изумрудная обводка карточки'], ['tags', 'tag', 'Метки на фото', 'До двух — после проверки модератором']];
+  const boostOn = () => !!(S.config.billing && S.config.billing.ready);
+  const boostPrices = () => (S.config.billing && S.config.billing.prices && S.config.billing.prices.boost) || { xl: 99, frame: 39, tags: 29, all: 129 };
+  function boostQuote(b) {
+    const pr = boostPrices();
+    const on = { xl: !!b.xl, frame: !!b.frame, tags: !!b.tagsOn };
+    const full = (on.xl ? pr.xl : 0) + (on.frame ? pr.frame : 0) + (on.tags ? pr.tags : 0);
+    const bundle = on.xl && on.frame && on.tags && pr.all < full;
+    return { amount: bundle ? pr.all : full, full, bundle, any: on.xl || on.frame || on.tags };
+  }
+  // Что уже идёт или оплачено (current — из /api/listings/:id): такие услуги второй раз не купить.
+  function boostBusy(current) {
+    const busy = {};
+    (current || []).forEach((b) => b.kinds.forEach((k) => { if (k !== 'tags' || b.tagsState !== 'off') busy[k] = b; }));
+    return busy;
+  }
+  const boostState = (b) => (b.status === 'waiting' ? 'с публикацией' : `до ${dateShort(b.endsAt)}`);
+  function boostPicker(busy = {}) {
+    const pr = boostPrices();
+    const sum = pr.xl + pr.frame + pr.tags;
+    const free = BOOST.filter(([k]) => !busy[k]);
+    return html`<div class="bp" data-bp>
+      <div class="bp-grid">${BOOST.map(([k, icon, t, sub]) => html`<label class="bp-opt${busy[k] ? ' busy' : ''}">
+        <span class="bp-top"><span class="bp-ic">${ic(icon, 20, 1.9)}</span><input type="checkbox" data-bk="${k}" ${busy[k] ? raw('disabled') : ''}></span>
+        <span class="bp-t"><b>${t}</b><em>${busy[k] ? (k === 'tags' && busy[k].tagsState === 'review' ? 'на проверке' : boostState(busy[k])) : rub(pr[k])}</em></span>
+        <small>${sub}</small></label>`)}</div>
+      <div class="bp-tags hidden" data-bp-tags role="group" aria-label="Метки на фото"><span class="bp-tags-h">Выберите одну или две</span>
+        ${S.config.billing.boostTags.map((t) => html`<button type="button" class="bp-chip" data-tag="${t}" aria-pressed="false">${t}</button>`)}</div>
+      ${free.length === 3 && pr.all < sum ? html`<label class="bp-all"><input type="checkbox" data-bk="all"><span class="bp-ic">${ic('bolt', 20, 1.9)}</span>
+        <span class="bp-t"><b>Всё в одном</b><small>XL, рамка и метки · <span class="bp-save">выгоднее на ${rub(sum - pr.all)}</span></small></span><em>${rub(pr.all)}</em></label>` : ''}
+    </div>`;
+  }
+  // st = { xl, frame, tagsOn, tags: [] }; onChange — после каждого изменения.
+  function bindBoostPicker(root, st, onChange) {
+    const box = $('[data-bp]', root);
+    if (!box) return;
+    const sync = () => {
+      $$('[data-bk]', box).forEach((x) => { if (x.dataset.bk !== 'all' && !x.disabled) x.checked = x.dataset.bk === 'tags' ? st.tagsOn : !!st[x.dataset.bk]; });
+      const all = $('[data-bk="all"]', box); if (all) all.checked = st.xl && st.frame && st.tagsOn;
+      $('[data-bp-tags]', box).classList.toggle('hidden', !st.tagsOn);
+      $$('[data-tag]', box).forEach((c) => { const on = st.tags.includes(c.dataset.tag); c.classList.toggle('on', on); c.setAttribute('aria-pressed', on ? 'true' : 'false'); c.disabled = !on && st.tags.length >= 2; });
+      onChange();
+    };
+    box.addEventListener('change', (e) => {
+      const k = e.target.dataset.bk;
+      if (!k) return;
+      if (k === 'all') { st.xl = st.frame = st.tagsOn = e.target.checked; } else if (k === 'tags') st.tagsOn = e.target.checked; else st[k] = e.target.checked;
+      if (!st.tagsOn) st.tags = [];
+      sync();
+    });
+    box.addEventListener('click', (e) => {
+      const c = e.target.closest('[data-tag]');
+      if (!c) return;
+      const t = c.dataset.tag;
+      st.tags = st.tags.includes(t) ? st.tags.filter((x) => x !== t) : [...st.tags, t].slice(0, 2);
+      sync();
+    });
+    sync();
+  }
+  const boostBody = (st) => ({ xl: st.xl, frame: st.frame, tags: st.tagsOn ? st.tags : [] });
+  const boostErr = (st) => (st.tagsOn && !st.tags.length ? 'Выберите метки для фото — одну или две.' : '');
+  async function boostPay(listingId, st) {
+    const r = await api('POST', `/api/listings/${listingId}/boost`, boostBody(st));
+    location.href = r.url;
+  }
+
+  // «Продвинуть» опубликованное или ждущее публикации объявление (из «Моих объявлений» и со страницы объявления).
+  async function boostModal(listingId, title, promo = null) {
+    let d;
+    try { d = await api('GET', `/api/listings/${listingId}/boost`); } catch (e) { toast(e.message, true); return; }
+    const busy = boostBusy(d.current);
+    const st = { xl: false, frame: false, tagsOn: false, tags: [] };
+    const all = Object.keys(busy).length >= 3;
+    const biz = isBiz() || promo;
+    openModal(String(html`<div class="bm"><h2>Продвижение</h2><p class="muted bm-sub">«${title}» · ${d.days} дней${d.status === 'active' ? '' : ' с публикации'}</p>
+      ${d.current.length ? html`<div class="bm-now">${d.current.map((b) => html`<div>${ic('check', 16, 2.4)}<span>${b.kinds.map((k) => BOOST.find((x) => x[0] === k)[2]).join(', ')}${b.tags.length ? ` (${b.tags.join(', ')})` : ''}</span><em>${b.tagsState === 'review' ? 'метки на проверке · ' : b.tagsState === 'off' ? 'метки не одобрены · ' : ''}${boostState(b)}</em></div>`)}</div>` : ''}
+      ${all ? html`<p class="muted">Всё уже включено.</p>` : d.ready ? boostPicker(busy) : html`<p class="muted">Оплата пока не подключена.</p>`}
+      <p class="bm-note">Порядок выдачи не меняется — карточка заметнее и подписана «Продвигается». Оплата на странице ЮKassa, чек — на ${S.user.email}. <a href="/page/terms#paid">Условия</a></p>
+      ${biz ? html`<button type="button" class="bm-biz" data-biz>${ic('megaphone', 18, 2)}<span><b>Реклама над поиском</b><small>для ИП и компаний${promo ? ` · ${PROMO_STATUS[promo.status][1].toLowerCase()}` : ''}</small></span>${ic('right', 18, 2)}</button>` : ''}
+      <div class="modal-actions"><button class="btn btn-soft" data-x>Закрыть</button>${!all && d.ready ? html`<button class="btn btn-accent" data-ok disabled>Выберите</button>` : ''}</div></div>`), (m, close) => {
+      $('[data-x]', m).onclick = close;
+      m.addEventListener('click', (e) => { if (e.target.closest('a[href]')) close(); });
+      const bz = $('[data-biz]', m); if (bz) bz.onclick = () => { close(); promoteModal(listingId, title); };
+      const ok = $('[data-ok]', m);
+      if (!ok) return;
+      bindBoostPicker(m, st, () => { const q = boostQuote(st); ok.disabled = !q.any; ok.textContent = q.any ? `Оплатить ${rub(q.amount)}` : 'Выберите'; });
+      ok.onclick = async () => {
+        const err = boostErr(st);
+        if (err) { toast(err, true); return; }
+        ok.disabled = true; ok.textContent = 'Открываем оплату…';
+        try { await boostPay(listingId, st); } catch (ex) { toast(ex.message, true); ok.disabled = false; ok.textContent = `Оплатить ${rub(boostQuote(st).amount)}`; }
+      };
+    });
+  }
+
   const ED_STEPS = [['s-photos', 'Фото'], ['s-what', 'Что продаёте'], ['s-price', 'Цена'], ['s-where', 'Где'], ['s-desc', 'Описание'], ['s-publish', 'Публикация']];
   // Публикация в выбранное время: дни на 30 вперёд и время с шагом 30 минут — по Москве (UTC+3 круглый год).
   const MSK = 3 * 3600 * 1000;
@@ -1182,6 +1472,10 @@
     const times = Array.from({ length: 48 }, (_, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`);
     const atDay = mskDay(at0 || tomorrow10);
     const atClock = new Date((at0 || tomorrow10) + MSK).toISOString().slice(11, 16);
+    // Продвижение: когда оплата подключена и объявление ещё можно показать (не продано и не снято).
+    const canBoost = boostOn() && (!l || ['active', 'pending', 'scheduled', 'rejected'].includes(l.status));
+    const busyBoost = boostBusy(l && l.boost);
+    st.boost = { xl: false, frame: false, tagsOn: false, tags: [] };
     const step = (n, sid, title, sub, body) => html`<section class="ed-step" id="${sid}"><div class="ed-step-h"><span class="ed-kick">Шаг ${n} из ${ED_STEPS.length}</span><h2>${title}</h2>${sub ? html`<p>${sub}</p>` : ''}</div><div class="ed-err" role="alert" hidden></div>${body}
       <div class="ed-nav">${n > 1 ? html`<button type="button" class="btn btn-soft" data-prev>${ic('left', 18, 2)}Назад</button>` : html`<span></span>`}${n < ED_STEPS.length
     ? html`<button type="button" class="btn btn-dark" data-next>Далее${ic('right', 18, 2)}</button>`
@@ -1228,7 +1522,7 @@
               <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
             <div class="ed-where2">
               <div class="field hidden" id="metro-field"><label for="metro">Метро</label>
-                <div class="ed-metro"><i id="metro-dot"></i><select id="metro" name="metro" class="select"><option value="">Не указывать</option></select></div></div>
+                <select id="metro" name="metro" class="select"><option value="">Не указывать</option></select></div>
               <div class="field"><label for="district">Район <small class="muted">— по желанию</small></label>
                 <input id="district" name="district" class="input" maxlength="60" autocomplete="off" placeholder="Например: Центральный" value="${src.district || ''}"></div>
             </div>
@@ -1249,7 +1543,10 @@
                 <small>По московскому времени. До публикации объявление видно только вам — в «Моих объявлениях» с меткой «Запланировано».</small>
               </div>
             </fieldset>` : ''}
-            <p class="ed-rules muted">Нажимая «${sendLabel}», вы соглашаетесь с <a href="/page/rules" style="text-decoration:underline">правилами площадки</a>.</p>`)}
+            ${canBoost ? html`<div class="ed-boost"><div class="ed-boost-h"><span class="label">Продвижение</span><small>по желанию · 7 дней с публикации</small></div>
+              ${boostPicker(busyBoost)}
+              <p class="ed-boost-note">${ic('lock', 14, 2)}Оплата при отправке. Не опубликуем за 7 дней — вернём деньги.</p></div>` : ''}
+            <p class="ed-rules muted">Нажимая «${sendLabel}», вы соглашаетесь с <a href="/page/rules" style="text-decoration:underline">правилами площадки</a><span id="paid-terms" class="hidden"> и <a href="/page/terms#paid" style="text-decoration:underline">условиями платных услуг</a></span>.</p>`)}
         </form>
         <aside class="ed-side">
           <div class="ed-panel">
@@ -1435,28 +1732,16 @@
       const box = $('#attrs');
       box.classList.toggle('hidden', !x || !x.fields.length);
       if (!x || !x.fields.length) { box.innerHTML = ''; return; }
-      box.innerHTML = String(html`<div class="ed-attrs-h"><b>Характеристики</b><span>по ним покупатели находят объявление в фильтрах</span></div>
-        <div class="ed-attrs-grid">${x.fields.map((f) => {
+      box.innerHTML = String(html`<div class="ed-attrs-h"><b>Характеристики</b><span>${x.fields.some((f) => f.req) ? html`<i class="rq">*</i> — главные, остальное по желанию. ` : ''}По ним покупатели находят объявление в фильтрах</span></div>
+        <div class="ed-attrs-grid">${[...x.fields].sort((a, b) => (b.req - a.req) || ((a.type !== 'select') - (b.type !== 'select'))).map((f) => {
     const v = st.attrs[f.key];
-    if (f.type === 'select' && f.options.length <= 6) {
-      return html`<div class="field wide"><span class="label">${f.label}</span><div class="ed-seg ed-seg-wrap" role="radiogroup" aria-label="${f.label}">
-        ${f.options.map((o) => html`<button type="button" role="radio" class="${o === v ? 'on' : ''}" aria-checked="${o === v ? 'true' : 'false'}" data-ak="${f.key}" data-av="${o}">${f.key === 'rooms' && o !== 'Студия' ? `${o}${o === '5+' ? '' : '-комн.'}` : o}</button>`)}</div></div>`;
-    }
-    if (f.type === 'select') {
-      return html`<div class="field"><label for="at-${f.key}">${f.label}</label><select id="at-${f.key}" class="select" data-aks="${f.key}"><option value="">Не указано</option>
-        ${f.options.map((o) => html`<option value="${o}" ${o === v ? raw('selected') : ''}>${o}</option>`)}</select></div>`;
-    }
-    return html`<div class="field"><label for="at-${f.key}">${f.label}</label><div class="ed-unit-input"><input id="at-${f.key}" class="input" inputmode="${f.key === 'area' || f.key === 'land' ? 'decimal' : 'numeric'}" autocomplete="off" data-akn="${f.key}" data-max="${f.max}" placeholder="${f.key === 'year' ? `например, ${new Date().getFullYear() - 5}` : '—'}" value="${fmtAttrInput(f, v)}">${f.unit ? html`<span>${f.unit}</span>` : ''}</div></div>`;
+    if (f.type === 'select') return attrChoice(f, v);
+    return html`<div class="field"><label for="at-${f.key}">${f.label}${f.req ? html`<i class="rq">*</i>` : ''}</label><div class="ed-unit-input"><input id="at-${f.key}" class="input" inputmode="${f.key === 'area' || f.key === 'land' ? 'decimal' : 'numeric'}" autocomplete="off" data-akn="${f.key}" data-max="${f.max}" placeholder="${f.key === 'year' ? `например, ${new Date().getFullYear() - 5}` : '—'}" value="${fmtAttrInput(f, v)}">${f.unit ? html`<span>${f.unit}</span>` : ''}</div></div>`;
   })}</div>`);
-      $$('[data-ak]', box).forEach((b) => {
-        b.onclick = () => {
-          const k = b.dataset.ak; const on = st.attrs[k] !== b.dataset.av;
-          if (on) st.attrs[k] = b.dataset.av; else delete st.attrs[k];
-          $$(`[data-ak="${k}"]`, box).forEach((y) => { const yes = on && y === b; y.classList.toggle('on', yes); y.setAttribute('aria-checked', yes ? 'true' : 'false'); });
-          changed();
-        };
-      });
-      $$('[data-aks]', box).forEach((sel) => { sel.onchange = () => { if (sel.value) st.attrs[sel.dataset.aks] = sel.value; else delete st.attrs[sel.dataset.aks]; changed(); }; });
+      if (!box.dataset.bound) {
+        box.dataset.bound = '1';
+        bindAttrChoices(box, { find: (fn) => (subOf(st.sub) || { fields: [] }).fields.find(fn) }, (k) => st.attrs[k], (k, val) => { if (val === undefined) delete st.attrs[k]; else st.attrs[k] = val; changed(); });
+      }
       $$('[data-akn]', box).forEach((inp) => {
         inp.oninput = () => {
           const big = Number(inp.dataset.max) >= 100000;
@@ -1480,10 +1765,6 @@
 
     // ---------- метро ----------
     let metroWanted = src.metro ? (typeof src.metro === 'string' ? src.metro : src.metro.name) : '';
-    const paintMetroDot = () => {
-      const opt = form.metro.selectedOptions[0];
-      $('#metro-dot').style.background = opt && opt.dataset.color ? opt.dataset.color : '#C9C9C4';
-    };
     const loadMetro = async () => {
       const city = form.city.value.trim();
       const field = $('#metro-field');
@@ -1491,12 +1772,12 @@
       const list = await metroOf(city);
       if (form.city.value.trim() !== city) return;
       if (form.metro.value) metroWanted = form.metro.value;
-      form.metro.innerHTML = String(html`<option value="">Не указывать</option>${list.map((m) => html`<option value="${m.name}" data-color="${m.color}" ${m.name === metroWanted ? raw('selected') : ''}>${m.name}</option>`)}`);
+      form.metro.innerHTML = String(html`<option value="">Не указывать</option>${list.map((m) => html`<option value="${m.name}" data-color="${m.color}" data-line="${m.line}" ${m.name === metroWanted ? raw('selected') : ''}>${m.name}</option>`)}`);
       field.classList.toggle('hidden', !list.length);
-      paintMetroDot(); changed();
+      changed();
     };
     let metroTimer = null;
-    form.metro.onchange = () => { metroWanted = form.metro.value; paintMetroDot(); changed(); };
+    form.metro.onchange = () => { metroWanted = form.metro.value; changed(); };
 
     // ---------- категория, состояние, цена ----------
     const setCat = (c) => {
@@ -1564,20 +1845,24 @@
     });
     // Заполнены ли главные характеристики (те, что видны в карточке).
     const attrsDone = (b) => { const x = subOf(b.subcategory); return !x || !x.summary.length || x.summary.every((k) => b.attrs[k] !== undefined); };
+    // Главные характеристики раздела (req) — обязательны, как на сервере.
+    const attrsMissing = (b) => ((subOf(b.subcategory) || { fields: [] }).fields.filter((f) => f.req && b.attrs[f.key] === undefined));
+    const attrsReq = () => !!(subOf(st.sub) || { fields: [] }).fields.some((f) => f.req);
     const CHECK = [
       ['s-photos', 'Фото', (b) => b.photos.length > 0, false],
       ['s-what', 'Название', (b) => b.title.length >= 3, true],
       ['s-what', 'Категория', (b) => !!b.category, true],
       ['s-what', 'Раздел', (b) => !!b.subcategory || (!!b.category && !subsOf(b.category).length), true],
-      ['s-what', 'Характеристики', (b) => !!b.subcategory && attrsDone(b), false],
+      ['s-what', 'Характеристики', (b) => !!b.subcategory && !attrsMissing(b).length && attrsDone(b), attrsReq],
       ['s-price', 'Цена', (b) => !!b.price || st.negotiable, false],
       ['s-where', 'Город', (b) => b.city.length >= 2, true],
       ['s-desc', 'Описание', (b) => b.description.length >= 20, false]
     ];
     const ERR = {
-      's-what': (b) => (b.title.length < 3 ? 'Напишите название — хотя бы пару слов.' : !b.category ? 'Выберите категорию.' : !b.subcategory && subsOf(b.category).length ? 'Выберите раздел — так объявление попадёт в нужные фильтры.' : ''),
+      's-what': (b) => (b.title.length < 3 ? 'Напишите название — хотя бы пару слов.' : !b.category ? 'Выберите категорию.' : !b.subcategory && subsOf(b.category).length ? 'Выберите раздел — так объявление попадёт в нужные фильтры.'
+        : attrsMissing(b).length ? `Укажите: ${attrsMissing(b).map((f) => f.label.toLowerCase()).join(', ')}.` : ''),
       's-where': (b) => (b.city.length < 2 ? 'Укажите город.' : ''),
-      's-publish': (b) => (b.publishAt !== null && b.publishAt < Date.now() + 5 * 60 * 1000 ? 'Выберите время позже — хотя бы через несколько минут.' : '')
+      's-publish': (b) => (b.publishAt !== null && b.publishAt < Date.now() + 5 * 60 * 1000 ? 'Выберите время позже — хотя бы через несколько минут.' : boostErr(st.boost))
     };
     let saveTimer = null;
     function changed() {
@@ -1586,12 +1871,13 @@
       $('#desc-count').textContent = `${form.description.value.length}/4000`;
       const done = CHECK.filter((c) => c[2](b)).length;
       const pct = Math.round((done / CHECK.length) * 100);
-      const missing = CHECK.filter((c) => c[3] && !c[2](b)).map((c) => c[1].toLowerCase());
-      const soft = CHECK.filter((c) => !c[3] && !c[2](b)).map((c) => c[1].toLowerCase());
+      const reqOf = (c) => (typeof c[3] === 'function' ? c[3]() : c[3]);
+      const missing = CHECK.filter((c) => reqOf(c) && !c[2](b)).map((c) => c[1].toLowerCase());
+      const soft = CHECK.filter((c) => !reqOf(c) && !c[2](b)).map((c) => c[1].toLowerCase());
       $('#ready-n').textContent = `Заполнено на ${pct}%`;
       $('#ready-t').textContent = missing.length ? `осталось: ${missing.join(', ')}` : soft.length ? 'можно отправлять' : 'всё готово';
       $('#ready-bar').style.width = `${pct}%`;
-      $('#check').innerHTML = String(html`${CHECK.map(([sid, t, ok, req]) => html`<li class="${ok(b) ? 'ok' : ''}"><a href="#${sid}" data-goto="${sid}">${ic(ok(b) ? 'check' : 'plus', 15, 2.4)}${t}${req ? '*' : ''}</a></li>`)}`);
+      $('#check').innerHTML = String(html`${CHECK.map((c) => { const [sid, t, ok] = c; return html`<li class="${ok(b) ? 'ok' : ''}"><a href="#${sid}" data-goto="${sid}">${ic(ok(b) ? 'check' : 'plus', 15, 2.4)}${t}${reqOf(c) ? '*' : ''}</a></li>`; })}`);
       $$('[data-goto]').forEach((a) => { a.onclick = (e) => { e.preventDefault(); goStep(ED_STEPS.findIndex(([sid]) => sid === a.dataset.goto)); }; });
       // Шаг готов, если всё на нём заполнено; последний — когда готово обязательное.
       $$('[data-step]').forEach((x) => {
@@ -1601,8 +1887,14 @@
       });
       $('#bargain-opt').classList.toggle('hidden', st.negotiable); // без цены торговаться не о чем
       const first = st.photos.find((p) => p.url && !p.loading);
+      const pb = st.boost;
+      const ready = st.photos.filter((p) => p.url && !p.loading);
+      const prevBoost = pb.xl || pb.frame || pb.tags.length ? { xl: pb.xl, frame: pb.frame, tags: pb.tags, photos: ready.slice(1, 3).map((p) => p.url), more: Math.max(0, ready.length - 3), desc: b.description.replace(/\s+/g, ' ').slice(0, 180) } : null;
       $('#preview').innerHTML = String(card({ id: 0, title: b.title || 'Название объявления', price: b.price ? Number(b.price) : null, priceUnit: b.priceUnit, city: b.city || 'Город', createdAt: Date.now(), photo: first ? first.url : null, delivery: b.delivery, exchange: b.exchange,
-        summary: attrSummary(b.subcategory, b.attrs), metro: b.metro, hasVideo: !!st.video }));
+        summary: attrSummary(b.subcategory, b.attrs), metro: b.metro, hasVideo: !!st.video, boost: prevBoost }));
+      const q = boostQuote(pb);
+      $$('[data-submit]').forEach((x) => { const t = x.id === 'dock-send' ? (l ? 'Сохранить' : 'На проверку') : sendLabel; x.textContent = q.any ? `${t} · ${rub(q.amount)}` : t; });
+      const pt = $('#paid-terms'); if (pt) pt.classList.toggle('hidden', !q.any);
       if (st.tried) for (const sid of Object.keys(ERR)) showErr(sid, ERR[sid](b));
       const has = b.title || b.photos.length || b.description || b.price;
       if (!l && !has) draftDrop();
@@ -1624,8 +1916,10 @@
     // ---------- шаги ----------
     const focusErr = (sid) => {
       const b = body();
-      const f = sid === 's-what' && b.title.length < 3 ? form.title : sid === 's-where' ? form.city : sid === 's-what' && b.category && !b.subcategory ? $('[data-sub]') : sid === 's-publish' ? $('#w-time') : null;
-      if (f) setTimeout(() => f.focus({ preventScroll: true }), 60);
+      const miss = sid === 's-what' && b.subcategory ? attrsMissing(b)[0] : null;
+      const f = sid === 's-what' && b.title.length < 3 ? form.title : sid === 's-where' ? form.city : sid === 's-what' && b.category && !b.subcategory ? $('[data-sub]')
+        : miss ? $(`#at-${miss.key}`) || $(`[data-field="${miss.key}"] button`) : sid === 's-publish' ? $('#w-time + .pick-btn') : null;
+      if (f) setTimeout(() => { f.focus({ preventScroll: true }); if (miss) f.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 60);
     };
     // check — «Далее» не пускает дальше, пока на текущем шаге не заполнено обязательное.
     function goStep(i, check = false) {
@@ -1664,8 +1958,13 @@
       try {
         const r = l ? await api('PATCH', `/api/listings/${l.id}`, b) : await api('POST', '/api/listings', b);
         if (!l) draftDrop();
+        const lid = l ? l.id : r.id;
+        if (canBoost && boostQuote(st.boost).any) {
+          // Объявление сохранено — дальше страница оплаты ЮKassa. Не открылась — продвинуть можно позже из «Моих объявлений».
+          try { await boostPay(lid, st.boost); return; } catch (ex) { toast(`Объявление отправлено, но оплата не открылась: ${ex.message}`, true); go(`/l/${lid}`, true); return; }
+        }
         toast(b.publishAt ? 'Отправлено на проверку — опубликуем в выбранное время' : 'Отправлено на проверку модератору');
-        go(`/l/${l ? l.id : r.id}`, true);
+        go(`/l/${lid}`, true);
       } catch (ex) {
         toast(ex.message, true);
         sending = false;
@@ -1677,6 +1976,7 @@
 
     cleanup = () => { document.body.classList.remove('editing'); clearTimeout(saveTimer); if (st.video && st.video.local) URL.revokeObjectURL(st.video.local); st.video = null; };
     setCat(st.category); setCond(st.condition); setUnit(st.priceUnit); setNeg(st.negotiable);
+    if (canBoost) bindBoostPicker($('#s-publish'), st.boost, changed);
     renderPhotos(); renderVideo(); loadMetro();
     goStep(st.step);
     if (l) fetchHint();
@@ -2614,6 +2914,7 @@
             <a href="/l/${i.id}" class="ml-title">${i.title}</a>
             <div class="ml-price">${price(i.price, i.priceUnit)}</div>
             ${i.promo ? html`<span class="ml-promo ${i.promo.status}">${ic('megaphone', 13, 2)}${i.promo.status === 'active' ? `Реклама до ${dateShort(i.promo.endsAt)}` : 'Ждёт маркировки'}</span>` : ''}
+            ${(i.boost || []).map((b) => html`<span class="ml-promo ${b.status === 'active' ? 'active' : 'marking'}">${ic('bolt', 13, 2)}${b.kinds.map((k) => BOOST.find((x) => x[0] === k)[2]).join(', ')} · ${boostState(b)}${b.tagsState === 'review' ? ' · метки на проверке' : ''}</span>`)}
             <div class="ml-meta"><span title="Просмотры">${svg(P.eye, 15, 1.8)} ${NF.format(i.views)}</span><span title="В избранном">${svg(P.heart, 15, 1.8)} ${i.favCount}</span><span>${i.city} · ${shortWhen(i.createdAt)}</span>${i.status === 'active' && i.expiresAt ? html`<span title="Объявление висит 30 дней, потом его можно бесплатно опубликовать снова">${ic('clock', 15, 1.8)} до ${dateShort(i.expiresAt)}</span>` : ''}</div>
           </div>
           <div class="ml-side">
@@ -2648,7 +2949,7 @@
         if (i.status === 'sold' || i.status === 'archived') acts.push({ icon: 'refresh', label: 'Опубликовать снова', run: () => setStatus(i, 'active', 'Снова опубликовано') });
         if (i.status === 'scheduled') acts.push({ icon: 'refresh', label: 'Опубликовать сейчас', run: () => setStatus(i, 'active', 'Опубликовано') }, { icon: 'pause', label: 'Не публиковать', run: () => setStatus(i, 'archived', 'Публикация отменена') });
         if (i.status === 'rejected' && !i.appealAt && !i.appealReply) acts.push({ icon: 'chat', label: 'Подать апелляцию', run: () => appealModal(i.id, reload) });
-        if (i.status === 'active' && (isBiz() || i.promo)) acts.splice(1, 0, { icon: 'trend', label: i.promo ? 'Продлить продвижение' : 'Продвигать', run: () => promoteModal(i.id, i.title) });
+        if (['active', 'pending', 'scheduled'].includes(i.status) && (boostOn() || i.promo || (i.boost || []).length)) acts.splice(1, 0, { icon: 'trend', label: 'Продвинуть', run: () => boostModal(i.id, i.title, i.promo) });
         if (i.status === 'active') acts.push({ icon: 'share', label: 'Поделиться', run: () => shareLink(`${location.origin}${lpath(i)}`, i.title) });
         acts.push({ icon: 'trash', label: 'Удалить', danger: true, run: async () => {
           if (!(await confirmModal('Удалить объявление?', 'Объявление и фото удалятся без возможности восстановления.', 'Удалить', true))) return;
@@ -3125,16 +3426,18 @@
     let timer = null;
     cleanup = () => clearTimeout(timer);
     const draw = ({ payment: p, url }) => {
-      const back = p.kind === 'promo' ? `/l/${p.item.listingId}` : '/business';
-      const state = p.status === 'succeeded' ? ['ok', 'check', 'Оплата прошла', p.kind === 'plan' ? `Тариф «${PLAN_NAME[p.item.plan]}» подключён. Чек ЮKassa пришлёт на почту.` : 'Продвижение оплачено. Чек ЮKassa пришлёт на почту.']
+      const isBoost = p.kind === 'boost';
+      const back = p.kind === 'promo' || isBoost ? `/l/${p.item.listingId}` : '/business';
+      const home = isBoost ? ['/profile', 'Мои объявления'] : ['/profile/business', 'Для бизнеса'];
+      const state = p.status === 'succeeded' ? ['ok', 'check', 'Оплата прошла', p.kind === 'plan' ? `Тариф «${PLAN_NAME[p.item.plan]}» подключён. Чек ЮKassa пришлёт на почту.` : isBoost ? `Продвижение на 7 дней ${p.item.tags && p.item.tags.length ? '— метки появятся после проверки. ' : 'включено. '}Если объявление ещё на проверке — начнётся с публикацией.` : 'Продвижение оплачено. Чек ЮKassa пришлёт на почту.']
         : p.status === 'canceled' ? ['bad', 'close', 'Оплата не прошла', `${CANCEL_REASON[p.error] || 'Банк или ЮKassa отклонили платёж'}. Деньги не списаны.`]
           : ['wait', 'clock', 'Проверяем оплату', 'Если вы уже оплатили, страница обновится сама через несколько секунд.'];
       box.innerHTML = String(html`<div class="pay-ic ${state[0]}">${ic(state[1], 34, 2.2)}</div>
         <h1>${state[2]}</h1><p class="muted">${state[3]}</p>
         <div class="pay-sum">${[['Услуга', p.title], ['Сумма', rub(p.amount)], ...(p.method ? [['Способ', p.method]] : []), ...(p.test ? [['Режим', 'тестовый платёж ЮKassa']] : [])].map(([k, v]) => html`<div><span>${k}</span><b>${v}</b></div>`)}</div>
-        <div class="pay-act">${p.status === 'succeeded' ? html`${p.kind === 'plan' ? html`<a class="btn btn-accent" href="/profile/business/shop">Заполнить витрину</a>` : html`<a class="btn btn-accent" href="${back}">К объявлению</a>`}<a class="btn btn-soft" href="/profile/business">Для бизнеса</a>`
+        <div class="pay-act">${p.status === 'succeeded' ? html`${p.kind === 'plan' ? html`<a class="btn btn-accent" href="/profile/business/shop">Заполнить витрину</a>` : html`<a class="btn btn-accent" href="${back}">К объявлению</a>`}<a class="btn btn-soft" href="${home[0]}">${home[1]}</a>`
     : p.status === 'canceled' ? html`<a class="btn btn-dark" href="${back}">Попробовать ещё раз</a><a class="btn btn-soft" href="/messages/support">Поддержка</a>`
-      : html`${url ? html`<a class="btn btn-dark" href="${url}" data-ext>Вернуться к оплате</a>` : ''}<a class="btn btn-soft" href="/profile/business">Для бизнеса</a>`}</div>`);
+      : html`${url ? html`<a class="btn btn-dark" href="${url}" data-ext>Вернуться к оплате</a>` : ''}<a class="btn btn-soft" href="${home[0]}">${home[1]}</a>`}</div>`);
       const ext = $('[data-ext]', box); if (ext) ext.onclick = (e) => { e.preventDefault(); location.href = url; };
     };
     const poll = async () => {
@@ -3415,7 +3718,7 @@
   // ---------- оболочка модерации: меню слева (на телефоне — лента сверху) ----------
   const ADMIN_NAV = [
     ['', [['dash', 'chart', 'Сводка']]],
-    ['Проверка', [['pending', 'inbox', 'На проверке', 'pending'], ['reports', 'flag', 'Жалобы', 'reports'], ['appeals', 'reply', 'Апелляции', 'appeals'], ['reviews', 'star', 'Отзывы', 'reviews'], ['support', 'headset', 'Поддержка', 'support'], ['biz', 'shield', 'Бизнес', 'biz']]],
+    ['Проверка', [['pending', 'inbox', 'На проверке', 'pending'], ['reports', 'flag', 'Жалобы', 'reports'], ['appeals', 'reply', 'Апелляции', 'appeals'], ['reviews', 'star', 'Отзывы', 'reviews'], ['tags', 'tag', 'Метки на фото', 'tags'], ['support', 'headset', 'Поддержка', 'support'], ['biz', 'shield', 'Бизнес', 'biz']]],
     ['Объявления', [['active', 'tag', 'Опубликованные'], ['rejected', 'close', 'Отклонённые'], ['sold', 'check', 'Проданные'], ['archived', 'pause', 'Снятые']]],
     ['Люди', [['users', 'users', 'Пользователи'], ['log', 'list', 'Журнал действий']]],
     ['Деньги', [['payments', 'card', 'Платежи'], ['ads', 'megaphone', 'Реклама', 'ads'], ['billing', 'tag', 'Оплата и цены']]],
@@ -3467,6 +3770,7 @@
       seo: () => renderSeoAdmin(box),
       backup: () => renderBackupAdmin(box),
       payments: () => renderPaymentsAdmin(box, q),
+      tags: () => renderBoostTagsAdmin(box),
       ads: () => renderAdsAdmin(box, ['marking', 'active', 'ended'].includes(q.get('tab')) ? q.get('tab') : 'marking'),
       billing: () => renderBillingAdmin(box),
       log: () => renderLogAdmin(box, q),
@@ -3841,6 +4145,28 @@
     });
   }
 
+  // ---------- метки на фото (продвижение в ленте) ----------
+  // Метка должна быть правдой: «С чеком» — чек на фото, «Есть гарантия» — сказано в описании. Не одобрили — деньги за метки вернутся сами.
+  async function renderBoostTagsAdmin(box) {
+    const { items } = await api('GET', '/api/admin/boost-tags');
+    box.innerHTML = String(html`<div class="adm-head"><h1>Метки на фото</h1></div>
+      ${items.length ? html`<div class="bt-list">${items.map((b) => html`<article class="bt-item">
+        <div class="bt-photos">${b.photos.length ? b.photos.slice(0, 6).map((src) => html`<a href="${src}" target="_blank"><img src="${src}" alt="" loading="lazy"></a>`) : html`<span class="bt-none">${svg(P.image, 24, 1.3)}</span>`}</div>
+        <div class="bt-body">
+          <div class="bt-tags">${b.tags.map((t) => html`<span class="b-tag">${t}</span>`)}</div>
+          <a class="t" href="${b.listingId ? `/admin/l/${b.listingId}` : '#'}">${b.title}</a>
+          ${b.description ? html`<p class="bt-desc">${b.description.slice(0, 400)}</p>` : ''}
+          <div class="muted adm-log-meta"><a href="/admin/u/${b.user.id}">${b.user.name}</a> · ${b.status === 'waiting' ? 'ждёт публикации' : 'продвигается'} · оплачено ${when(b.createdAt)} · за метки ${rub(b.tagsPrice)}</div>
+          <div class="bt-act"><button class="btn btn-accent btn-sm" data-tag-ok="${b.id}">${ic('check', 16, 2.4)}Одобрить</button><button class="btn btn-line btn-sm" data-tag-no="${b.id}">Отклонить и вернуть ${rub(b.tagsPrice)}</button></div>
+        </div></article>`)}</div>`
+    : html`<div class="empty"><h3>Все метки проверены</h3><p>Здесь появятся метки на фото, которые продавцы выбрали при продвижении.</p></div>`}`);
+    $$('[data-tag-ok]', box).forEach((b) => { b.onclick = async () => { b.disabled = true; try { await api('POST', `/api/admin/boosts/${b.dataset.tagOk}/tags`, { ok: true }); toast('Метки включены'); render(); } catch (e) { b.disabled = false; toast(e.message, true); } }; });
+    $$('[data-tag-no]', box).forEach((b) => {
+      b.onclick = () => reasonModal({ title: 'Отклонить метки', hint: 'Причину увидит продавец. Деньги за метки вернутся автоматически, остальное продвижение продолжится.', url: `/api/admin/boosts/${b.dataset.tagNo}/tags`, extra: { ok: false }, okLabel: 'Отклонить',
+        reasons: ['Чека нет на фото', 'В описании нет гарантии', 'Метка не соответствует товару', 'Товар не новый'], placeholder: 'Причина для продавца' });
+    });
+  }
+
   // ---------- оплата: подключение ЮKassa и цены ----------
   async function renderBillingAdmin(box) {
     const d = await api('GET', '/api/admin/billing');
@@ -3867,7 +4193,8 @@
           <p class="muted" style="margin:0;font-size:14px">Новые цены сразу видны на странице «Для бизнеса»; уже оплаченное не меняется.</p>
           <h3 class="set-h3">${ic('store', 18, 2)}«Магазин»</h3><div class="price-row">${[1, 3, 12].map((m) => priceIn(`shop.${m}`, pr.shop[m], `${m} мес.`))}</div>
           <h3 class="set-h3">${ic('store', 18, 2)}«Магазин Про»</h3><div class="price-row">${[1, 3, 12].map((m) => priceIn(`pro.${m}`, pr.pro[m], `${m} мес.`))}</div>
-          <h3 class="set-h3">${ic('trend', 18, 2)}Продвижение</h3><div class="price-row">${[3, 7, 30].map((dd) => priceIn(`promo.${dd}`, pr.promo[dd], `${dd} ${plural(dd, 'день', 'дня', 'дней')}`))}</div>
+          <h3 class="set-h3">${ic('bolt', 18, 2)}Продвижение в ленте · 7 дней</h3><div class="price-row">${[['xl', 'XL'], ['frame', 'Рамка'], ['tags', 'Метки'], ['all', 'Всё в одном']].map(([k, t]) => priceIn(`boost.${k}`, pr.boost[k], t))}</div>
+          <h3 class="set-h3">${ic('megaphone', 18, 2)}Реклама над поиском</h3><div class="price-row">${[3, 7, 30].map((dd) => priceIn(`promo.${dd}`, pr.promo[dd], `${dd} ${plural(dd, 'день', 'дня', 'дней')}`))}</div>
           <div class="field"><label for="pd">Скидка на продвижение для «Магазин Про», %</label><input id="pd" name="proDiscount" class="input" inputmode="numeric" value="${pr.proDiscount}"></div>
           <div class="set-btns"><button class="btn btn-dark" type="submit">Сохранить цены</button><button type="button" class="btn btn-soft" data-defaults>Цены по умолчанию</button></div>
         </form>
@@ -3881,7 +4208,7 @@
     };
     const off = $('[data-yk-off]', box);
     if (off) off.onclick = async () => { if (!(await confirmModal('Отключить оплату?', 'Кнопки оплаты пропадут с сайта. Уже оплаченные тарифы и продвижение продолжат работать.', 'Отключить', true))) return; try { await api('PUT', '/api/admin/billing', { config: { clear: true } }); await after('Оплата отключена'); } catch (ex) { toast(ex.message, true); } };
-    const collect = (f) => { const b = { shop: {}, pro: {}, promo: {} }; for (const [k, v] of new FormData(f).entries()) { const [g, n] = k.split('.'); if (n) b[g][n] = v; else b[g] = parseInt(v, 10); } return b; };
+    const collect = (f) => { const b = { shop: {}, pro: {}, promo: {}, boost: {} }; for (const [k, v] of new FormData(f).entries()) { const [g, n] = k.split('.'); if (n) b[g][n] = v; else b[g] = parseInt(v, 10); } return b; };
     $('#prices', box).onsubmit = async (e) => { e.preventDefault(); try { await api('PUT', '/api/admin/billing', { prices: collect(e.target) }); await after('Цены сохранены'); } catch (ex) { toast(ex.message, true); } };
     $('[data-defaults]', box).onclick = async () => { try { await api('PUT', '/api/admin/billing', { prices: d.defaults }); await after('Вернули цены по умолчанию'); } catch (ex) { toast(ex.message, true); } };
   }
@@ -4524,6 +4851,7 @@
     S.user = r.user;
     setUnread(r.unread || 0);
     setFresh(r.fresh);
+    setNotices(r.notices);
     return changed;
   }
   async function refreshMe() {
