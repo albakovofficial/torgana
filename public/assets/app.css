@@ -2289,3 +2289,23 @@ body.pv-open { overflow: hidden; }
 .nt-it { align-items: flex-start; }
 .nt-t b { font-weight: 700; }
 .nt-it:not(.new) .nt-t b { font-weight: 600; }
+
+/* ---------- карточка «С продавцом» (1.26, вариант 7): цена крупно под фото, внизу — продавец и оценка ---------- */
+.card-price { font-size: 18px; font-weight: 750; line-height: 1.2; letter-spacing: -0.01em; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* строка продавца прижата к низу карточки — в ряду сетки она на одной линии, какой бы длины ни было название */
+.grid > .card { display: flex; flex-direction: column; }
+.grid > .card > .card-link { flex: 1 0 auto; }
+.grid > .card .card-body { flex: 1 0 auto; }
+.card-seller { display: flex; align-items: center; gap: 7px; min-width: 0; margin-top: auto; padding-top: 6px; font-size: 13px; color: var(--text-2); }
+.card-seller .avatar.xs { width: 22px; height: 22px; font-size: 10px; }
+.cs-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-rate { display: inline-flex; align-items: center; gap: 3px; flex: none; margin-left: auto; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
+.cs-rate svg { fill: #E8A317; }
+@media (max-width: 900px) { .card-price { font-size: 16px; } }
+@media (max-width: 600px) {
+  .feed .card-price { font-size: 14px; }
+  .feed .card-seller { gap: 4px; padding-top: 3px; font-size: 11px; }
+  .feed .card-seller .avatar.xs { width: 16px; height: 16px; font-size: 8px; }
+  .feed .cs-rate { gap: 2px; }
+  .feed .cs-rate svg { width: 10px; height: 10px; }
+}

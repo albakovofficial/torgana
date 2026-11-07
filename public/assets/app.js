@@ -624,6 +624,8 @@
   // it.boost — продвижение в ленте (lib/boost.js): XL — на две ячейки (на телефоне — во всю ширину) с ещё двумя фото
   // и началом описания, рамка — изумрудная обводка, tags — метки на фото. Подпись «Продвигается» — всегда.
   const boostImg = (src, cls = '', extra = '') => html`<span class="xl-ph ${cls}${src ? ' ph' : ''}"${src ? raw(` style="--ph:url('${esc(src)}')"`) : ''}>${src ? html`<img src="${src}" alt="" loading="lazy">` : svg(P.image, 28, 1.2)}${extra}</span>`;
+  // 1.26 (вариант 7 «С продавцом»): под описанием карточки — фото и имя продавца, ★ оценка, если есть отзывы.
+  const cardSeller = (s) => html`<span class="card-seller">${ava(s, 'xs')}<span class="cs-name">${s.name}</span>${s.reviews ? html`<span class="cs-rate" title="${NF.format(s.reviews)} ${plural(s.reviews, 'отзыв', 'отзыва', 'отзывов')}">${ic('star', 12, 0)}${String(s.rating.toFixed(1)).replace('.', ',')}</span>` : ''}</span>`;
   function card(it) {
     const meta = [it.metro ? `м. ${it.metro}` : it.city, shortWhen(it.createdAt)].filter(Boolean).join(' · ');
     const ad = it.ad;
@@ -638,13 +640,15 @@
           ${xl ? html`<span class="xl-side">${boostImg(side[0])}${boostImg(side[1], '', bo.more ? html`<em>+${bo.more} фото</em>` : '')}</span>` : ''}
           ${tags ? html`<span class="b-tags">${tags.map((t, i) => html`<span class="b-tag${i ? ' alt' : ''}">${t}</span>`)}</span>`
     : ad ? '' : it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : it.fresh ? html`<span class="tag drop-badge">Новое</span>` : it.priceWas ? html`<span class="tag drop-badge" title="Было ${price(it.priceWas, it.priceUnit)}">${ic('down', 13, 2.4)}Цена снижена</span>` : ''}
-          <span class="price-pill">${price(it.price, it.priceUnit)}</span>
+          ${xl ? html`<span class="price-pill">${price(it.price, it.priceUnit)}</span>` : ''}
           ${it.hasVideo ? html`<span class="vid-badge" title="Есть видео">${ic('play', 14, 0)}<span class="sr">Есть видео</span></span>` : ''}
         </div>
         <div class="card-body">
+          ${xl ? '' : html`<span class="card-price">${price(it.price, it.priceUnit)}</span>`}
           <span class="card-title">${it.title}</span>
           ${xl && (bo.desc || it.summary) ? html`<span class="card-desc">${[it.summary, bo.desc].filter(Boolean).join('. ')}</span>` : it.summary ? html`<span class="card-sum">${it.summary}</span>` : ''}
           <span class="card-meta">${meta}${it.delivery ? html` · <span class="ok">Доставка</span>` : ''}${it.exchange ? html` · <span class="ok">Обмен</span>` : ''}${bo ? html` · <span class="b-mark">Продвигается</span>` : ''}</span>
+          ${it.seller ? cardSeller(it.seller) : ''}
         </div>
       </a>
       <button type="button" class="fav-btn ${it.isFav ? 'on' : ''}" data-fav="${it.id}" aria-label="${it.isFav ? 'Убрать из избранного' : 'В избранное'}" aria-pressed="${it.isFav ? 'true' : 'false'}">${ic('heart', 20)}</button>
