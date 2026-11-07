@@ -300,6 +300,67 @@
   }
   new MutationObserver(() => $$('select.select:not([data-enh])').forEach(enhanceSelect)).observe(document.body, { childList: true, subtree: true });
 
+  // 1.34: поле города — подсказки красивым списком в стиле pickList вместо системного <datalist>.
+  // Вписать город не из списка по-прежнему можно (input остаётся обычным полем). data-any — первый пункт «Вся Россия» (пусто).
+  function enhanceCity(inp) {
+    if (inp.dataset.enh) return;
+    inp.dataset.enh = '1';
+    const id = `cs-${Math.random().toString(36).slice(2, 8)}`;
+    inp.setAttribute('role', 'combobox'); inp.setAttribute('aria-autocomplete', 'list'); inp.setAttribute('aria-expanded', 'false'); inp.setAttribute('aria-controls', id);
+    let box = null; let items = []; let act = -1;
+    const norm = (t) => String(t).toLowerCase().replace(/ё/g, 'е');
+    const close = () => { if (box) { box.remove(); box = null; } inp.setAttribute('aria-expanded', 'false'); inp.removeAttribute('aria-activedescendant'); window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
+    function place() {
+      if (!box) return;
+      const r = inp.getBoundingClientRect();
+      const below = window.innerHeight - r.bottom - 12;
+      const up = below < 220 && r.top > below;
+      box.style.left = `${Math.max(8, r.left)}px`;
+      box.style.width = `${Math.max(240, r.width)}px`;
+      box.style.maxHeight = `${Math.min(320, (up ? r.top : below) - 8)}px`;
+      box.style.top = up ? '' : `${r.bottom + 6}px`;
+      box.style.bottom = up ? `${window.innerHeight - r.top + 6}px` : '';
+    }
+    const pick = (v) => { inp.value = v; close(); inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); };
+    const mark = (i) => {
+      act = i;
+      $$('.pick-it', box).forEach((b, k) => b.classList.toggle('act', k === i));
+      const el = box && $$('.pick-it', box)[i];
+      if (el) { el.scrollIntoView({ block: 'nearest' }); inp.setAttribute('aria-activedescendant', el.id); }
+    };
+    function open() {
+      const t = norm(inp.value.trim());
+      const cur = inp.value.trim();
+      const all = S.config.cities || [];
+      // Сначала города, которые начинаются с набранного, потом — где оно встречается внутри.
+      const hit = t && !all.some((c) => norm(c) === t) ? [...all.filter((c) => norm(c).startsWith(t)), ...all.filter((c) => !norm(c).startsWith(t) && norm(c).includes(t))] : all;
+      items = [...(inp.dataset.any && (!t || hit.length === all.length) ? [{ v: '', label: inp.dataset.any }] : []), ...hit.map((c) => ({ v: c, label: c }))];
+      if (!items.length) { close(); return; }
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'pick pop city-sug'; box.id = id; box.setAttribute('role', 'listbox');
+        box.addEventListener('mousedown', (e) => e.preventDefault());
+        box.addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) pick(b.dataset.v); });
+        document.body.append(box);
+        window.addEventListener('scroll', place, true); window.addEventListener('resize', place);
+      }
+      box.innerHTML = String(html`<div class="pick-list">${items.map((x, k) => html`<button type="button" class="pick-it${x.v === cur ? ' on' : ''}" role="option" id="${id}-${k}" data-v="${x.v}" tabindex="-1" aria-selected="${x.v === cur ? 'true' : 'false'}"><span class="pick-t"><b>${x.label}</b></span>${x.v === cur ? ic('check', 18, 2.4) : ''}</button>`)}</div>`);
+      inp.setAttribute('aria-expanded', 'true');
+      act = -1;
+      place();
+    }
+    inp.addEventListener('focus', open);
+    inp.addEventListener('click', () => { if (!box) open(); });
+    inp.addEventListener('input', (e) => { if (e.isTrusted) open(); });
+    inp.addEventListener('blur', () => setTimeout(close, 120));
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && box) { e.preventDefault(); close(); return; }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (!box) open(); if (box) mark(Math.max(0, Math.min(items.length - 1, act + (e.key === 'ArrowDown' ? 1 : -1)))); return; }
+      if (e.key === 'Enter' && box && act >= 0) { e.preventDefault(); pick(items[act].v); }
+    });
+  }
+  new MutationObserver(() => $$('input[data-cities]:not([data-enh])').forEach(enhanceCity)).observe(document.body, { childList: true, subtree: true });
+
   // ================= характеристики (1.22) =================
   // Короткие списки — чипсами, длинные — частые значения чипсами и «Все N» с поиском, цвета — кружками.
   // Одна разметка для формы объявления и фильтров поиска.
@@ -1038,8 +1099,7 @@
             </select></div>
           <div id="f-extra" class="f-extra"></div>
           <div class="field"><label for="f-city">Город</label>
-            <input id="f-city" name="city" class="input" list="cities" placeholder="Вся Россия" value="${params.city || ''}">
-            <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
+            <input id="f-city" name="city" class="input" data-cities data-any="Вся Россия" autocomplete="off" placeholder="Вся Россия" value="${params.city || ''}"></div>
           <div id="f-metro"></div>
           <div class="field"><span class="label">Цена, ₽</span>
             <div class="row"><label class="sr" for="f-min">Цена от</label><input id="f-min" name="min" class="input" inputmode="numeric" placeholder="от" value="${params.min || ''}">
@@ -1704,8 +1764,7 @@
             </div></div>`)}
           ${step(4, 's-where', 'Где', '', html`
             <div class="field"><label for="city">Город</label>
-              <div class="ed-icon-input">${ic('pin', 18)}<input id="city" name="city" class="input" list="cities" autocomplete="address-level2" value="${src.city || S.user.city || S.city || ''}" placeholder="Начните вводить город"></div>
-              <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
+              <div class="ed-icon-input">${ic('pin', 18)}<input id="city" name="city" class="input" data-cities autocomplete="off" value="${src.city || S.user.city || S.city || ''}" placeholder="Начните вводить город"></div></div>
             <div class="ed-where2">
               <div class="field hidden" id="metro-field"><label for="metro">Метро</label>
                 <select id="metro" name="metro" class="select"><option value="">Не указывать</option></select></div>
@@ -3369,8 +3428,7 @@
         <form id="sf" class="set-form">
           <div class="set-fields">
             <div class="field"><label for="s-name">Имя</label><input id="s-name" name="name" class="input" maxlength="60" value="${u.name}" required autocomplete="name"></div>
-            <div class="field"><label for="s-city">Город</label><div class="ed-icon-input">${ic('pin', 18)}<input id="s-city" name="city" class="input" list="cities" value="${u.city || ''}" placeholder="Подставим в новые объявления"></div>
-              <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
+            <div class="field"><label for="s-city">Город</label><div class="ed-icon-input">${ic('pin', 18)}<input id="s-city" name="city" class="input" data-cities autocomplete="off" value="${u.city || ''}" placeholder="Подставим в новые объявления"></div></div>
             <div class="field wide"><label for="s-phone">Телефон</label><input id="s-phone" name="phone" class="input" type="tel" inputmode="tel" maxlength="30" value="${u.phone || ''}" placeholder="+7" autocomplete="tel">${phoneNote}</div>
           </div>
           <div class="set-foot"><span>Имя и фото сразу обновятся во всех ваших объявлениях</span><button type="reset" class="btn btn-soft">Отменить</button><button class="btn btn-accent" type="submit">Сохранить</button></div>
@@ -3885,7 +3943,7 @@
         <div class="field"><label for="fd-url">Ссылка</label><input id="fd-url" name="url" class="input" inputmode="url" value="${f.url}" placeholder="https://example.ru/avito.xml"></div>
         <div class="row stack-m">
           <div class="field" style="flex:1"><label for="fd-cat">Категория, если не распознана</label><select id="fd-cat" name="category" class="select"><option value="">Не загружать такие</option>${S.config.categories.map((c) => html`<option value="${c.id}" ${c.id === f.category ? raw('selected') : ''}>${c.name}</option>`)}</select></div>
-          <div class="field" style="flex:1"><label for="fd-city">Город, если нет в адресе</label><input id="fd-city" name="city" class="input" list="cities" value="${f.city}" placeholder="${S.user.city || 'Казань'}"><datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
+          <div class="field" style="flex:1"><label for="fd-city">Город, если нет в адресе</label><input id="fd-city" name="city" class="input" data-cities autocomplete="off" value="${f.city}" placeholder="${S.user.city || 'Казань'}"></div>
         </div>
         <div class="set-btns"><button class="btn btn-dark" type="submit">${f.url ? 'Сохранить и загрузить' : 'Подключить фид'}</button>${f.url ? html`<button type="button" class="btn btn-soft" data-run ${st.running ? raw('disabled') : ''}>${ic('refresh', 16, 2)}Загрузить сейчас</button>` : ''}</div>
       </form>
