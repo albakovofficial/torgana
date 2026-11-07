@@ -324,8 +324,9 @@
   }
   // Новое по сохранённым поискам — значок у пункта «Поиски».
   function setFresh(f) {
-    S.fresh = f || { search: 0, price: 0 };
+    S.fresh = f || { search: 0, price: 0, follow: 0 };
     $$('[data-fresh]').forEach((el) => { el.textContent = S.fresh.search; el.classList.toggle('hidden', !S.fresh.search); });
+    $$('[data-fresh-follow]').forEach((el) => { el.textContent = S.fresh.follow || 0; el.classList.toggle('hidden', !S.fresh.follow); });
   }
   const freshBadge = () => html`<span class="badge ${S.fresh && S.fresh.search ? '' : 'hidden'}" data-fresh>${S.fresh ? S.fresh.search : 0}</span>`;
 
@@ -338,7 +339,7 @@
       <a href="${lpath(it)}" class="card-link"${ad ? raw(` data-adid="${Number(ad.id)}"`) : ''}>
         <div class="card-img">
           ${it.photo ? html`<img src="${it.photo}" alt="" loading="lazy">` : svg(P.image, 40, 1.2)}
-          ${ad ? '' : it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : it.priceWas ? html`<span class="tag drop-badge" title="Было ${price(it.priceWas, it.priceUnit)}">${ic('down', 13, 2.4)}Цена снижена</span>` : ''}
+          ${ad ? '' : it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : it.fresh ? html`<span class="tag drop-badge">Новое</span>` : it.priceWas ? html`<span class="tag drop-badge" title="Было ${price(it.priceWas, it.priceUnit)}">${ic('down', 13, 2.4)}Цена снижена</span>` : ''}
           <span class="price-pill">${price(it.price, it.priceUnit)}</span>
           ${it.hasVideo ? html`<span class="vid-badge" title="Есть видео">${ic('play', 14, 0)}<span class="sr">Есть видео</span></span>` : ''}
         </div>
@@ -482,7 +483,7 @@
     [/^\/confirm$/, viewConfirm],
     [/^\/favorites$/, viewFavorites],
     [/^\/messages(?:\/(\d+|support))?$/, viewMessages],
-    [/^\/profile(?:\/(listings|settings|reviews|searches|stats\/\d+|business(?:\/(?:shop|stats|feed))?))?$/, viewProfile],
+    [/^\/profile(?:\/(listings|settings|reviews|searches|following|stats\/\d+|business(?:\/(?:shop|stats|feed))?))?$/, viewProfile],
     [/^\/business$/, viewBusiness],
     [/^\/pay\/([\w-]+)$/, viewPay],
     [/^\/u\/(\d+)$/, viewUser],
@@ -823,6 +824,28 @@
     };
   }
 
+  // Подписки на продавцов: кто (сколько нового), лента их свежих объявлений; новое помечено.
+  async function renderFollowing(reload) {
+    const { sellers, items } = await api('GET', '/api/my/following');
+    refreshMe();
+    const box = $('#box');
+    if (!sellers.length) {
+      box.innerHTML = String(html`<div class="empty"><h3>Вы ни на кого не подписаны</h3><p>Откройте профиль продавца или магазина и нажмите «Подписаться» — новые объявления придут уведомлением и в подборке на почту.</p><a class="btn btn-dark" href="/">Смотреть объявления</a></div>`);
+      return;
+    }
+    box.innerHTML = String(html`<div id="nudge"></div>
+      <div class="fl-sellers">${sellers.map((x) => html`<div class="fl-seller">
+        <a href="/u/${x.id}" class="fl-who">${ava(x)}<span class="fl-txt"><b>${x.name}${x.shop ? html` <span class="pf-badge dark">${ic('store', 12, 2)} Магазин</span>` : ''}</b><span>${x.active} ${plural(x.active, 'объявление', 'объявления', 'объявлений')}${x.city ? ` · ${x.city}` : ''}</span></span>
+          ${x.fresh ? html`<span class="ss-new">${x.fresh} ${plural(x.fresh, 'новое', 'новых', 'новых')}</span>` : ''}</a>
+        <button type="button" class="btn btn-line btn-sm" data-unfollow="${x.id}">Отписаться</button></div>`)}</div>
+      <div class="section-head" style="margin-top:28px"><h2>Свежее у продавцов</h2></div>
+      ${items.length ? grid(items) : html`<div class="pf-empty sm"><h3>Пока нет объявлений</h3><p>Как только продавцы что-то опубликуют, объявления появятся здесь.</p></div>`}`);
+    pushNudge($('#nudge', box), 'Узнаете о новых объявлениях продавцов сразу.');
+    $$('[data-unfollow]', box).forEach((b) => {
+      b.onclick = async () => { try { await api('POST', `/api/users/${b.dataset.unfollow}/follow`, { follow: false }); toast('Вы отписались'); reload(); } catch (e) { toast(e.message, true); } };
+    });
+  }
+
   async function renderSavedSearches(reload) {
     const { items } = await api('GET', '/api/saved-searches');
     const box = $('#box');
@@ -911,6 +934,7 @@
     } else if (l.status === 'active') {
       actions = html`<div style="display:flex;flex-direction:column;gap:10px">
         <button class="btn btn-accent btn-lg btn-block" data-write>${ic('chat', 20)}Написать продавцу</button>
+        ${l.price ? html`<button class="btn btn-soft btn-lg btn-block" data-offer>${ic('tag', 19, 2)}Предложить цену</button>` : ''}
         <button class="btn btn-line btn-block" data-report>${ic('warn', 18)}Пожаловаться</button>
       </div>`;
     } else {
@@ -967,6 +991,7 @@
             ${seller.badges && (seller.badges.phone || seller.badges.biz) ? html`<span class="pf-badges" style="margin-top:8px">${trustBadges(seller.badges)}</span>` : ''}</span>
             ${ic('right', 20)}
           </a>
+          ${l.isOwner ? '' : html`<div class="seller-follow">${followBtn(seller.id, seller.following)}<span class="muted"><b data-followers>${NF.format(seller.followers || 0)}</b> ${plural(seller.followers || 0, 'подписчик', 'подписчика', 'подписчиков')} · узнают о новых объявлениях первыми</span></div>`}
           <div class="banner soft" style="font-size:14px"><strong style="color:var(--text)">Мы никогда не просим</strong> переходить в мессенджеры, называть код из СМС или платить по ссылке. Если вас об этом просят — это мошенники.</div>
         </aside>
       </div>
@@ -999,6 +1024,18 @@
       try { await navigator.clipboard.writeText(url); toast('Ссылка скопирована'); } catch { toast(url); }
     };
 
+    const of = $('[data-offer]');
+    if (of) {
+      of.onclick = () => {
+        if (!S.user) { go(`/login?next=${encodeURIComponent(location.pathname)}`); return; }
+        offerModal({ listingPrice: l.price, title: l.title, onSubmit: async (sum) => {
+          const { id: cid } = await api('POST', '/api/conversations', { listingId: l.id });
+          await api('POST', `/api/conversations/${cid}/offer`, { price: sum });
+          toast('Предложение отправлено — ответ придёт в чат');
+          go(`/messages/${cid}`);
+        } });
+      };
+    }
     const w = $('[data-write]');
     if (w) {
       w.onclick = async () => {
@@ -1801,8 +1838,9 @@
         html`<a class="btn btn-dark btn-lg btn-block" href="/">На главную</a>`);
       return;
     }
-    const what = { messages: 'о новых сообщениях', moderation: 'о решениях модерации', reviews: 'об отзывах', all: 'с уведомлениями' }[q.get('k')] || 'с уведомлениями';
-    authPage('Отписаться?', `Больше не будем присылать письма ${what}. Включить их снова можно в профиле, в разделе «Настройки».`,
+    const isFollow = /^follow-\d+$/.test(q.get('k') || '');
+    const what = isFollow ? 'о новых объявлениях этого продавца' : { messages: 'о новых сообщениях', moderation: 'о решениях модерации', reviews: 'об отзывах', digest: 'с подборкой за день', all: 'с уведомлениями' }[q.get('k')] || 'с уведомлениями';
+    authPage(isFollow ? 'Отписаться от продавца?' : 'Отписаться?', isFollow ? 'Подписка на продавца будет отменена: не будем присылать его новые объявления. Подписаться снова можно в его профиле.' : `Больше не будем присылать письма ${what}. Включить их снова можно в профиле, в разделе «Настройки».`,
       html`<form id="f"><button class="btn btn-dark btn-lg btn-block" type="submit">Отписаться</button></form>`);
     $('#f').onsubmit = async (e) => {
       e.preventDefault();
@@ -1827,7 +1865,9 @@
 
   // Один чат на весь сайт: диалоги по объявлениям, поддержка у пользователя и у модератора.
   // load(after) → { messages }, send(body) → message; сообщения { id, mine, body, createdAt }.
-  function mountChat(box, { head, below = '', load, send, scam = false, empty, placeholder = 'Сообщение…', onActivity, back = '/messages' }) {
+  // decorate(m) → { cls, body } — особый вид сообщения (предложение цены); onData(r) — после каждой загрузки;
+  // tools — над полем ввода (быстрые ответы); left — кнопка слева от поля (₽ — предложить цену).
+  function mountChat(box, { head, below = '', load, send, scam = false, empty, placeholder = 'Сообщение…', onActivity, back = '/messages', decorate, onData, tools = '', left = '' }) {
     box.innerHTML = String(html`
       <div class="chat-head">
         <a href="${back}" class="icon-btn chat-back" aria-label="Назад">${ic('left', 20)}</a>
@@ -1836,7 +1876,9 @@
       ${below}
       ${scam ? html`<div class="banner warn chat-warn hidden" data-scam>${ic('warn', 18)} <strong>Осторожно.</strong> Похоже, собеседник предлагает уйти в мессенджер или заплатить вне Торганы. Так действуют мошенники — не переводите деньги и не называйте коды из СМС.</div>` : ''}
       <div class="chat-msgs" data-msgs></div>
+      ${tools}
       <form class="chat-form" data-send>
+        ${left}
         <label class="icon-btn chat-attach" title="Отправить фото"><input type="file" accept="image/jpeg,image/png,image/webp" data-photo hidden>${ic('camera', 20)}<span class="sr">Отправить фото</span></label>
         <label class="sr" for="chat-body">Сообщение</label>
         <textarea id="chat-body" rows="1" maxlength="4000" placeholder="${placeholder}"></textarea>
@@ -1855,14 +1897,16 @@
       for (const m of list) {
         const d = new Date(m.createdAt).toDateString();
         if (d !== lastDay) { lastDay = d; out += String(html`<div class="chat-day">${shortWhen(m.createdAt)}</div>`); }
-        out += String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${m.photo ? 'has-photo' : ''}">${m.photo ? html`<a class="msg-photo" href="${m.photo}" target="_blank" rel="noopener"><img src="${m.photo}" alt="Фото" loading="lazy"></a>` : ''}${m.body}<span class="t">${hm(m.createdAt)}</span></div>`);
+        const d2 = decorate ? decorate(m) : null;
+        out += d2 ? String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${d2.cls}">${d2.body}<span class="t">${hm(m.createdAt)}</span></div>`)
+          : String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${m.photo ? 'has-photo' : ''}">${m.photo ? html`<a class="msg-photo" href="${m.photo}" target="_blank" rel="noopener"><img src="${m.photo}" alt="Фото" loading="lazy"></a>` : ''}${m.body}<span class="t">${hm(m.createdAt)}</span></div>`);
         if (scam && !m.mine && m.body && SCAM_RE.test(m.body)) $('[data-scam]', box).classList.remove('hidden');
         lastId = Math.max(lastId, m.id);
       }
       msgs.insertAdjacentHTML('beforeend', out);
       if (nearBottom || list.some((m) => m.mine)) msgs.scrollTop = msgs.scrollHeight;
     };
-    const poll = async () => { const r = await load(lastId); if (r.messages.length) { append(r.messages); if (onActivity) onActivity(); } return r; };
+    const poll = async () => { const r = await load(lastId); if (r.messages.length) { append(r.messages); if (onActivity) onActivity(); } if (onData) onData(r); return r; };
     ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`; };
     ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } };
     // send получает { body, photo }: текст, фото (имя файла из /api/uploads) или и то и другое.
@@ -1896,13 +1940,110 @@
       const r = await load(0);
       if (!r.messages.length && empty) msgs.innerHTML = String(html`<div data-empty>${empty}</div>`);
       append(r.messages);
+      if (onData) onData(r);
       msgs.scrollTop = msgs.scrollHeight;
       if (onActivity) onActivity();
     })().catch((e) => toast(e.message, true));
     if (window.matchMedia('(min-width: 901px)').matches) $('.chat-back', box).classList.add('hidden');
     ta.focus();
-    return () => clearInterval(timer);
+    const stop = () => clearInterval(timer);
+    stop.poll = poll;
+    stop.fill = (text) => { ta.value = text; ta.focus(); ta.oninput(); };
+    return stop;
   }
+
+  // ---------- торг: предложение цены ----------
+  // Сумма-подсказка: −5/−10/−15% с округлением до «красивой» (100, 500 или 1000 ₽).
+  const niceDown = (n) => { const step = n >= 100000 ? 1000 : n >= 10000 ? 500 : 100; return Math.max(step, Math.floor(n / step) * step); };
+  function offerModal({ listingPrice, title, onSubmit }) {
+    const min = listingPrice ? Math.ceil(listingPrice * 0.3) : 1;
+    const picks = listingPrice ? [5, 10, 15].map((p) => niceDown(listingPrice * (1 - p / 100))).filter((v, i, a) => v < listingPrice && a.indexOf(v) === i) : [];
+    openModal(String(html`<h2>Предложить цену</h2>
+      <p class="muted" style="margin:0 0 16px">${title}${listingPrice ? html` · сейчас <b style="color:var(--text)">${rub(listingPrice)}</b>` : ''}</p>
+      <div class="ed-money offer-money"><label class="sr" for="of-sum">Ваша цена</label><input id="of-sum" class="input" inputmode="numeric" autocomplete="off" placeholder="Ваша цена"><span>₽</span></div>
+      ${picks.length ? html`<div class="offer-picks">${picks.map((v) => html`<button type="button" class="chip" data-pick-sum="${v}">${rub(v)}<span class="cnt">−${Math.round((1 - v / listingPrice) * 100)}%</span></button>`)}</div>` : ''}
+      <p class="offer-note">${ic('info', 16, 2)}<span>Продавец примет или отклонит предложение одной кнопкой — ответ придёт в чат.${listingPrice ? ` Можно предложить от ${rub(min)}.` : ''}</span></p>
+      <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-accent" data-ok>Предложить</button></div>`), (m, close) => {
+      const inp = $('#of-sum', m);
+      inp.oninput = () => { const d = inp.value.replace(/\D/g, '').slice(0, 11); inp.value = d ? NF.format(Number(d)) : ''; };
+      $$('[data-pick-sum]', m).forEach((b) => { b.onclick = () => { inp.value = NF.format(Number(b.dataset.pickSum)); inp.focus(); }; });
+      $('[data-x]', m).onclick = close;
+      const ok = $('[data-ok]', m);
+      ok.onclick = async () => {
+        const sum = Number(inp.value.replace(/\D/g, ''));
+        if (!sum) { inp.focus(); toast('Укажите сумму', true); return; }
+        ok.disabled = true;
+        try { await onSubmit(sum); close(); } catch (e) { toast(e.message, true); ok.disabled = false; }
+      };
+      setTimeout(() => inp.focus(), 50);
+    });
+  }
+  // Карточка предложения в чате и её низ (кнопки или итог) — низ перерисовывается при каждом опросе.
+  const offerCard = (o, m) => html`<div class="offer-card" data-offer="${m.offerId}">
+      <div class="offer-k">${ic('tag', 14, 2.2)}Предложение цены</div>
+      <div class="offer-sum"><b data-offer-sum></b><s data-offer-was></s></div>
+      <div class="offer-foot" data-offer-foot></div></div>`;
+  function paintOffers(root, offers, role) {
+    for (const o of offers || []) {
+      const el = $(`[data-offer="${o.id}"]`, root);
+      if (!el || el.dataset.state === o.status) continue;
+      el.dataset.state = o.status;
+      $('[data-offer-sum]', el).textContent = rub(o.price);
+      $('[data-offer-was]', el).textContent = o.listingPrice ? rub(o.listingPrice) : '';
+      el.closest('.msg').classList.toggle('offer-off', o.status === 'withdrawn' || o.status === 'declined');
+      $('[data-offer-foot]', el).innerHTML = String(o.status === 'pending'
+        ? (role === 'seller'
+          ? html`<button type="button" class="btn btn-accent btn-sm" data-offer-act="accept" data-oid="${o.id}">${ic('check', 16, 2.4)}Принять</button><button type="button" class="btn btn-soft btn-sm" data-offer-act="decline" data-oid="${o.id}">Отклонить</button>`
+          : html`<span class="offer-st wait">${ic('clock', 15, 2)}Ждём ответа продавца</span><button type="button" class="offer-link" data-offer-act="withdraw" data-oid="${o.id}">Отозвать</button>`)
+        : o.status === 'accepted' ? html`<span class="offer-st ok">${ic('check', 15, 2.6)}${role === 'seller' ? 'Вы согласились' : 'Продавец согласился'}</span>`
+          : o.status === 'declined' ? html`<span class="offer-st">${role === 'seller' ? 'Вы отказались' : 'Продавец отказался'}</span>`
+            : html`<span class="offer-st">${role === 'buyer' ? 'Вы отозвали или заменили предложение' : 'Покупатель отозвал или заменил предложение'}</span>`);
+    }
+  }
+
+  // ---------- быстрые ответы продавца ----------
+  function repliesModal(items, done) {
+    let list = [...items];
+    openModal(String(html`<h2>Быстрые ответы</h2><p class="muted" style="margin:0 0 14px">Появляются над полем сообщения — нажмите, чтобы вставить, поправьте и отправьте.</p>
+      <div class="qr-list" id="qr-list"></div>
+      <div class="qr-add"><label class="sr" for="qr-new">Новый ответ</label><input id="qr-new" class="input" maxlength="300" placeholder="Например: Отправлю СДЭКом в день оплаты"><button type="button" class="btn btn-dark" data-qr-add>${ic('plus', 18, 2.2)}<span class="sr">Добавить</span></button></div>
+      <div class="modal-actions"><button class="btn btn-line" data-qr-reset>Вернуть стандартные</button><span style="flex:1"></span><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-dark" data-ok>Сохранить</button></div>`), (m, close) => {
+      const paint = () => {
+        $('#qr-list', m).innerHTML = String(list.length ? html`${list.map((t, i) => html`<div class="qr-item"><span>${t}</span><button type="button" class="icon-btn sm" data-qr-rm="${i}" aria-label="Удалить ответ">${ic('trash', 16)}</button></div>`)}`
+          : html`<div class="qr-empty">Пока пусто — добавьте свой первый ответ.</div>`);
+        $$('[data-qr-rm]', m).forEach((b) => { b.onclick = () => { list.splice(Number(b.dataset.qrRm), 1); paint(); }; });
+      };
+      paint();
+      const add = () => { const v = $('#qr-new', m).value.trim(); if (!v) return; if (list.length >= 12) { toast('Не больше 12 ответов', true); return; } list.push(v); $('#qr-new', m).value = ''; paint(); };
+      $('[data-qr-add]', m).onclick = add;
+      $('#qr-new', m).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
+      $('[data-x]', m).onclick = close;
+      $('[data-qr-reset]', m).onclick = async () => { try { const r = await api('PUT', '/api/my/replies', { reset: true }); close(); done(r.items); toast('Вернули стандартные ответы'); } catch (e) { toast(e.message, true); } };
+      $('[data-ok]', m).onclick = async () => {
+        const pending = $('#qr-new', m).value.trim(); if (pending) list.push(pending);
+        try { const r = await api('PUT', '/api/my/replies', { items: list }); close(); done(r.items); toast('Ответы сохранены'); } catch (e) { toast(e.message, true); }
+      };
+    });
+  }
+  const repliesRow = (items) => html`${items.map((t) => html`<button type="button" class="chip" data-topic="${t}" title="${t}">${t.length > 42 ? `${t.slice(0, 40)}…` : t}</button>`)}<button type="button" class="chip qr-edit" data-qr-edit>${ic('edit', 15, 2)}${items.length ? 'Шаблоны' : 'Добавить шаблон'}</button>`;
+
+  // ---------- подписка на продавца ----------
+  const followLabel = (on) => html`${ic(on ? 'check' : 'bell', 18, 2.2)}<span>${on ? 'Вы подписаны' : 'Подписаться'}</span>`;
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-follow]');
+    if (!b) return;
+    e.preventDefault();
+    if (!S.user) { go(`/login?next=${encodeURIComponent(location.pathname + location.search)}`); return; }
+    b.disabled = true;
+    try {
+      const r = await api('POST', `/api/users/${b.dataset.follow}/follow`, { follow: b.getAttribute('aria-pressed') !== 'true' });
+      $$(`[data-follow="${b.dataset.follow}"]`).forEach((x) => { x.setAttribute('aria-pressed', r.following ? 'true' : 'false'); x.classList.toggle('on', r.following); x.innerHTML = String(followLabel(r.following)); });
+      $$('[data-followers]').forEach((x) => { x.textContent = NF.format(r.followers); });
+      toast(r.following ? 'Подписка оформлена — расскажем о новых объявлениях' : 'Вы отписались');
+    } catch (ex) { toast(ex.message, true); }
+    b.disabled = false;
+  });
+  const followBtn = (id, on, cls = 'btn-soft') => html`<button type="button" class="btn ${cls} btn-block follow-btn ${on ? 'on' : ''}" data-follow="${id}" aria-pressed="${on ? 'true' : 'false'}">${followLabel(on)}</button>`;
 
   const supportWelcome = () => html`<div class="msg in support-hello">
       <strong>Здравствуйте${S.user ? `, ${S.user.name}` : ''}!</strong> Это поддержка Торганы. Напишите вопрос — ответит человек, а не бот.
@@ -1974,6 +2115,8 @@
     }
     const data = await api('GET', `/api/conversations/${convId}`);
     const { listing: l, other } = data;
+    const role = data.conversation.role;
+    const canOffer = role === 'buyer' && l.status === 'active';
     const reviewBar = (rv) => {
       if (!rv) return '';
       if (rv.status) return html`<div class="rv-bar-chat done">${ic('check', 16, 2.4)}<span>${rv.status === 'pending' ? 'Ваш отзыв о продавце на проверке.' : rv.status === 'published' ? 'Ваш отзыв о продавце опубликован.' : 'Вы уже оставили отзыв по этому объявлению.'}</span><a href="/profile/reviews?tab=mine">Мои отзывы</a></div>`;
@@ -1998,10 +2141,35 @@
         return r;
       },
       send: async (msg) => { const r = await api('POST', `/api/conversations/${convId}/messages`, msg); loadList().catch(() => {}); return r.message; },
+      decorate: (m) => (m.kind === 'offer' ? { cls: 'offer-msg', body: offerCard(null, m) } : m.kind === 'offer-reply' ? { cls: 'offer-reply', body: html`${m.body}` } : null),
+      onData: (r) => paintOffers($('#chat'), r.offers, role),
+      tools: role === 'seller' ? html`<div class="chat-tools" data-replies></div>` : '',
+      left: canOffer ? html`<button type="button" class="icon-btn chat-offer" data-make-offer title="Предложить цену" aria-label="Предложить цену">₽</button>` : '',
       scam: true,
-      empty: html`<div class="chat-day">Напишите первое сообщение — например, уточните состояние или договоритесь о встрече.</div>`,
+      empty: html`<div class="chat-day">Напишите первое сообщение — например, уточните состояние или договоритесь о встрече.${canOffer && l.price ? ' Или предложите свою цену кнопкой ₽.' : ''}</div>`,
       onActivity: () => refreshMe()
     });
+    const chatEl = $('#chat');
+    chatEl.addEventListener('click', async (e) => {
+      const a = e.target.closest('[data-offer-act]');
+      if (a) {
+        a.disabled = true;
+        try {
+          await api('POST', `/api/offers/${a.dataset.oid}/${a.dataset.offerAct}`);
+          await stopChat.poll(); loadList().catch(() => {});
+          toast({ accept: 'Вы приняли предложение — покупатель получит уведомление', decline: 'Предложение отклонено', withdraw: 'Предложение отозвано' }[a.dataset.offerAct]);
+        } catch (ex) { toast(ex.message, true); a.disabled = false; }
+        return;
+      }
+      if (e.target.closest('[data-make-offer]')) {
+        offerModal({ listingPrice: l.price, title: l.title, onSubmit: async (sum) => { await api('POST', `/api/conversations/${convId}/offer`, { price: sum }); await stopChat.poll(); loadList().catch(() => {}); toast('Предложение отправлено продавцу'); } });
+        return;
+      }
+      if (e.target.closest('[data-qr-edit]')) repliesModal(qrItems, paintReplies);
+    });
+    let qrItems = [];
+    const paintReplies = (items) => { qrItems = items; const row = $('[data-replies]', chatEl); if (row) row.innerHTML = String(repliesRow(items)); };
+    if (role === 'seller') api('GET', '/api/my/replies').then((r) => paintReplies(r.items)).catch(() => {});
   }
 
   // ================= отзывы: общие части =================
@@ -2124,7 +2292,7 @@
           ${badges ? html`<div class="pf-badges">${badges}</div>` : ''}
         </div>
       </div>
-      ${stats.length ? html`<div class="pf-nums">${stats.map(([n, k]) => html`<div class="pf-num"><b>${NF.format(n)}</b><span>${k}</span></div>`)}</div>` : ''}
+      ${stats.length ? html`<div class="pf-nums">${stats.map(([n, k, key]) => html`<div class="pf-num"><b ${key === 'followers' ? raw('data-followers') : ''}>${NF.format(n)}</b><span>${k}</span></div>`)}</div>` : ''}
       ${extra}
       ${foot}
     </div>`;
@@ -2164,6 +2332,7 @@
       ${item('/profile', 'tag', 'Мои объявления', 'listings')}
       ${item('/profile/reviews', 'star', 'Отзывы', 'reviews', u.rating && u.rating.count ? html`<span class="nav-rating">${starSvg(true, 14)}${fmtAvg(u.rating)}</span>` : '')}
       ${item('/profile/searches', 'bell', 'Поиски', 'searches', freshBadge())}
+      ${item('/profile/following', 'users', 'Подписки', 'following', html`<span class="badge ${S.fresh && S.fresh.follow ? '' : 'hidden'}" data-fresh-follow>${S.fresh ? S.fresh.follow || 0 : 0}</span>`)}
       ${item('/favorites', 'heart', 'Избранное', 'fav')}
       ${item('/messages', 'chat', 'Сообщения', 'msg', html`<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span>`)}
       ${item('/profile/business', 'store', 'Для бизнеса', 'business', u.plan ? html`<span class="nav-plan">${u.plan.id === 'pro' ? 'Про' : 'Магазин'}</span>` : '')}
@@ -2263,7 +2432,7 @@
     const bizSub = section && section.startsWith('business') ? section.split('/')[1] || '' : null;
     const sec = statId ? 'stats' : bizSub !== null ? 'business' : section || 'listings';
     const BIZ_TITLE = { '': 'Для бизнеса', shop: 'Витрина магазина', stats: 'Статистика магазина', feed: 'Автозагрузка' };
-    setTitle(sec === 'business' ? BIZ_TITLE[bizSub] : { settings: 'Настройки', stats: 'Статистика', reviews: 'Отзывы', searches: 'Поиски' }[sec] || 'Профиль');
+    setTitle(sec === 'business' ? BIZ_TITLE[bizSub] : { settings: 'Настройки', stats: 'Статистика', reviews: 'Отзывы', searches: 'Поиски', following: 'Подписки' }[sec] || 'Профиль');
     const u = S.user;
     const { items } = await api('GET', '/api/my/listings');
     const count = (st) => items.filter((i) => i.status === st).length;
@@ -2298,6 +2467,8 @@
       ? html`<div class="pf-head"><h1>Статистика</h1><div class="seg" role="tablist">${[['7', '7 дней'], ['30', '30 дней'], ['0', 'Всё время']].map(([v, t]) => html`<a role="tab" aria-selected="${v === days ? 'true' : 'false'}" class="${v === days ? 'on' : ''}" href="/profile/stats/${statId}?days=${v}">${t}</a>`)}</div></div>`
       : sec === 'settings'
       ? html`<div class="pf-head"><h1>Настройки</h1></div>`
+      : sec === 'following'
+      ? html`<div class="pf-head"><h1>Подписки</h1></div>`
       : sec === 'searches'
       ? html`<div class="pf-head"><h1>Поиски</h1><a class="btn btn-soft" href="/search">${ic('search', 18, 2)}<span>Новый поиск</span></a></div>`
       : sec === 'reviews'
@@ -2336,6 +2507,7 @@
     if (sec === 'business') return renderBusinessHub(bizSub, bizDays, again);
     if (sec === 'reviews') return renderMyReviews(q.get('tab') === 'mine' ? 'mine' : 'about', again);
     if (sec === 'searches') return renderSavedSearches(again);
+    if (sec === 'following') return renderFollowing(again);
     if (sec === 'settings') return renderSettings(again);
     return renderMyListings(items, q.get('status') || 'active', again);
   }
@@ -2476,9 +2648,9 @@
   }
 
   // Уведомления: какие push и письма бывают (поле API, название, пояснение).
-  const NOTIFY_PUSH = [['pushMessages', 'Сообщения', 'Новые сообщения в чатах и ответы поддержки'], ['pushSearches', 'Сохранённые поиски', 'Новые объявления по вашим поискам'],
+  const NOTIFY_PUSH = [['pushMessages', 'Сообщения', 'Новые сообщения в чатах и ответы поддержки'], ['pushSearches', 'Поиски и подписки', 'Новые объявления по вашим поискам и от продавцов, на которых вы подписаны'],
     ['pushPrices', 'Снижение цены', 'Объявления из избранного стали дешевле'], ['pushModeration', 'Модерация и отзывы', 'Решения по объявлениям, новые отзывы о вас']];
-  const NOTIFY_MAIL = [['notifyMessages', 'Сообщения', 'Если не прочитали в течение 5 минут, не чаще раза в 15 минут'], ['notifyDigest', 'Подборка за день', 'Новое по поискам и снижение цен — одним письмом'],
+  const NOTIFY_MAIL = [['notifyMessages', 'Сообщения', 'Если не прочитали в течение 5 минут, не чаще раза в 15 минут'], ['notifyDigest', 'Подборка за день', 'Новое по поискам и подпискам, снижение цен — одним письмом'],
     ['notifyModeration', 'Решения модерации', 'Опубликовано, отклонено, ответ на апелляцию'], ['notifyReviews', 'Отзывы', 'Новый отзыв о вас, решения по отзывам и ответ продавца']];
   const notifySwitch = (u, k, t, sub) => html`<label class="switch"><span>${t}<small>${sub}</small></span><input type="checkbox" name="${k}" ${u[k] ? raw('checked') : ''}><span class="track"></span></label>`;
 
@@ -2635,9 +2807,9 @@
         ${idCard(u, {
           badges: html`${trustBadges(u.badges)}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}`,
           ratingHref: `/u/${u.id}?tab=reviews`,
-          stats: [[u.activeCount, plural(u.activeCount, 'объявление', 'объявления', 'объявлений')], [u.soldCount, 'продано']],
+          stats: [[u.activeCount, plural(u.activeCount, 'объявление', 'объявления', 'объявлений')], [u.soldCount, 'продано'], [u.followers || 0, plural(u.followers || 0, 'подписчик', 'подписчика', 'подписчиков'), 'followers']],
           extra: u.rating.count ? html`<div class="pf-rv-sum">${ratingSummary(u.rating)}</div>` : '',
-          foot: html`<div class="pf-pub-actions"><button type="button" class="btn btn-soft btn-block" data-share>${ic('share', 18)}Поделиться профилем</button>${own ? html`<a class="btn btn-dark btn-block" href="/profile">Мой профиль</a>` : ''}</div>`
+          foot: html`<div class="pf-pub-actions">${own ? '' : followBtn(u.id, u.following, 'btn-dark')}<button type="button" class="btn btn-soft btn-block" data-share>${ic('share', 18)}Поделиться профилем</button>${own ? html`<a class="btn btn-dark btn-block" href="/profile">Мой профиль</a>` : ''}</div>`
         })}
       </aside>
       <section class="pf-main">
