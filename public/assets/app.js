@@ -877,11 +877,18 @@
     renderBottomNav();
     const q = new URLSearchParams(location.search);
     const r = ROUTES.find(([re]) => re.test(path));
+    const keep = S.keep; S.keep = null;
     window.scrollTo(0, 0);
     if (!r) { viewNotFound(); return; }
     const m = path.match(r[0]);
     try {
-      await r[1](m[1], q);
+      const done = r[1](m[1], q);
+      if (keep) { // фильтры применились на месте: остаёмся там же, где были
+        window.scrollTo(0, keep.y);
+        const f = $('#filters'); if (f) f.scrollTop = keep.fy;
+        const el = keep.focus && document.getElementById(keep.focus); if (el) el.focus({ preventScroll: true });
+      }
+      await done;
       watchImpressions();
       metrikaHit();
     } catch (err) {
@@ -1089,7 +1096,7 @@
     const nFilters = ['category', 'city', 'min', 'max', 'delivery', 'bargain', 'exchange', 'metro'].filter((k) => params[k]).length + (sub ? 1 : 0) + Object.keys(params).filter((k) => k.startsWith('a_') && params[k]).length;
     app.innerHTML = String(html`<div class="wrap search-page">
       <aside class="filters collapsed" id="filters">
-        <button type="button" class="btn btn-soft btn-block" id="filters-toggle" style="display:none">${ic('filter', 18)}Фильтры${nFilters ? html`<span class="f-count">${nFilters}</span>` : ''}</button>
+        <button type="button" class="btn btn-soft btn-block" id="filters-toggle" aria-controls="filter-form" aria-expanded="false">${ic('filter', 18)}Фильтры${nFilters ? html`<span class="f-count">${nFilters}</span>` : ''}</button>
         <form id="filter-form" class="filters-body">
           <h3>Фильтры</h3>
           <input type="hidden" name="q" value="${params.q || ''}">
@@ -1105,8 +1112,8 @@
             <div class="row"><label class="sr" for="f-min">Цена от</label><input id="f-min" name="min" class="input" inputmode="numeric" placeholder="от" value="${params.min || ''}">
             <label class="sr" for="f-max">Цена до</label><input id="f-max" name="max" class="input" inputmode="numeric" placeholder="до" value="${params.max || ''}"></div></div>
           ${[['delivery', 'С доставкой'], ['bargain', 'Торг уместен'], ['exchange', 'Возможен обмен']].map(([k, t]) => html`<label class="switch"><span>${t}</span><input type="checkbox" name="${k}" value="1" ${params[k] === '1' ? raw('checked') : ''}><span class="track"></span></label>`)}
-          <button class="btn btn-dark btn-block" type="submit">Показать</button>
-          <a href="/search${params.q ? `?q=${encodeURIComponent(params.q)}` : ''}" class="btn btn-soft btn-block">Сбросить</a>
+          <div class="f-go"><button class="btn btn-dark btn-block" type="submit" id="f-show">Показать</button>
+          <a href="/search${params.q ? `?q=${encodeURIComponent(params.q)}` : ''}" class="btn btn-soft btn-block">Сбросить</a></div>
         </form>
       </aside>
       <section class="results">
@@ -1157,7 +1164,7 @@
     // Характеристики-списки в фильтрах — чипсами; значение лежит в скрытом поле a_<ключ>.
     bindAttrChoices($('#f-extra'), { find: (fn) => (subOf(($('#f-sub') || {}).value || '') || { fields: [] }).fields.find(fn) },
       (k) => { const i = $(`#f-extra input[name="a_${k}"]`); return i ? i.value : ''; },
-      (k, v) => { const i = $(`#f-extra input[name="a_${k}"]`); if (i) i.value = v || ''; }, { filter: true });
+      (k, v) => { const i = $(`#f-extra input[name="a_${k}"]`); if (i) { i.value = v || ''; i.dispatchEvent(new Event('change', { bubbles: true })); } }, { filter: true });
     renderExtra(category, sub);
     $('#f-cat').onchange = (e) => renderExtra(e.target.value, '');
     // Метро — когда в городе есть метро (справочник hh.ru).
@@ -1172,22 +1179,55 @@
     };
     renderMetro();
     $('#f-city').addEventListener('change', renderMetro);
+    // 1.35: на компьютере фильтры применяются сразу (любой выбор, переключатель, поле — по Enter или уходу из поля);
+    // на телефоне панель открывается кнопкой «Фильтры», а «Показать» внизу сразу пишет, сколько найдётся.
+    const narrow = () => window.matchMedia('(max-width: 900px)').matches;
     const toggle = $('#filters-toggle');
-    if (window.matchMedia('(max-width: 900px)').matches) {
-      toggle.style.display = '';
-      toggle.onclick = () => $('#filters').classList.toggle('collapsed');
-    } else {
-      $('#filters').classList.remove('collapsed');
-    }
-    ff.onsubmit = (e) => {
-      e.preventDefault();
-      const fd = new FormData(ff);
+    toggle.onclick = () => { const open = $('#filters').classList.toggle('collapsed') === false; toggle.setAttribute('aria-expanded', String(open)); };
+    const formParams = () => {
       const next = {};
-      for (const [k, v] of fd.entries()) if (String(v).trim()) next[k] = String(v).trim();
+      for (const [k, v] of new FormData(ff).entries()) {
+        let t = String(v).trim();
+        if (k === 'min' || k === 'max') t = t.replace(/\D/g, ''); // «1 000 000» → 1000000
+        else if (/^a_.+_(min|max)$/.test(k)) t = t.replace(/[\s\u00a0]/g, '').replace(',', '.'); // «2,5» → 2.5
+        if (t) next[k] = t;
+      }
       if (params.sort) next.sort = params.sort;
       next.city = next.city || '';
-      goSearch(next);
+      return next;
     };
+    // Применить на месте: страница не прыгает наверх, фокус остаётся в поле, куда перешли (Tab из «от» в «до»).
+    let applyTimer = null;
+    const apply = () => {
+      clearTimeout(applyTimer);
+      applyTimer = setTimeout(() => {
+        if (!ff.isConnected) return;
+        const a = document.activeElement;
+        S.keep = { y: window.scrollY, fy: $('#filters').scrollTop, focus: a && ff.contains(a) && a.id ? a.id : '' };
+        goSearch(formParams());
+      }, 0);
+    };
+    let countTimer = null;
+    const showBtn = $('#f-show');
+    const liveCount = () => {
+      clearTimeout(countTimer);
+      countTimer = setTimeout(async () => {
+        const p = Object.fromEntries(Object.entries(formParams()).filter(([, v]) => v));
+        const d = await api('GET', `/api/listings?${new URLSearchParams({ ...p, limit: 1 })}`).catch(() => null);
+        if (d && showBtn.isConnected) showBtn.textContent = d.total ? `Показать ${NF.format(d.total)} ${plural(d.total, 'объявление', 'объявления', 'объявлений')}` : 'Ничего не найдено';
+      }, 250);
+    };
+    ff.addEventListener('change', (e) => {
+      if (e.target.id === 'f-city') { // город — только целиком: пусто («Вся Россия») или город из списка, недописанный не ищем
+        const t = e.target.value.trim().toLowerCase().replace(/ё/g, 'е');
+        const c = (S.config.cities || []).find((x) => x.toLowerCase().replace(/ё/g, 'е') === t);
+        if (t && !c) return;
+        if (c) e.target.value = c;
+      }
+      if (narrow()) liveCount(); else apply();
+    });
+    ff.addEventListener('input', (e) => { if (narrow() && e.target.matches('input.input')) liveCount(); });
+    ff.onsubmit = (e) => { e.preventDefault(); if (narrow()) { clearTimeout(applyTimer); goSearch(formParams()); } else apply(); };
     $('#sort').onchange = (e) => { const p = { ...params, sort: e.target.value }; go(`/search?${new URLSearchParams(Object.entries(p).filter(([, v]) => v))}`); };
     bindSaveSearch($('#save-search'), params);
 

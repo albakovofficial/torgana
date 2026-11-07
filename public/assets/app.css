@@ -2613,3 +2613,21 @@ body.pv-open { overflow: hidden; }
 .city-sug .pick-it { min-height: 42px; }
 .city-sug .pick-it.act { background: var(--surface); }
 .city-sug .pick-it.on { background: rgba(31, 94, 74, .08); }
+
+/* 1.35: фильтры. Компьютер — применяются сразу, панель прокручивается сама; телефон — кнопка «Фильтры» и «Показать N» внизу. */
+#filters-toggle { display: none; }
+.f-go { display: flex; flex-direction: column; gap: 10px; }
+@media (min-width: 901px) {
+  .filters { max-height: calc(100vh - 112px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .f-go #f-show { display: none; }
+}
+@media (max-width: 900px) {
+  #filters-toggle { display: inline-flex; }
+  .f-go { position: sticky; bottom: 92px; z-index: 5; flex-direction: row; gap: 8px; margin: 0 -8px; padding: 8px; border-radius: 999px; background: rgba(255,255,255,.94); backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(16,16,16,.10); }
+  .f-go #f-show { flex: 1; min-width: 0; padding: 0 12px; overflow: hidden; text-overflow: ellipsis; }
+  .f-go .btn-soft { width: auto; flex: none; padding: 0 16px; font-size: 14px; }
+}
+/* 1.35: шапка 901–1100 px не вылезает за экран — строка поиска сжимается, а не распирает шапку. */
+.header-search { min-width: 0; }
+.header-search input { min-width: 0; width: 100%; }
+@media (max-width: 1100px) and (min-width: 901px) { .header-in { gap: 12px; } .hd-new { padding: 0 14px; } }

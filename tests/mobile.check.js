@@ -203,6 +203,7 @@ function pages(d) {
     ['category', '/c/personal', null],
     ['section-sub', '/c/transport/cars', null],
     ['search-city', '/search?category=transport', null, 'city'],
+    ['search-filters', '/search?category=transport&sub=cars', null, 'filters'],
     ['section-sub-city', '/c/transport/cars/moskva', null],
     ['cookie', '/', null],
     ['admin-seo', '/admin?status=seo', d.admin],
@@ -416,6 +417,25 @@ async function main() {
           await page.waitForTimeout(200);
           const first = await page.textContent('.city-sug .pick-it');
           if (!/Воронеж/.test(first || '')) errors.push(`первым должен быть Воронеж, а не «${first}»`);
+        } else if (open === 'filters') {
+          // 1.35: компьютер — выбор в фильтрах применяется сразу, без «Показать»; телефон — «Показать N» с числом и видна на экране.
+          if (vpName === 'mobile') {
+            await page.click('#filters-toggle'); await page.waitForTimeout(200);
+            await page.click('#f-extra [data-field="gearbox"] [data-av="Автомат"]'); await page.waitForTimeout(700);
+            const t = await page.textContent('#f-show');
+            if (!/^Показать 1 объявление$/.test(t)) errors.push(`кнопка «Показать» без числа: «${t}»`);
+            const r = await page.$eval('#f-show', (el) => el.getBoundingClientRect().bottom);
+            if (r > 812) errors.push('кнопка «Показать» за краем экрана');
+            await page.screenshot({ path: path.join(SHOTS, `${vpName}-search-filters-open.png`) });
+            await page.click('#f-show'); await page.waitForTimeout(500);
+          } else {
+            await page.evaluate(() => window.scrollTo(0, 200));
+            await page.click('#f-extra [data-field="gearbox"] [data-av="Автомат"]'); await page.waitForTimeout(700);
+            if (await page.evaluate(() => window.scrollY) < 150) errors.push('после выбора фильтра страница прыгнула наверх');
+          }
+          if (!/a_gearbox=/.test(page.url())) errors.push(`фильтр не применился: ${page.url()}`);
+          const n = await page.textContent('#count');
+          if (!/^1 объявление$/.test(n)) errors.push(`после фильтра «Автомат» должно быть 1 объявление, а не «${n}»`);
         } else if (open === 'push-ask') {
           // Первый заход вошедшего: один раз спрашиваем про уведомления; после «Не сейчас» — больше никогда.
           // Если браузер проверки не умеет push (так бывает в GitHub Actions), вопроса быть не должно — но метка ставится.

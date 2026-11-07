@@ -104,6 +104,11 @@ test('поиск: подкатегория, характеристика из с
   assert.deepEqual(await ids('metro=Павелецкая'), ['Toyota Camry']);
   assert.deepEqual(await ids('q=тойота%20автомат'.replace('тойота', 'toyota')), ['Toyota Camry']);
   assert.deepEqual(await ids('sub=cars&a_gearbox=Неизвестно'), ['Lada Vesta', 'Toyota Camry'], 'значение не из списка не фильтрует');
+  // 1.35: числа с пробелами и запятой — как их пишут люди («1 000 000», «50 000», «2,5»).
+  const enc = (q) => q.split('&').map((x) => x.split('=').map(encodeURIComponent).join('=')).join('&');
+  assert.deepEqual(await ids(enc('sub=cars&min=1 000 000')), ['Toyota Camry']);
+  assert.deepEqual(await ids(enc('sub=cars&max=1\u00a0000\u00a0000')), ['Lada Vesta'], 'неразрывные пробелы тоже');
+  assert.deepEqual(await ids(enc('sub=cars&a_mileage_max=50 000')), ['Lada Vesta']);
 });
 
 test('сохранённый поиск с характеристиками: приходит только подходящее объявление', async () => {
