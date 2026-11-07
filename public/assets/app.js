@@ -520,7 +520,10 @@
     S.notices = n || 0;
     $$('[data-notices]').forEach((el) => { el.textContent = S.notices > 99 ? '99+' : S.notices; el.classList.toggle('hidden', !S.notices); });
   }
-  const NOTICE_TONE = { ok: 'ok', bad: 'bad', wait: 'wait' };
+  // Цвет события (1.25): зелёный — опубликовано, красный — нужно исправить, жёлтый — отзывы и сроки,
+  // синий — оплата и возвраты, фиолетовый — продвижение.
+  const NOTICE_COLOR = { check: 'green', warn: 'red', clock: 'amber', star: 'amber', store: 'amber', card: 'blue', megaphone: 'violet', tag: 'violet', bolt: 'violet', down: 'green', shield: 'green' };
+  const noticeColor = (n) => (n.tone === 'bad' ? 'red' : NOTICE_COLOR[n.icon] || (n.tone === 'ok' ? 'green' : n.tone === 'wait' ? 'amber' : 'gray'));
   function noticeDay(ts) {
     const d = new Date(ts); const t = new Date();
     const y = new Date(t); y.setDate(t.getDate() - 1);
@@ -538,8 +541,10 @@
       const groups = [];
       d.items.forEach((n) => { const k = noticeDay(n.at); const g = groups[groups.length - 1]; if (g && g[0] === k) g[1].push(n); else groups.push([k, [n]]); });
       $('#nt-body', m).innerHTML = String(d.items.length ? html`${groups.map(([day, list]) => html`<div class="nt-day">${day}</div>
-        ${list.map((n) => html`<a class="nt-it${n.read ? '' : ' new'}" href="${n.url || '#'}"><span class="nt-ic ${NOTICE_TONE[n.tone] || ''}">${ic(P[n.icon] ? n.icon : 'bell', 19, 2)}</span>
-          <span class="nt-t"><b>${n.title}</b>${n.body ? html`<span>${n.body}</span>` : ''}<small>${hm(n.at)}</small></span></a>`)}`)}`
+        ${list.map((n) => { const col = noticeColor(n); const icn = ic(P[n.icon] ? n.icon : 'bell', n.photo ? 12 : 19, n.photo ? 2.6 : 2); return html`<a class="nt-it${n.read ? '' : ' new'}" href="${n.url || '#'}">${n.photo
+    ? html`<span class="nt-ph"><img src="${n.photo}" alt="" loading="lazy"><i class="nt-badge ${col}">${icn}</i></span>`
+    : html`<span class="nt-ic ${col}">${icn}</span>`}
+          <span class="nt-t"><b>${n.title}</b>${n.body ? html`<span>${n.body}</span>` : ''}<small>${hm(n.at)}</small></span></a>`; })}`)}`
         : html`<div class="nt-empty"><span class="nt-empty-ic">${ic('bell', 30, 1.6)}</span><b>Здесь будут уведомления</b><p>Напишем, когда объявление опубликуют, придёт отзыв или подешевеет товар из избранного.</p></div>`);
       if (d.unread) { api('POST', '/api/notices/read', {}).then((r) => setNotices(r.unread)).catch(() => {}); }
       if (S.user && 'Notification' in window && Notification.permission === 'default') {
