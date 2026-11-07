@@ -147,6 +147,12 @@
     city: localStorage.getItem('tg_city') || ''
   };
   const catName = (id) => (S.config.categories.find((c) => c.id === id) || {}).name || '';
+  // Понятные адреса: /l/123-velosiped-stels, /c/hobby/kazan (то же правило — в lib/seo.js).
+  const TR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
+  const slugify = (s) => String(s || '').toLowerCase().split('').map((c) => (TR[c] !== undefined ? TR[c] : c)).join('')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
+  const lpath = (it) => `/l/${it.id}${slugify(it.title) ? `-${slugify(it.title)}` : ''}`;
+  const cpath = (cat, city) => `/c/${cat}${city && S.config.cities.includes(city) ? `/${slugify(city)}` : ''}`;
   const CONDITION_CATS = new Set(['transport', 'electronics', 'personal', 'home', 'hobby', 'business']);
   const CONDITION_LABEL = { new: 'Новое', used: 'Б/у', '': 'Не указано' };
 
@@ -278,7 +284,7 @@
         </ul></div>
       </div>
       <div class="f-bottom"><div class="f-copy"><b>© ${new Date().getFullYear()} Торгана</b>${op ? html`<span>${op.name}, ИНН ${op.inn}, ОГРНИП ${op.ogrnip}</span>` : ''}</div>
-        <nav class="f-docs" aria-label="Документы">${docs.map(([href, label]) => html`<a href="${href}">${label}</a>`)}</nav></div>
+        <nav class="f-docs" aria-label="Документы">${docs.map(([href, label]) => html`<a href="${href}">${label}</a>`)}${Number(S.config.metrika) ? html`<a href="#" data-cookie-settings>Настройки cookie</a>` : ''}</nav></div>
     </div>`);
     // На телефоне разделы свёрнуты, на компьютере всегда открыты.
     const narrow = window.matchMedia(FOOTER_NARROW).matches;
@@ -305,7 +311,7 @@
     const meta = [it.city, shortWhen(it.createdAt)].filter(Boolean).join(' · ');
     const ad = it.ad;
     return html`<div class="card${ad ? ' is-ad' : ''}">
-      <a href="/l/${it.id}" class="card-link"${ad ? raw(` data-adid="${Number(ad.id)}"`) : ''}>
+      <a href="${lpath(it)}" class="card-link"${ad ? raw(` data-adid="${Number(ad.id)}"`) : ''}>
         <div class="card-img">
           ${it.photo ? html`<img src="${it.photo}" alt="" loading="lazy">` : svg(P.image, 40, 1.2)}
           ${ad ? '' : it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : it.priceWas ? html`<span class="tag drop-badge" title="Было ${price(it.priceWas, it.priceUnit)}">${ic('down', 13, 2.4)}Цена снижена</span>` : ''}
@@ -353,6 +359,51 @@
   // Переход из блока «Реклама» — запоминаем, чтобы статистика записала источник «Реклама».
   document.addEventListener('click', (e) => { const a = e.target.closest('a[data-adid]'); if (a) S.adClick = a.getAttribute('href'); }, true);
 
+  // ================= cookie и Яндекс.Метрика =================
+  // Метрика загружается, только если модератор указал номер счётчика и человек нажал «Хорошо» в плашке cookie.
+  // Без счётчика плашки нет: сайт использует только необходимые cookie (вход, защита).
+  const COOKIE_KEY = 'tg_cookie';
+  const cookieChoice = () => { try { return localStorage.getItem(COOKIE_KEY) || ''; } catch { return 'necessary'; } };
+  let ymOn = false;
+  let ymPrev = document.referrer;
+  function metrikaStart() {
+    const id = Number(S.config.metrika);
+    if (!id || ymOn || cookieChoice() !== 'all') return;
+    ymOn = true;
+    window.ym = window.ym || function ym() { (window.ym.a = window.ym.a || []).push(arguments); }; // eslint-disable-line prefer-rest-params
+    window.ym.l = Date.now();
+    const sc = document.createElement('script');
+    sc.async = true; sc.src = 'https://mc.yandex.ru/metrika/tag.js';
+    document.head.appendChild(sc);
+    window.ym(id, 'init', { defer: true, clickmap: true, trackLinks: true, accurateTrackBounce: true, webvisor: false });
+  }
+  // Просмотр страницы — после каждого перехода внутри сайта.
+  function metrikaHit() {
+    if (!ymOn) return;
+    window.ym(Number(S.config.metrika), 'hit', location.href, { title: document.title, referer: ymPrev });
+    ymPrev = location.href;
+  }
+  function cookieBar(force = false) {
+    if (!Number(S.config.metrika) || (cookieChoice() && !force) || $('.cookie-bar')) return;
+    const bar = document.createElement('div');
+    bar.className = 'cookie-bar';
+    bar.setAttribute('role', 'dialog');
+    bar.setAttribute('aria-label', 'Cookie');
+    bar.innerHTML = String(html`<div class="cb-ic">${ic('shield', 20, 2)}</div>
+      <p><b>Мы используем cookie.</b> Необходимые — для входа и защиты сайта. Статистические — Яндекс.Метрика: смотрим, что удобно, а что нет, без рекламы и без записи экрана. <a href="/page/privacy#cookie">Подробнее</a></p>
+      <div class="cb-act"><button type="button" class="btn btn-soft btn-sm" data-c="necessary">Только необходимые</button><button type="button" class="btn btn-dark btn-sm" data-c="all">Хорошо</button></div>`);
+    document.body.appendChild(bar);
+    requestAnimationFrame(() => bar.classList.add('show'));
+    $$('[data-c]', bar).forEach((b) => {
+      b.onclick = () => {
+        try { localStorage.setItem(COOKIE_KEY, b.dataset.c); } catch { /* приватный режим */ }
+        bar.remove();
+        if (b.dataset.c === 'all') { metrikaStart(); metrikaHit(); } else if (ymOn) location.reload(); // отказались — выключаем Метрику
+      };
+    });
+  }
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-cookie-settings]')) { e.preventDefault(); cookieBar(true); } });
+
   // ================= роутер =================
   let cleanup = null;
   function go(url, replace = false) {
@@ -393,7 +444,8 @@
   const ROUTES = [
     [/^\/$/, viewHome],
     [/^\/search$/, viewSearch],
-    [/^\/l\/(\d+)$/, viewListing],
+    [/^\/l\/(\d+)(?:-[a-z0-9-]*)?$/, viewListing],
+    [/^\/c\/([a-z]+(?:\/[a-z0-9-]+)?)$/, viewCategory],
     [/^\/new$/, viewEditor],
     [/^\/edit\/(\d+)$/, viewEditor],
     [/^\/login$/, viewLogin],
@@ -429,6 +481,7 @@
     try {
       await r[1](m[1], q);
       watchImpressions();
+      metrikaHit();
     } catch (err) {
       if (err.status === 404) viewNotFound(err.message);
       else app.innerHTML = String(html`<div class="wrap"><div class="empty" style="margin-top:40px"><h3>Не получилось загрузить страницу</h3><p>${err.message}</p><a href="${location.pathname + location.search}" class="btn btn-dark">Обновить</a></div></div>`);
@@ -552,7 +605,7 @@
           </form>
           <button type="button" class="city-btn" id="city-btn">${ic('pin', 18)}<span>${S.city || 'Вся Россия'}</span>${ic('down', 16, 2)}</button>
         </div>
-        <div class="cats">${S.config.categories.map((c) => html`<a class="cat" href="/search?category=${c.id}"><span class="cat-ic">${catIc(c.id)}</span>${c.name}</a>`)}</div>
+        <div class="cats">${S.config.categories.map((c) => html`<a class="cat" href="${cpath(c.id, S.city)}"><span class="cat-ic">${catIc(c.id)}</span>${c.name}</a>`)}</div>
       </section>
 
       <section class="wrap home-feed">
@@ -572,6 +625,14 @@
   }
 
   // ================= поиск =================
+  // /c/:категория и /c/:категория/:город — страницы разделов для поисковиков; внутри — обычный поиск.
+  function viewCategory(part) {
+    const [cat, citySlug] = part.split('/');
+    const city = citySlug ? S.config.cities.find((c) => slugify(c) === citySlug) : '';
+    if (!S.config.categories.some((c) => c.id === cat) || (citySlug && !city)) { viewNotFound(); return undefined; }
+    return viewSearch(null, new URLSearchParams({ category: cat, ...(city ? { city } : {}) }));
+  }
+
   async function viewSearch(_, q) {
     const params = Object.fromEntries(q.entries());
     const category = params.category || '';
@@ -712,6 +773,7 @@
     const data = await api('GET', `/api/listings/${id}`);
     const { listing: l, seller, similar, market } = data;
     setTitle(l.title);
+    if (location.pathname !== lpath(l)) history.replaceState(history.state, '', lpath(l) + location.search); // адрес с названием
     let idx = 0;
     const photos = l.photos;
     const marketChip = market ? ({
@@ -763,7 +825,7 @@
     }
 
     app.innerHTML = String(html`<div class="wrap">
-      <nav class="crumbs" aria-label="Навигация"><a href="/">Главная</a><span aria-hidden="true">›</span><a href="/search?category=${l.category}">${catName(l.category)}</a></nav>
+      <nav class="crumbs" aria-label="Навигация"><a href="/">Главная</a><span aria-hidden="true">›</span><a href="${cpath(l.category)}">${catName(l.category)}</a><span aria-hidden="true">›</span><a href="${cpath(l.category, l.city)}">${l.city}</a></nav>
       ${ownerBanner ? html`<div style="margin-bottom:20px">${ownerBanner}</div>` : ''}
       <div class="item">
         <div class="item-main">
@@ -811,7 +873,7 @@
           <div class="banner soft" style="font-size:14px"><strong style="color:var(--text)">Мы никогда не просим</strong> переходить в мессенджеры, называть код из СМС или платить по ссылке. Если вас об этом просят — это мошенники.</div>
         </aside>
       </div>
-      ${similar.length ? html`<section class="section"><div class="section-head"><h2>Похожие объявления</h2><a href="/search?category=${l.category}">Смотреть все</a></div>${grid(similar)}</section>` : ''}
+      ${similar.length ? html`<section class="section"><div class="section-head"><h2>Похожие объявления</h2><a href="${cpath(l.category, l.city)}">Смотреть все</a></div>${grid(similar)}</section>` : ''}
     </div>`);
 
     if (l.status === 'active') api('POST', '/api/stats/view', { id: l.id, src: statSource() }).catch(() => {});
@@ -2050,7 +2112,7 @@
         if (i.status === 'sold' || i.status === 'archived') acts.push({ icon: 'refresh', label: 'Опубликовать снова', run: () => setStatus(i, 'active', 'Снова опубликовано') });
         if (i.status === 'rejected' && !i.appealAt && !i.appealReply) acts.push({ icon: 'chat', label: 'Подать апелляцию', run: () => appealModal(i.id, reload) });
         if (i.status === 'active' && (isBiz() || i.promo)) acts.splice(1, 0, { icon: 'trend', label: i.promo ? 'Продлить продвижение' : 'Продвигать', run: () => promoteModal(i.id, i.title) });
-        if (i.status === 'active') acts.push({ icon: 'share', label: 'Поделиться', run: () => shareLink(`${location.origin}/l/${i.id}`, i.title) });
+        if (i.status === 'active') acts.push({ icon: 'share', label: 'Поделиться', run: () => shareLink(`${location.origin}${lpath(i)}`, i.title) });
         acts.push({ icon: 'trash', label: 'Удалить', danger: true, run: async () => {
           if (!(await confirmModal('Удалить объявление?', 'Объявление и фото удалятся без возможности восстановления.', 'Удалить', true))) return;
           try { await api('DELETE', `/api/listings/${i.id}`); toast('Удалено'); reload(); } catch (e) { toast(e.message, true); }
@@ -2742,7 +2804,7 @@
     ['Объявления', [['active', 'tag', 'Опубликованные'], ['rejected', 'close', 'Отклонённые'], ['sold', 'check', 'Проданные'], ['archived', 'pause', 'Снятые']]],
     ['Люди', [['users', 'users', 'Пользователи'], ['log', 'list', 'Журнал действий']]],
     ['Деньги', [['payments', 'card', 'Платежи'], ['ads', 'megaphone', 'Реклама', 'ads'], ['billing', 'tag', 'Оплата и цены']]],
-    ['Настройки', [['notify', 'bell', 'Мои уведомления'], ['mail', 'mail', 'Почта'], ['oauth', 'lock', 'Вход через сервисы'], ['site', 'refresh', 'Версия сайта']]]
+    ['Настройки', [['notify', 'bell', 'Мои уведомления'], ['mail', 'mail', 'Почта'], ['oauth', 'lock', 'Вход через сервисы'], ['seo', 'search', 'Поиск и статистика'], ['site', 'refresh', 'Версия сайта']]]
   ];
   const LISTING_TABS = ['pending', 'reports', 'appeals', 'active', 'rejected', 'sold', 'archived'];
   function adminShell(active, stats, body) {
@@ -2786,6 +2848,7 @@
       users: () => renderUsersAdmin(box, q),
       biz: () => renderUsersAdmin(box, new URLSearchParams({ f: 'biz' }), 'Проверка бизнеса'),
       oauth: () => renderOauthAdmin(box),
+      seo: () => renderSeoAdmin(box),
       payments: () => renderPaymentsAdmin(box, q),
       ads: () => renderAdsAdmin(box, ['marking', 'active', 'ended'].includes(q.get('tab')) ? q.get('tab') : 'marking'),
       billing: () => renderBillingAdmin(box),
@@ -3009,7 +3072,7 @@
     'review-published': 'Опубликовал отзыв', 'review-rejected': 'Не опубликовал отзыв', 'review-hidden': 'Скрыл отзыв по жалобе', 'review-kept': 'Оставил отзыв после жалобы',
     'review-restored': 'Вернул отзыв', 'biz-verified': 'Подтвердил бизнес', 'biz-rejected': 'Отказал в подтверждении бизнеса', 'reply-published': 'Опубликовал ответ продавца', 'reply-rejected': 'Не опубликовал ответ продавца', 'support-reply': 'Ответил в поддержке',
     'billing-settings': 'Изменил настройки оплаты', 'billing-prices': 'Изменил цены', 'payment-refund': 'Оформил возврат', 'promo-erid': 'Указал erid и запустил рекламу',
-    'promo-stopped': 'Остановил продвижение', 'ads-settings': 'Изменил настройки рекламы', 'shop-cleared': 'Очистил витрину магазина'
+    'promo-stopped': 'Остановил продвижение', 'seo-settings': 'Изменил настройки поиска и Метрики', 'ads-settings': 'Изменил настройки рекламы', 'shop-cleared': 'Очистил витрину магазина'
   };
   const LOG_TONE = { 'promo-erid': 'ok', 'promo-stopped': 'bad', 'shop-cleared': 'bad', 'biz-verified': 'ok', 'biz-rejected': 'bad', rejected: 'bad', 'appeal-denied': 'bad', 'user-blocked': 'bad', 'review-rejected': 'bad', 'review-hidden': 'bad', 'reply-rejected': 'bad', approved: 'ok', restored: 'ok', 'appeal-approved': 'ok', 'user-unblocked': 'ok', 'review-published': 'ok', 'reply-published': 'ok', 'review-restored': 'ok' };
   function logRow(e) {
@@ -3204,6 +3267,37 @@
     const collect = (f) => { const b = { shop: {}, pro: {}, promo: {} }; for (const [k, v] of new FormData(f).entries()) { const [g, n] = k.split('.'); if (n) b[g][n] = v; else b[g] = parseInt(v, 10); } return b; };
     $('#prices', box).onsubmit = async (e) => { e.preventDefault(); try { await api('PUT', '/api/admin/billing', { prices: collect(e.target) }); await after('Цены сохранены'); } catch (ex) { toast(ex.message, true); } };
     $('[data-defaults]', box).onclick = async () => { try { await api('PUT', '/api/admin/billing', { prices: d.defaults }); await after('Вернули цены по умолчанию'); } catch (ex) { toast(ex.message, true); } };
+  }
+
+  // ---------- поиск и статистика: Вебмастер, Search Console, Метрика ----------
+  async function renderSeoAdmin(box) {
+    const d = await api('GET', '/api/admin/seo');
+    const s = d.seo;
+    const step = (n, t, body) => html`<li><span class="seo-n">${n}</span><div><b>${t}</b><p>${body}</p></div></li>`;
+    box.innerHTML = String(html`<div class="adm-head"><h1>Поиск и статистика</h1></div>
+      <div class="mail-grid">
+        <form class="panel settings" id="seo-f" style="max-width:none">
+          <h2 class="h2" style="margin:0">Подключение</h2>
+          <div class="field"><label for="sy">Яндекс.Вебмастер — код подтверждения</label><input id="sy" name="yandex" class="input" value="${s.yandex}" placeholder="например 1a2b3c4d5e6f7a8b" autocomplete="off"><span class="help">Можно вставить весь тег &lt;meta name="yandex-verification" …&gt; — возьмём код сами.</span></div>
+          <div class="field"><label for="sg">Google Search Console — код подтверждения</label><input id="sg" name="google" class="input" value="${s.google}" placeholder="необязательно" autocomplete="off"></div>
+          <div class="field"><label for="sm">Яндекс.Метрика — номер счётчика</label><input id="sm" name="metrika" class="input" inputmode="numeric" value="${s.metrika}" placeholder="например 98765432" autocomplete="off"><span class="help">Счётчик включается только у тех, кто нажал «Хорошо» в плашке cookie. Вебвизор выключен.</span></div>
+          <div class="set-btns"><button class="btn btn-dark" type="submit">Сохранить</button></div>
+        </form>
+        <section class="panel settings" style="max-width:none">
+          <h2 class="h2" style="margin:0">Как подключить</h2>
+          <ol class="seo-steps">
+            ${step(1, 'Вебмастер', html`На <a href="https://webmaster.yandex.ru" target="_blank" rel="noopener" style="text-decoration:underline">webmaster.yandex.ru</a> добавьте сайт https://torgana.ru → способ «Мета-тег» → скопируйте код сюда и сохраните → нажмите «Проверить» в Вебмастере.`)}
+            ${step(2, 'Карта сайта', html`В Вебмастере: «Индексирование → Файлы Sitemap» → добавьте <code>${d.sitemap}</code>. Она обновляется сама.`)}
+            ${step(3, 'Метрика', html`На <a href="https://metrika.yandex.ru" target="_blank" rel="noopener" style="text-decoration:underline">metrika.yandex.ru</a> создайте счётчик для torgana.ru без Вебвизора → номер счётчика — сюда.`)}
+            ${step(4, 'Google', 'По желанию: Search Console → «Тег HTML» → код сюда, затем добавьте ту же карту сайта.')}
+          </ol>
+          <div class="oa-copy"><code>${d.robots}</code><a class="btn btn-soft btn-sm" href="${d.robots}" target="_blank" rel="noopener">Открыть</a></div>
+        </section>
+      </div>`);
+    $('#seo-f', box).onsubmit = async (e) => {
+      e.preventDefault();
+      try { await api('PUT', '/api/admin/seo', Object.fromEntries(new FormData(e.target).entries())); S.config = await api('GET', '/api/config'); toast('Сохранено'); render(); } catch (ex) { toast(ex.message, true); }
+    };
   }
 
   // ---------- мои уведомления ----------
@@ -3680,7 +3774,9 @@
       return;
     }
     renderFooter();
+    metrikaStart();
     await render();
+    cookieBar();
     setupPullToRefresh();
     setInterval(() => { if (S.user && document.visibilityState === 'visible') refreshMe(); }, 30000);
   }

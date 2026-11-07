@@ -40,8 +40,11 @@ describe('конфигурация и главная', () => {
     assert.equal(r.headers.get('x-frame-options'), 'DENY');
   });
 
-  test('любая страница приложения отдаёт оболочку сайта', async () => {
-    const r = await guest.get('/l/999');
+  test('любая страница приложения отдаёт оболочку сайта; несуществующее объявление — с кодом 404', async () => {
+    const nf = await guest.get('/l/999');
+    assert.equal(nf.status, 404, 'поисковик не примет пустую страницу за объявление');
+    assert.match(String(nf.data), /<main id="app"/, 'но страница приложения та же');
+    const r = await guest.get('/favorites');
     assert.equal(r.status, 200);
     assert.match(String(r.data), /<main id="app"/);
   });

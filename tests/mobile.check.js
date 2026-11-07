@@ -103,6 +103,7 @@ async function seed(base, browser) {
   await admin.post(`/api/admin/users/${spam.user.id}/block`, { blocked: true, reason: 'Спам и повторные объявления' });
 
   // 1.12: магазин с тарифом «Магазин Про», витрина, продвижение (идёт и ждёт erid), платежи (поддельная ЮKassa).
+  await admin.put('/api/admin/seo', { yandex: 'a1b2c3d4e5f60718', metrika: '98765432' });
   await admin.put('/api/admin/billing', { config: { shopId: '123456', secret: 'test_AbCdEfGhIjKlMnOp', receipts: true, vat: 1, mode: 'full_payment' } });
   const shop = await registerUser(base, { name: 'Ольга Детство', email: 'shop@test.local' });
   await shop.post('/api/me/business', { name: 'ООО «Детство»', inn: '7707083893', ogrn: '1027700132195' });
@@ -152,6 +153,10 @@ function pages(d) {
     ['edit', `/edit/${d.ids[0]}`, d.seller],
     ['new-errors', '/new', d.buyer, 'submit'],
     ['confirm', '/confirm', null],
+    ['category-city', '/c/personal/kazan', null],
+    ['category', '/c/personal', null],
+    ['cookie', '/', null],
+    ['admin-seo', '/admin?status=seo', d.admin],
     ['confirm-code', '/confirm', null, 'code'],
     ['profile', '/profile', d.seller],
     ['profile-listings', '/profile/listings', d.seller],
@@ -261,6 +266,8 @@ async function main() {
         }
         // Внешние ресурсы (шрифты и т. п.) в проверке не грузим — тест не должен зависеть от интернета.
         await ctx.route((u) => !u.href.startsWith(srv.base), (r) => r.fulfill({ status: 200, body: '' }));
+        // Плашку cookie показываем только на своей странице проверки, на остальных — выбор уже сделан.
+        if (name !== 'cookie') await ctx.addInitScript(() => { try { localStorage.setItem('tg_cookie', 'necessary'); } catch { /* нет */ } });
         const page = await ctx.newPage();
         const errors = [];
         page.on('pageerror', (e) => errors.push(`JS: ${e.message}`));
