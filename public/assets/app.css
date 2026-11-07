@@ -155,7 +155,7 @@ button { cursor: pointer; }
 .search-page { display: flex; gap: 40px; align-items: flex-start; padding-top: 24px; }
 .filters { flex: 0 0 280px; position: sticky; top: 96px; display: flex; flex-direction: column; gap: 22px; padding: 24px; border: 1px solid var(--line); border-radius: var(--r-card); }
 .filters h3 { margin: 0; font-size: 18px; font-weight: 700; }
-.results { flex: 1; min-width: 0; }
+.results { flex: 1; min-width: 0; width: 100%; }
 .results-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
 .results-head h1 { margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -0.03em; }
 .understood { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
@@ -1541,3 +1541,101 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
 .seo-n { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--text); color: #fff; font-size: 13px; font-weight: 800; }
 .seo-steps b { display: block; font-size: 15px; }
 .seo-steps p { margin: 2px 0 0; font-size: 14px; color: var(--text-2); overflow-wrap: anywhere; }
+
+/* ---------- 1.16: разделы, характеристики, метро, видео ---------- */
+.card-sum { font-size: 14px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vid-badge { position: absolute; right: 14px; bottom: 14px; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: rgba(20, 20, 20, .55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: #fff; }
+.vid-badge svg, .g-video-btn svg, .vthumb span svg { fill: currentColor; stroke: none; }
+.vid-badge svg { margin-left: 2px; }
+
+/* поиск: разделы и активные уточнения */
+.sub-chips { display: flex; gap: 8px; margin: -4px 0 20px; overflow-x: auto; scrollbar-width: none; }
+.sub-chips::-webkit-scrollbar { display: none; }
+.sub-chips .chip { flex: none; }
+.active-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 18px; }
+.chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.chip.on:hover { color: var(--accent); border-color: var(--accent); }
+.active-chips .chip { height: 36px; padding: 0 10px 0 14px; }
+.active-chips .chip svg { opacity: .7; }
+.f-extra { display: flex; flex-direction: column; gap: 20px; }
+.f-extra:empty { display: none; }
+
+/* метро: кружок цвета линии */
+.metro { display: inline-flex; align-items: center; gap: 7px; }
+.metro i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--mline, #C9C9C4); }
+.item-where { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 0; font-size: 14px; font-weight: 600; color: var(--text); }
+
+/* галерея с видео */
+.g-media { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.g-video { width: 100%; height: 100%; object-fit: contain; background: #0E0E0E; }
+.gallery-main.is-video { background: #0E0E0E; }
+.gallery-main.is-video .gallery-nav { top: 40%; }
+.gallery-main.is-video .gallery-count { display: none; }
+.g-video-btn { position: absolute; right: 18px; bottom: 18px; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px 0 12px; border: 0; border-radius: 999px; background: rgba(20, 20, 20, .6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: #fff; font-size: 13px; font-weight: 700; }
+.g-video-btn:hover { background: rgba(20, 20, 20, .75); }
+.vthumb { position: relative; background: #1a1a1a; }
+.vthumb img { opacity: .55; }
+.vthumb span { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; }
+.mod-video { display: flex; flex-direction: column; gap: 8px; }
+.mod-video video { width: 100%; max-height: 420px; border-radius: 20px; background: #0E0E0E; }
+.mod-video span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+
+/* форма: раздел и характеристики */
+.ed-subs { display: flex; flex-wrap: wrap; gap: 8px; }
+.ed-subs .chip { height: 40px; border-width: 1.5px; font-weight: 600; }
+.ed-attrs { display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 22px; background: var(--surface); }
+.ed-attrs-h { display: flex; flex-direction: column; gap: 2px; }
+.ed-attrs-h b { font-size: 16px; }
+.ed-attrs-h span { font-size: 13.5px; color: var(--muted); }
+.ed-attrs-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 14px; }
+.ed-attrs-grid .field.wide { grid-column: 1 / -1; }
+.ed-attrs .input, .ed-attrs .select { background: #fff; }
+.ed-attrs .ed-seg button { height: 40px; padding: 0 14px; }
+.ed-unit-input { position: relative; }
+.ed-unit-input span { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); font-size: 14px; font-weight: 600; color: var(--muted); pointer-events: none; }
+.ed-unit-input .input { padding-right: 52px; font-variant-numeric: tabular-nums; }
+.ed-where2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.ed-where2 .field.hidden + .field { grid-column: 1 / -1; }
+.ed-metro { position: relative; }
+.ed-metro i { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); width: 12px; height: 12px; border-radius: 50%; background: #C9C9C4; pointer-events: none; transition: background .2s; }
+.ed-metro .select { padding-left: 40px; }
+
+/* форма: видео */
+.ed-vadd { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 16px; border: 1.5px dashed #CFCFCA; border-radius: 20px; background: #fff; color: var(--text); text-align: left; transition: border-color .15s, background .15s; }
+.ed-vadd:hover { border-color: var(--accent); background: var(--accent-soft); }
+.ed-vadd-ic { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: 14px; background: var(--surface); color: var(--text-2); }
+.ed-vadd:hover .ed-vadd-ic { background: var(--accent); color: #fff; }
+.ed-vadd-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ed-vadd-t b { font-size: 15px; }
+.ed-vadd-t small { font-size: 13px; color: var(--muted); }
+.ed-vadd-plus { color: var(--muted); }
+.ed-video { position: relative; display: flex; align-items: center; gap: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 22px; background: #fff; }
+.ed-video-pic { flex: none; width: 168px; aspect-ratio: 16 / 10; border-radius: 14px; overflow: hidden; background: #0E0E0E; }
+.ed-video-pic video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ed-video.loading .ed-video-pic video { opacity: .6; }
+.ed-vinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-right: 34px; }
+.ed-vinfo b { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; }
+.ed-vinfo b svg { color: var(--accent); }
+.ed-vinfo small { font-size: 13px; color: var(--muted); }
+.ed-vinfo .ed-bar-track { width: 100%; }
+#v-pct { font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) {
+  .ed-attrs { padding: 16px; margin: 0 -4px; border-radius: 18px; }
+  .ed-attrs-grid { grid-template-columns: 1fr; }
+  .ed-where2 { grid-template-columns: 1fr; }
+  .ed-subs { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px; padding: 0 16px 2px; scrollbar-width: none; }
+  .ed-subs::-webkit-scrollbar { display: none; }
+  .ed-subs .chip { flex: none; }
+  .ed-video { flex-direction: column; align-items: stretch; }
+  .ed-video-pic { width: 100%; }
+  .ed-vinfo { padding-right: 0; }
+  .sub-chips { margin: 0 -16px 18px; padding: 0 16px; }
+  .g-video-btn { right: 12px; bottom: 12px; }
+}
+
+.filters-body { display: flex; flex-direction: column; gap: 20px; }
+.f-count { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; margin-left: 2px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; }
+@media (max-width: 900px) { .card-sum { font-size: 12.5px; } }
+.item-where { column-gap: 6px; row-gap: 2px; }
+.item-where > * { white-space: nowrap; }

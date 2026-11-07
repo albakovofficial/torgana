@@ -44,16 +44,37 @@ async function seed(base, browser) {
     ['Диван угловой, почти новый', 'home', '18000', 'Новосибирск', true],
     ['Ремонт квартир под ключ', 'services', '', 'Казань', false]
   ];
+  // 1.16: раздел, характеристики, метро и район.
+  const extra = [
+    { subcategory: 'kids' },
+    { subcategory: 'phones', attrs: { brand: 'Apple', memory: '256 ГБ' }, metro: 'Тверская' },
+    { subcategory: 'flats_rent', attrs: { rooms: '2', area: 54, floor: 5, floors: 9 }, metro: 'Площадь Восстания', district: 'Центральный' },
+    { subcategory: 'bikes', attrs: { bikeType: 'Горный' } },
+    { subcategory: 'furniture' },
+    { subcategory: 'repair' }
+  ];
   const ids = [];
   for (let i = 0; i < items.length; i++) {
     const [title, category, price, city, delivery] = items[i];
     const r = await seller.post('/api/listings', {
+      ...extra[i],
       title, category, price, city, delivery, condition: '', priceUnit: category === 'realty' ? 'мес' : '',
       description: 'Хорошее состояние. Подробности в чате.\nВторая строка описания.', photos: i === 0 ? photos : [photos[i]]
     });
     ids.push(r.data.id);
     await admin.post(`/api/admin/listings/${r.data.id}/restore`);
   }
+  // Автомобиль с видео (минимальный MP4 — для вёрстки достаточно).
+  const box = (type, body) => { const b = Buffer.alloc(8); b.writeUInt32BE(8 + body.length, 0); b.write(type, 4, 'latin1'); return Buffer.concat([b, body]); };
+  const mvhd = Buffer.alloc(100); mvhd.writeUInt32BE(1000, 12); mvhd.writeUInt32BE(42000, 16);
+  const clip = Buffer.concat([box('ftyp', Buffer.from('isom\0\0\x02\0isomiso2mp41', 'latin1')), box('mdat', Buffer.alloc(4000, 7)), box('moov', box('mvhd', mvhd))]);
+  const vs = await seller.post('/api/videos', { name: 'camry.mp4', type: 'video/mp4', size: clip.length });
+  await fetch(`${base}/api/videos/${vs.data.file}?offset=0`, { method: 'PUT', headers: { cookie: seller.cookie }, body: clip });
+  const carPhotos = [(await seller.post('/api/uploads', { data: photoData })).data.file, (await seller.post('/api/uploads', { data: photoData })).data.file];
+  const car = (await seller.post('/api/listings', { title: 'Toyota Camry 2.5, один владелец', category: 'transport', subcategory: 'cars', price: '2350000', city: 'Москва', metro: 'Павелецкая', district: 'Замоскворечье',
+    attrs: { brand: 'Toyota', year: 2018, mileage: 86500, gearbox: 'Автомат', fuel: 'Бензин', body: 'Седан', drive: 'Передний' }, photos: carPhotos, video: vs.data.file,
+    description: 'Обслуживание у официального дилера, два комплекта резины.' })).data.id;
+  await admin.post(`/api/admin/listings/${car}/restore`);
   const conv = await buyer.post('/api/conversations', { listingId: ids[0] });
   await buyer.post(`/api/conversations/${conv.data.id}/messages`, { body: 'Здравствуйте! Коляска ещё продаётся?' });
   await seller.post(`/api/conversations/${conv.data.id}/messages`, { body: 'Да, можно посмотреть сегодня вечером.' });
@@ -131,7 +152,7 @@ async function seed(base, browser) {
   const pendingPay = (await shop.post('/api/my/plan/pay', { plan: 'pro', months: 12 })).data.id;
   for (let i = 0; i < 3; i++) await client(base).post('/api/stats/impressions', { ids: [s1, s2] }, { origin: base, 'user-agent': ua(20 + i) });
   await client(base).post('/api/stats/view', { id: s1, src: 'ad' }, { origin: base, 'user-agent': ua(20) });
-  return { seller, buyer, admin, ids, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay };
+  return { seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay };
 }
 
 function pages(d) {
@@ -222,7 +243,15 @@ function pages(d) {
     ['admin-ads', '/admin?status=ads', d.admin],
     ['admin-ads-active', '/admin?status=ads&tab=active', d.admin],
     ['admin-billing', '/admin?status=billing', d.admin],
-    ['admin-user-shop', `/admin/u/${d.shop.user.id}`, d.admin]
+    ['admin-user-shop', `/admin/u/${d.shop.user.id}`, d.admin],
+    // 1.16: разделы, характеристики, метро, видео
+    ['listing-car', `/l/${d.car}`, null],
+    ['listing-car-video', `/l/${d.car}`, null, '#gvbtn'],
+    ['search-transport', '/search?category=transport', null],
+    ['search-cars-filters', `/search?category=transport&sub=cars&a_gearbox=${encodeURIComponent('Автомат')}&a_year_min=2015&city=${encodeURIComponent('Москва')}&metro=${encodeURIComponent('Павелецкая')}`, null],
+    ['edit-car', `/edit/${d.car}`, d.seller],
+    ['edit-flat', `/edit/${d.ids[2]}`, d.seller],
+    ['admin-check-car', `/admin/l/${d.car}`, d.admin]
   ];
 }
 
@@ -289,6 +318,10 @@ async function main() {
           await page.click('.ed-dock [data-submit], .ed-panel [data-submit] >> visible=true');
           await page.waitForTimeout(500);
           if (!(await page.$('.ed-step.bad'))) errors.push('ошибки формы не подсветились');
+        } else if (open === '#gvbtn') {
+          await page.click(open);
+          await page.waitForTimeout(300);
+          if (!(await page.$('.gallery-main.is-video video'))) errors.push('видео в галерее не открылось');
         } else if (open) {
           await page.click(open);
           await page.waitForTimeout(400);

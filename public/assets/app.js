@@ -119,7 +119,10 @@
     link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.6v.4"/>',
-    feed: '<path d="M5 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/>'
+    feed: '<path d="M5 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/>',
+    play: '<path d="M8 5.5v13l10.5-6.5z"/>',
+    video: '<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="M16 10.5l5-3v9l-5-3"/>',
+    sliders: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>'
   };
   const CAT_P = {
     transport: '<path d="M3 13l2-5a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 5v4H3z"/><circle cx="7.5" cy="17" r="1.6"/><circle cx="16.5" cy="17" r="1.6"/>',
@@ -147,6 +150,27 @@
     city: localStorage.getItem('tg_city') || ''
   };
   const catName = (id) => (S.config.categories.find((c) => c.id === id) || {}).name || '';
+  // Подкатегории и характеристики (справочник с сервера, lib/taxonomy.js) — те же правила показа, что на сервере.
+  const subsOf = (cat) => (S.config.subcategories || {})[cat] || [];
+  const subOf = (id) => { for (const list of Object.values(S.config.subcategories || {})) { const x = list.find((s) => s.id === id); if (x) return x; } return null; };
+  const subName = (id) => (subOf(id) || {}).name || '';
+  const attrNum = (v) => (Math.abs(Number(v)) >= 10000 ? NF.format(v) : String(v).replace('.', ','));
+  function attrText(f, v) {
+    if (v === undefined || v === null || v === '') return '';
+    if (f.key === 'rooms') return v === 'Студия' ? 'студия' : `${v}-комн.`;
+    if (f.key === 'floor') return `${v} этаж`;
+    if (f.key === 'guests') return `до ${v} гостей`;
+    if (f.key === 'shoeSize') return `${v} размер`;
+    if (f.key === 'size') return `размер ${v}`;
+    if (f.key === 'year') return `${v} г.`;
+    if (f.type === 'number') return `${attrNum(v)}${f.unit ? ` ${f.unit}` : ''}`;
+    return String(v);
+  }
+  const attrSummary = (subId, attrs) => { const x = subOf(subId); return x && attrs ? x.summary.map((k) => { const f = x.fields.find((y) => y.key === k); return f ? attrText(f, attrs[k]) : ''; }).filter(Boolean).join(', ') : ''; };
+  const metroKey = (c) => String(c || '').toLowerCase().replace(/ё/g, 'е').trim();
+  const hasMetro = (city) => (S.config.metroCities || []).includes(metroKey(city));
+  const metroCache = {};
+  const metroOf = async (city) => { const k = metroKey(city); if (!metroCache[k]) metroCache[k] = api('GET', `/api/metro?city=${encodeURIComponent(city)}`).then((r) => r.stations).catch(() => []); return metroCache[k]; };
   // Понятные адреса: /l/123-velosiped-stels, /c/hobby/kazan (то же правило — в lib/seo.js).
   const TR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
   const slugify = (s) => String(s || '').toLowerCase().split('').map((c) => (TR[c] !== undefined ? TR[c] : c)).join('')
@@ -308,7 +332,7 @@
   // ================= карточки =================
   // it.ad — карточка из блока «Реклама»: пометка, рекламодатель и erid по кнопке «Реклама» (38-ФЗ, ст. 18.1).
   function card(it) {
-    const meta = [it.city, shortWhen(it.createdAt)].filter(Boolean).join(' · ');
+    const meta = [it.metro ? `м. ${it.metro}` : it.city, shortWhen(it.createdAt)].filter(Boolean).join(' · ');
     const ad = it.ad;
     return html`<div class="card${ad ? ' is-ad' : ''}">
       <a href="${lpath(it)}" class="card-link"${ad ? raw(` data-adid="${Number(ad.id)}"`) : ''}>
@@ -316,9 +340,11 @@
           ${it.photo ? html`<img src="${it.photo}" alt="" loading="lazy">` : svg(P.image, 40, 1.2)}
           ${ad ? '' : it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : it.priceWas ? html`<span class="tag drop-badge" title="Было ${price(it.priceWas, it.priceUnit)}">${ic('down', 13, 2.4)}Цена снижена</span>` : ''}
           <span class="price-pill">${price(it.price, it.priceUnit)}</span>
+          ${it.hasVideo ? html`<span class="vid-badge" title="Есть видео">${ic('play', 14, 0)}<span class="sr">Есть видео</span></span>` : ''}
         </div>
         <div class="card-body">
           <span class="card-title">${it.title}</span>
+          ${it.summary ? html`<span class="card-sum">${it.summary}</span>` : ''}
           <span class="card-meta">${meta}${it.delivery ? html` · <span class="ok">Доставка</span>` : ''}</span>
         </div>
       </a>
@@ -635,22 +661,39 @@
 
   async function viewSearch(_, q) {
     const params = Object.fromEntries(q.entries());
-    const category = params.category || '';
-    const title = params.q ? `«${params.q}»` : category ? catName(category) : 'Все объявления';
-    setTitle(params.q || catName(category) || 'Поиск');
+    const sub = subOf(params.sub) ? params.sub : '';
+    const category = (sub && Object.keys(S.config.subcategories).find((c) => subsOf(c).some((x) => x.id === sub))) || params.category || '';
+    const title = params.q ? `«${params.q}»` : sub ? subName(sub) : category ? catName(category) : 'Все объявления';
+    setTitle(params.q || subName(sub) || catName(category) || 'Поиск');
+    // Активные уточнения — чипы с крестиком (убрать одно, не трогая остальное).
+    const without = (...keys) => { const p = { ...params, ...(category ? { category } : {}) }; keys.forEach((k) => delete p[k]); if (keys.includes('sub')) Object.keys(p).filter((k) => k.startsWith('a_')).forEach((k) => delete p[k]); return `/search?${new URLSearchParams(p)}`; };
+    const activeChips = [];
+    if (sub) {
+      activeChips.push([subName(sub), without('sub')]);
+      for (const f of subOf(sub).fields) {
+        if (f.type === 'select' && params[`a_${f.key}`]) activeChips.push([attrText(f, params[`a_${f.key}`]) || params[`a_${f.key}`], without(`a_${f.key}`)]);
+        const lo = params[`a_${f.key}_min`]; const hi = params[`a_${f.key}_max`]; const u = f.unit ? ` ${f.unit}` : '';
+        if (lo || hi) activeChips.push([`${f.label}: ${lo && hi ? `${attrNum(lo)}–${attrNum(hi)}` : lo ? `от ${attrNum(lo)}` : `до ${attrNum(hi)}`}${u}`, without(`a_${f.key}_min`, `a_${f.key}_max`)]);
+      }
+    }
+    if (params.metro) activeChips.push([`м. ${params.metro}`, without('metro')]);
+    const subChips = category && !sub ? subsOf(category) : [];
+    const nFilters = ['category', 'city', 'min', 'max', 'delivery', 'metro'].filter((k) => params[k]).length + (sub ? 1 : 0) + Object.keys(params).filter((k) => k.startsWith('a_') && params[k]).length;
     app.innerHTML = String(html`<div class="wrap search-page">
       <aside class="filters collapsed" id="filters">
-        <button type="button" class="btn btn-soft btn-block" id="filters-toggle" style="display:none">${ic('filter', 18)}Фильтры</button>
-        <form id="filter-form" class="filters-body" style="display:flex;flex-direction:column;gap:20px">
+        <button type="button" class="btn btn-soft btn-block" id="filters-toggle" style="display:none">${ic('filter', 18)}Фильтры${nFilters ? html`<span class="f-count">${nFilters}</span>` : ''}</button>
+        <form id="filter-form" class="filters-body">
           <h3>Фильтры</h3>
           <input type="hidden" name="q" value="${params.q || ''}">
           <div class="field"><label for="f-cat">Категория</label>
             <select id="f-cat" name="category" class="select"><option value="">Все категории</option>
               ${S.config.categories.map((c) => html`<option value="${c.id}" ${c.id === category ? raw('selected') : ''}>${c.name}</option>`)}
             </select></div>
+          <div id="f-extra" class="f-extra"></div>
           <div class="field"><label for="f-city">Город</label>
             <input id="f-city" name="city" class="input" list="cities" placeholder="Вся Россия" value="${params.city || ''}">
             <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
+          <div id="f-metro"></div>
           <div class="field"><span class="label">Цена, ₽</span>
             <div class="row"><label class="sr" for="f-min">Цена от</label><input id="f-min" name="min" class="input" inputmode="numeric" placeholder="от" value="${params.min || ''}">
             <label class="sr" for="f-max">Цена до</label><input id="f-max" name="max" class="input" inputmode="numeric" placeholder="до" value="${params.max || ''}"></div></div>
@@ -670,6 +713,8 @@
             <option value="expensive" ${params.sort === 'expensive' ? raw('selected') : ''}>Сначала дороже</option>
           </select>
         </div>
+        ${subChips.length ? html`<nav class="sub-chips" aria-label="Разделы">${subChips.map((x) => html`<a class="chip" href="/search?${new URLSearchParams({ ...params, category, sub: x.id })}">${x.name}</a>`)}</nav>` : ''}
+        ${activeChips.length ? html`<div class="active-chips">${activeChips.map(([t, href]) => html`<a class="chip on" href="${href}" aria-label="Убрать: ${t}">${t}${ic('close', 14, 2.2)}</a>`)}</div>` : ''}
         <div class="understood" id="understood"></div>
         <div id="results">${skeletonGrid(9)}</div>
         <div class="more hidden"></div>
@@ -677,6 +722,37 @@
     </div>`);
 
     const ff = $('#filter-form');
+    // Раздел и характеристики зависят от категории и раздела — перестраиваем без перезагрузки.
+    const renderExtra = (cat, sb) => {
+      const subs = subsOf(cat);
+      const x = subOf(sb);
+      const val = (k) => params[k] || '';
+      $('#f-extra').innerHTML = String(html`
+        ${subs.length ? html`<div class="field"><label for="f-sub">Раздел</label><select id="f-sub" name="sub" class="select"><option value="">Все разделы</option>
+          ${subs.map((y) => html`<option value="${y.id}" ${y.id === sb ? raw('selected') : ''}>${y.name}</option>`)}</select></div>` : ''}
+        ${x ? x.fields.map((f) => (f.type === 'select'
+    ? html`<div class="field"><label for="fa-${f.key}">${f.label}</label><select id="fa-${f.key}" name="a_${f.key}" class="select"><option value="">Любой</option>
+        ${f.options.map((o) => html`<option value="${o}" ${o === val(`a_${f.key}`) ? raw('selected') : ''}>${o}</option>`)}</select></div>`
+    : html`<div class="field"><span class="label">${f.label}${f.unit ? `, ${f.unit}` : ''}</span><div class="row">
+        <label class="sr" for="fa-${f.key}-min">${f.label} от</label><input id="fa-${f.key}-min" name="a_${f.key}_min" class="input" inputmode="numeric" placeholder="от" value="${val(`a_${f.key}_min`)}">
+        <label class="sr" for="fa-${f.key}-max">${f.label} до</label><input id="fa-${f.key}-max" name="a_${f.key}_max" class="input" inputmode="numeric" placeholder="до" value="${val(`a_${f.key}_max`)}"></div></div>`)) : ''}`);
+      const fs = $('#f-sub');
+      if (fs) fs.onchange = () => renderExtra(cat, fs.value);
+    };
+    renderExtra(category, sub);
+    $('#f-cat').onchange = (e) => renderExtra(e.target.value, '');
+    // Метро — когда в городе есть метро (справочник hh.ru).
+    const renderMetro = async () => {
+      const city = $('#f-city').value.trim();
+      const box = $('#f-metro');
+      if (!hasMetro(city)) { box.innerHTML = ''; return; }
+      const list = await metroOf(city);
+      if (!list.length || $('#f-city').value.trim() !== city) return;
+      box.innerHTML = String(html`<div class="field"><label for="f-mt">Метро</label><select id="f-mt" name="metro" class="select"><option value="">Любая станция</option>
+        ${list.map((m) => html`<option value="${m.name}" ${m.name === params.metro ? raw('selected') : ''}>${m.name}</option>`)}</select></div>`);
+    };
+    renderMetro();
+    $('#f-city').addEventListener('change', renderMetro);
     const toggle = $('#filters-toggle');
     if (window.matchMedia('(max-width: 900px)').matches) {
       toggle.style.display = '';
@@ -716,8 +792,12 @@
 
   // ---------- сохранённые поиски ----------
   // Параметры поиска в том же виде, что хранит сервер: только эти поля, без пустых, в этом порядке.
-  const SEARCH_KEYS = ['q', 'category', 'city', 'min', 'max', 'delivery'];
-  const searchParams = (p) => Object.fromEntries(SEARCH_KEYS.map((k) => [k, String(p[k] || '').trim()]).filter(([, v]) => v && v !== '0'));
+  const SEARCH_KEYS = ['q', 'category', 'sub', 'city', 'metro', 'min', 'max', 'delivery'];
+  const searchParams = (p) => {
+    const x = subOf(p.sub);
+    const attrs = x ? Object.keys(p).filter((k) => /^a_[A-Za-z]+(_min|_max)?$/.test(k) && x.fields.some((f) => k.replace(/^a_|_min$|_max$/g, '') === f.key)).sort() : [];
+    return Object.fromEntries([...SEARCH_KEYS, ...attrs].map((k) => [k, String(p[k] || '').trim()]).filter(([, v]) => v && v !== '0'));
+  };
   const searchUrl = (s) => `/search?${new URLSearchParams({ ...s.params, ss: s.id })}`;
   async function bindSaveSearch(btn, params) {
     const want = JSON.stringify(searchParams(params));
@@ -746,12 +826,14 @@
   async function renderSavedSearches(reload) {
     const { items } = await api('GET', '/api/saved-searches');
     const box = $('#box');
-    const chips = (p) => [p.city, p.min && `от ${NF.format(p.min)} ₽`, p.max && `до ${NF.format(p.max)} ₽`, p.delivery && 'с доставкой', p.q && p.category && catName(p.category)].filter(Boolean);
+    // Название поиска с сервера: «Что ищем · уточнения».
+    const head = (s) => s.title.split(' · ')[0];
+    const chips = (s) => s.title.split(' · ').slice(1);
     box.innerHTML = String(html`<div id="nudge"></div>
       ${items.length ? html`<div class="ss-list">${items.map((s) => html`<div class="ss-card">
           <a class="ss-main" href="${searchUrl(s)}"><span class="ss-ic">${ic(s.params.category ? 'tag' : 'search', 20, 2)}</span>
-            <span class="ss-txt"><b>${s.params.q ? `«${s.params.q}»` : catName(s.params.category) || 'Все объявления'}</b>
-              <span>${chips(s.params).join(' · ') || 'Вся Россия'}</span></span>
+            <span class="ss-txt"><b>${head(s)}</b>
+              <span>${chips(s).join(' · ') || 'Вся Россия'}</span></span>
             ${s.fresh ? html`<span class="ss-new">${s.fresh} ${plural(s.fresh, 'новое', 'новых', 'новых')}</span>` : ''}</a>
           <div class="ss-side">
             <label class="mini-switch" title="Уведомлять о новых"><input type="checkbox" data-ss-notify="${s.id}" ${s.notify ? raw('checked') : ''}><span class="track"></span><span class="sr">Уведомлять</span></label>
@@ -776,6 +858,13 @@
     if (location.pathname !== lpath(l)) history.replaceState(history.state, '', lpath(l) + location.search); // адрес с названием
     let idx = 0;
     const photos = l.photos;
+    // Галерея: фото, затем видео (если есть).
+    const media = [...photos.map((src) => ({ src })), ...(l.video ? [{ src: l.video, video: true }] : [])];
+    const vIdx = l.video ? media.length - 1 : -1;
+    const mediaEl = (m) => (m.video
+      ? html`<video class="g-video" src="${m.src}#t=0.1" controls playsinline preload="metadata"></video>`
+      : html`<img id="gimg" src="${m.src}" alt="${l.title}">`);
+    const station = l.metro ? html`<span class="metro"><i style="--mline:${l.metro.color || '#C9C9C4'}"></i>${l.metro.name}</span>` : '';
     const marketChip = market ? ({
       below: html`<span class="tag accent">Ниже рынка</span>`,
       market: html`<span class="tag"><span class="dot"></span>&nbsp;Цена в рынке</span>`,
@@ -783,8 +872,12 @@
     })[market.level] : '';
     const specs = [
       ['Категория', catName(l.category)],
+      l.subcategory ? ['Раздел', subName(l.subcategory)] : null,
+      ...(l.specs || []).map((x) => [x.label, x.value]),
       CONDITION_CATS.has(l.category) && l.condition ? ['Состояние', CONDITION_LABEL[l.condition]] : null,
       ['Город', l.city],
+      l.metro ? ['Метро', station] : null,
+      l.district ? ['Район', l.district] : null,
       ['Доставка', l.delivery ? 'Отправит по России' : 'Только встреча'],
       ['Опубликовано', when(l.createdAt)]
     ].filter(Boolean);
@@ -831,14 +924,17 @@
         <div class="item-main">
           <div>
             <div class="gallery-main" id="gallery">
-              ${photos.length ? html`<img id="gimg" src="${photos[0]}" alt="${l.title}">` : svg(P.image, 56, 1.1)}
-              ${photos.length > 1 ? html`
-                <button class="icon-btn white gallery-nav prev" data-g="-1" aria-label="Предыдущее фото">${ic('left', 20)}</button>
-                <button class="icon-btn white gallery-nav next" data-g="1" aria-label="Следующее фото">${ic('right', 20)}</button>
-                <span class="gallery-count" id="gcount">1 из ${photos.length}</span>` : ''}
+              <div class="g-media" id="gmedia">${media.length ? mediaEl(media[0]) : svg(P.image, 56, 1.1)}</div>
+              ${media.length > 1 ? html`
+                <button class="icon-btn white gallery-nav prev" data-g="-1" aria-label="Назад">${ic('left', 20)}</button>
+                <button class="icon-btn white gallery-nav next" data-g="1" aria-label="Вперёд">${ic('right', 20)}</button>
+                <span class="gallery-count" id="gcount">1 из ${media.length}</span>` : ''}
+              ${vIdx > 0 ? html`<button type="button" class="g-video-btn" id="gvbtn" data-t="${vIdx}">${ic('play', 14, 0)}Видео</button>` : ''}
               ${l.status === 'sold' ? html`<span class="tag dark" style="position:absolute;top:18px;left:18px">Продано</span>` : ''}
             </div>
-            ${photos.length > 1 ? html`<div class="thumbs">${photos.map((p, i) => html`<button class="thumb ${i === 0 ? 'on' : ''}" data-t="${i}" aria-label="Фото ${i + 1}"><img src="${p}" alt="" loading="lazy"></button>`)}</div>` : ''}
+            ${media.length > 1 ? html`<div class="thumbs">${media.map((m, i) => (m.video
+    ? html`<button class="thumb vthumb ${i === 0 ? 'on' : ''}" data-t="${i}" aria-label="Видео">${photos[0] ? html`<img src="${photos[0]}" alt="" loading="lazy">` : ''}<span>${ic('play', 16, 0)}</span></button>`
+    : html`<button class="thumb ${i === 0 ? 'on' : ''}" data-t="${i}" aria-label="Фото ${i + 1}"><img src="${m.src}" alt="" loading="lazy"></button>`))}</div>` : ''}
           </div>
           <section><h2 class="h2">Характеристики</h2><div class="specs">${specs.map(([k, v]) => html`<div class="spec"><div class="k">${k}</div><div class="v">${v}</div></div>`)}</div></section>
           ${l.description ? html`<section><h2 class="h2">Описание</h2><p class="desc">${l.description}</p></section>` : ''}
@@ -847,6 +943,7 @@
           <div class="panel panel-shadow" style="display:flex;flex-direction:column;gap:22px">
             <div style="display:flex;gap:10px;align-items:flex-start">
               <div style="flex:1;min-width:0"><h1 class="item-title">${l.title}</h1><p class="muted" style="margin:8px 0 0;font-size:14px">${l.city} · ${when(l.createdAt)}</p>
+                ${l.metro || l.district ? html`<p class="item-where">${station}${l.district ? html`<span class="iw-d">${l.metro ? html`<span class="muted">·&nbsp;</span>` : ''}${l.district}</span>` : ''}</p>` : ''}
                 <p class="item-counts"><span title="Просмотры">${ic('eye', 16)}<span data-views>${NF.format(l.views)} ${plural(l.views, 'просмотр', 'просмотра', 'просмотров')}</span></span><span title="В избранном">${ic('heart', 16)}<span data-favs>в избранном у ${NF.format(l.favCount)}</span></span></p></div>
               ${l.isOwner ? '' : html`<button class="icon-btn ${l.isFav ? 'on' : ''}" data-fav="${l.id}" aria-label="${l.isFav ? 'Убрать из избранного' : 'В избранное'}" aria-pressed="${l.isFav ? 'true' : 'false'}">${ic('heart', 20)}</button>`}
               <button class="icon-btn" data-share aria-label="Поделиться">${ic('share', 20)}</button>
@@ -880,18 +977,21 @@
 
     // галерея
     const show = (i) => {
-      if (!photos.length) return;
-      idx = (i + photos.length) % photos.length;
-      $('#gimg').src = photos[idx];
-      const c = $('#gcount'); if (c) c.textContent = `${idx + 1} из ${photos.length}`;
+      if (media.length < 2) return;
+      idx = (i + media.length) % media.length;
+      $('#gmedia').innerHTML = String(mediaEl(media[idx]));
+      const c = $('#gcount'); if (c) c.textContent = `${idx + 1} из ${media.length}`;
+      const vb = $('#gvbtn'); if (vb) vb.hidden = idx === vIdx;
+      $('#gallery').classList.toggle('is-video', idx === vIdx);
       $$('.thumb').forEach((t, j) => t.classList.toggle('on', j === idx));
     };
+    if (vIdx === 0) $('#gallery').classList.add('is-video');
     $$('[data-g]').forEach((b) => { b.onclick = () => show(idx + Number(b.dataset.g)); });
     $$('[data-t]').forEach((b) => { b.onclick = () => show(Number(b.dataset.t)); });
     let tx = null;
     const g = $('#gallery');
     g.addEventListener('touchstart', (e) => { tx = e.touches[0].clientX; }, { passive: true });
-    g.addEventListener('touchend', (e) => { if (tx === null) return; const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 40) show(idx + (dx < 0 ? 1 : -1)); tx = null; });
+    g.addEventListener('touchend', (e) => { if (tx === null || idx === vIdx) { tx = null; return; } const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 40) show(idx + (dx < 0 ? 1 : -1)); tx = null; });
 
     $('[data-share]').onclick = async () => {
       const url = location.href;
@@ -1010,9 +1110,11 @@
     setTitle(l ? 'Редактирование' : 'Новое объявление');
     const draft = l ? null : draftLoad();
     const src = l ? { ...l, photos: l.photos.map((u) => ({ file: u.split('/').pop(), url: u })), negotiable: l.price === null } : draft || {};
+    const srcVideo = l ? (l.video ? { file: l.video.split('/').pop().split('#')[0], url: l.video } : null) : (src.video && src.video.file ? src.video : null);
     const st = {
       photos: (src.photos || []).filter((p) => p.file),
       category: src.category || '', condition: src.condition || '', priceUnit: src.priceUnit || '',
+      sub: src.subcategory || '', attrs: { ...(src.attrs || {}) }, video: srcVideo,
       negotiable: !!src.negotiable, busy: 0, tried: false
     };
     const units = S.config.priceUnits || [''];
@@ -1027,15 +1129,19 @@
       </div>
       <div class="ed-grid">
         <form id="ed" class="ed-form" novalidate>
-          ${step(1, 's-photos', 'Фото', 'До 10 фото. Первое — обложка в поиске.', html`<div id="photos"></div>
+          ${step(1, 's-photos', 'Фото и видео', 'До 10 фото и одно видео до минуты. Первое фото — обложка в поиске.', html`<div id="photos"></div>
             <input type="file" id="file" accept="image/jpeg,image/png,image/webp" multiple class="sr" tabindex="-1">
-            <div id="ai-slot"></div>`)}
+            <div id="ai-slot"></div>
+            <div id="video-slot"></div>
+            <input type="file" id="vfile" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" class="sr" tabindex="-1">`)}
           ${step(2, 's-what', 'Что продаёте', '', html`
             <div class="field"><label for="title">Название</label>
               <div class="ed-input"><input id="title" name="title" class="input" maxlength="80" placeholder="Например: iPhone 15 Pro, 256 ГБ" value="${src.title || ''}" autocomplete="off"><span class="ed-count" id="title-count"></span></div>
               <span class="help">Марка, модель и главное — так объявление легче найти.</span></div>
             <div class="field"><span class="label">Категория</span><div class="ed-cats" role="radiogroup" aria-label="Категория">
               ${S.config.categories.map((c) => html`<button type="button" role="radio" aria-checked="false" data-cat="${c.id}"><span class="ed-cat-ic">${catIc(c.id, 24)}</span><span>${c.name}</span></button>`)}</div></div>
+            <div class="field hidden" id="sub-field"><span class="label">Раздел</span><div class="ed-subs" id="subs" role="radiogroup" aria-label="Раздел"></div></div>
+            <div class="ed-attrs hidden" id="attrs"></div>
             <div class="field hidden" id="cond-field"><span class="label">Состояние</span><div class="ed-seg" role="radiogroup" aria-label="Состояние">
               ${[['new', 'Новое'], ['used', 'Б/у'], ['', 'Не указывать']].map(([v, t]) => html`<button type="button" role="radio" data-cond="${v}">${t}</button>`)}</div></div>`)}
           ${step(3, 's-price', 'Цена', '', html`
@@ -1049,6 +1155,12 @@
             <div class="field"><label for="city">Город</label>
               <div class="ed-icon-input">${ic('pin', 18)}<input id="city" name="city" class="input" list="cities" autocomplete="address-level2" value="${src.city || S.user.city || S.city || ''}" placeholder="Начните вводить город"></div>
               <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
+            <div class="ed-where2">
+              <div class="field hidden" id="metro-field"><label for="metro">Метро</label>
+                <div class="ed-metro"><i id="metro-dot"></i><select id="metro" name="metro" class="select"><option value="">Не указывать</option></select></div></div>
+              <div class="field"><label for="district">Район <small class="muted">— по желанию</small></label>
+                <input id="district" name="district" class="input" maxlength="60" autocomplete="off" placeholder="Например: Центральный" value="${src.district || ''}"></div>
+            </div>
             <label class="switch"><span>Отправлю по России<small>Покупатели из других городов увидят «Доставка»</small></span><input type="checkbox" name="delivery" ${src.delivery ? raw('checked') : ''}><span class="track"></span></label>`)}
           ${step(5, 's-desc', 'Описание', 'Честное описание экономит время и вам, и покупателю.', html`
             <div class="ed-tips" aria-label="Что написать">${DESC_TIPS.map((t) => html`<button type="button" class="chip" data-tip="${t}">${ic('plus', 14, 2.2)}${t}</button>`)}</div>
@@ -1147,11 +1259,168 @@
       };
     };
 
+    // ---------- видео: одно, до минуты, загрузка частями с продолжением после обрыва ----------
+    const MB = 1024 * 1024;
+    const mmss = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+    const videoDuration = (url) => new Promise((done) => {
+      const v = document.createElement('video');
+      const t = setTimeout(() => done(null), 6000);
+      v.preload = 'metadata'; v.muted = true;
+      v.onloadedmetadata = () => { clearTimeout(t); done(Number.isFinite(v.duration) ? v.duration : null); };
+      v.onerror = () => { clearTimeout(t); done(null); };
+      v.src = url;
+    });
+    async function putChunk(file, offset, blob) {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const r = await fetch(`/api/videos/${file}?offset=${offset}`, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/octet-stream' }, body: blob });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) { const e = new Error(data.error || 'Не удалось загрузить видео'); e.final = r.status < 500; throw e; }
+          return data;
+        } catch (e) {
+          if (e.final || attempt >= 4) throw e;
+          await new Promise((ok) => setTimeout(ok, 1500 * (attempt + 1))); // плохая связь — пробуем ещё раз с того же места
+        }
+      }
+    }
+    const paintVideoProgress = () => {
+      const v = st.video; if (!v || !v.uploading) return;
+      const pct = Math.round((v.progress || 0) * 100);
+      const b = $('#v-pct'); if (b) b.textContent = `${pct}%`;
+      const bar = $('#v-bar'); if (bar) bar.style.width = `${pct}%`;
+    };
+    const renderVideo = () => {
+      const box = $('#video-slot');
+      const v = st.video;
+      if (!v) {
+        box.innerHTML = String(html`<button type="button" class="ed-vadd" data-vpick><span class="ed-vadd-ic">${ic('video', 22, 1.8)}</span>
+          <span class="ed-vadd-t"><b>Добавить видео</b><small>До 60 секунд · MP4 или MOV · до 100 МБ</small></span><span class="ed-vadd-plus">${ic('plus', 18, 2.2)}</span></button>`);
+      } else {
+        const pct = Math.round((v.progress || 0) * 100);
+        box.innerHTML = String(html`<div class="ed-video ${v.uploading ? 'loading' : ''}">
+          <div class="ed-video-pic"><video src="${v.uploading ? v.local : `${v.url}#t=0.1`}" ${v.uploading ? raw('muted') : raw('controls')} playsinline preload="metadata"></video></div>
+          <div class="ed-vinfo">${v.uploading
+    ? html`<b>Загружаем видео · <span id="v-pct">${pct}%</span></b><div class="ed-bar-track"><i id="v-bar" style="width:${pct}%"></i></div><small>Можно заполнять дальше — только не закрывайте страницу</small>`
+    : html`<b>${ic('check', 16, 2.4)}Видео добавлено</b><small>${v.duration ? `${mmss(v.duration)} · ` : ''}покупатели увидят его после фото</small>
+      <button type="button" class="btn btn-soft btn-sm" data-vpick>Заменить</button>`}</div>
+          <button type="button" class="ed-ph-btn rm" data-vrm aria-label="Убрать видео">${ic('close', 15, 2.2)}</button>
+        </div>`);
+      }
+      $$('[data-vpick]', box).forEach((b) => { b.onclick = () => $('#vfile').click(); });
+      const rm = $('[data-vrm]', box);
+      if (rm) rm.onclick = () => { if (st.video && st.video.local) URL.revokeObjectURL(st.video.local); st.video = null; renderVideo(); changed(); };
+    };
+    async function addVideo(f) {
+      if (!/^video\/(mp4|quicktime)$/.test(f.type) && !/\.(mp4|mov|m4v)$/i.test(f.name)) { toast('Видео — в формате MP4 или MOV', true); return; }
+      if (f.size > 100 * MB) { toast(`Видео ${Math.round(f.size / MB)} МБ — нужно до 100 МБ. Сократите или сожмите его`, true); return; }
+      const local = URL.createObjectURL(f);
+      const duration = await videoDuration(local);
+      if (duration && duration > 61) { URL.revokeObjectURL(local); toast(`Видео длится ${mmss(duration)} — обрежьте его до минуты`, true); return; }
+      if (st.video && st.video.local) URL.revokeObjectURL(st.video.local);
+      const v = { local, uploading: true, progress: 0, duration };
+      st.video = v; renderVideo(); changed();
+      try {
+        const s = await api('POST', '/api/videos', { name: f.name, type: f.type, size: f.size, ...(duration ? { duration } : {}) });
+        let off = 0;
+        while (off < f.size) {
+          if (st.video !== v) return; // убрали или заменили
+          const r = await putChunk(s.file, off, f.slice(off, off + s.chunk));
+          off = r.received; v.progress = off / f.size; paintVideoProgress();
+          if (r.ready) { v.file = s.file; v.url = r.url; if (r.duration) v.duration = r.duration; break; }
+        }
+        if (st.video !== v) return;
+        v.uploading = false; URL.revokeObjectURL(local); delete v.local;
+        renderVideo(); changed();
+      } catch (e) {
+        if (st.video === v) { st.video = null; renderVideo(); changed(); }
+        toast(e.message, true);
+      }
+    }
+    $('#vfile').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) addVideo(f); };
+
+    // ---------- раздел и характеристики ----------
+    const renderSubs = () => {
+      const subs = subsOf(st.category);
+      $('#sub-field').classList.toggle('hidden', !subs.length);
+      $('#subs').innerHTML = String(html`${subs.map((x) => html`<button type="button" role="radio" class="chip ${x.id === st.sub ? 'on' : ''}" aria-checked="${x.id === st.sub ? 'true' : 'false'}" data-sub="${x.id}">${x.name}</button>`)}`);
+      $$('[data-sub]').forEach((b) => { b.onclick = () => setSub(b.dataset.sub); });
+    };
+    const fmtAttrInput = (f, v) => (v === undefined || v === null || v === '' ? '' : f.max >= 100000 ? NF.format(Number(v)) : String(v).replace('.', ','));
+    const renderAttrs = () => {
+      const x = subOf(st.sub);
+      const box = $('#attrs');
+      box.classList.toggle('hidden', !x || !x.fields.length);
+      if (!x || !x.fields.length) { box.innerHTML = ''; return; }
+      box.innerHTML = String(html`<div class="ed-attrs-h"><b>Характеристики</b><span>по ним покупатели находят объявление в фильтрах</span></div>
+        <div class="ed-attrs-grid">${x.fields.map((f) => {
+    const v = st.attrs[f.key];
+    if (f.type === 'select' && f.options.length <= 6) {
+      return html`<div class="field wide"><span class="label">${f.label}</span><div class="ed-seg ed-seg-wrap" role="radiogroup" aria-label="${f.label}">
+        ${f.options.map((o) => html`<button type="button" role="radio" class="${o === v ? 'on' : ''}" aria-checked="${o === v ? 'true' : 'false'}" data-ak="${f.key}" data-av="${o}">${f.key === 'rooms' && o !== 'Студия' ? `${o}${o === '5+' ? '' : '-комн.'}` : o}</button>`)}</div></div>`;
+    }
+    if (f.type === 'select') {
+      return html`<div class="field"><label for="at-${f.key}">${f.label}</label><select id="at-${f.key}" class="select" data-aks="${f.key}"><option value="">Не указано</option>
+        ${f.options.map((o) => html`<option value="${o}" ${o === v ? raw('selected') : ''}>${o}</option>`)}</select></div>`;
+    }
+    return html`<div class="field"><label for="at-${f.key}">${f.label}</label><div class="ed-unit-input"><input id="at-${f.key}" class="input" inputmode="${f.key === 'area' || f.key === 'land' ? 'decimal' : 'numeric'}" autocomplete="off" data-akn="${f.key}" data-max="${f.max}" placeholder="${f.key === 'year' ? `например, ${new Date().getFullYear() - 5}` : '—'}" value="${fmtAttrInput(f, v)}">${f.unit ? html`<span>${f.unit}</span>` : ''}</div></div>`;
+  })}</div>`);
+      $$('[data-ak]', box).forEach((b) => {
+        b.onclick = () => {
+          const k = b.dataset.ak; const on = st.attrs[k] !== b.dataset.av;
+          if (on) st.attrs[k] = b.dataset.av; else delete st.attrs[k];
+          $$(`[data-ak="${k}"]`, box).forEach((y) => { const yes = on && y === b; y.classList.toggle('on', yes); y.setAttribute('aria-checked', yes ? 'true' : 'false'); });
+          changed();
+        };
+      });
+      $$('[data-aks]', box).forEach((sel) => { sel.onchange = () => { if (sel.value) st.attrs[sel.dataset.aks] = sel.value; else delete st.attrs[sel.dataset.aks]; changed(); }; });
+      $$('[data-akn]', box).forEach((inp) => {
+        inp.oninput = () => {
+          const big = Number(inp.dataset.max) >= 100000;
+          let t = inp.value.replace(big ? /\D/g : /[^\d,.-]/g, '').replace('.', ',');
+          if (big) { t = t.slice(0, 9); inp.value = t ? NF.format(Number(t)) : ''; } else inp.value = t;
+          const n = Number(t.replace(/\s/g, '').replace(',', '.'));
+          if (t !== '' && Number.isFinite(n)) st.attrs[inp.dataset.akn] = n; else delete st.attrs[inp.dataset.akn];
+          changed();
+        };
+      });
+    };
+    const setSub = (id) => {
+      if (st.sub !== id) {
+        // Общие поля (например, «Год выпуска») сохраняем, лишние — убираем.
+        const x = subOf(id);
+        st.attrs = Object.fromEntries(Object.entries(st.attrs).filter(([k]) => x && x.fields.some((f) => f.key === k)));
+      }
+      st.sub = id;
+      renderSubs(); renderAttrs(); changed();
+    };
+
+    // ---------- метро ----------
+    let metroWanted = src.metro ? (typeof src.metro === 'string' ? src.metro : src.metro.name) : '';
+    const paintMetroDot = () => {
+      const opt = form.metro.selectedOptions[0];
+      $('#metro-dot').style.background = opt && opt.dataset.color ? opt.dataset.color : '#C9C9C4';
+    };
+    const loadMetro = async () => {
+      const city = form.city.value.trim();
+      const field = $('#metro-field');
+      if (!hasMetro(city)) { field.classList.add('hidden'); form.metro.value = ''; return; }
+      const list = await metroOf(city);
+      if (form.city.value.trim() !== city) return;
+      if (form.metro.value) metroWanted = form.metro.value;
+      form.metro.innerHTML = String(html`<option value="">Не указывать</option>${list.map((m) => html`<option value="${m.name}" data-color="${m.color}" ${m.name === metroWanted ? raw('selected') : ''}>${m.name}</option>`)}`);
+      field.classList.toggle('hidden', !list.length);
+      paintMetroDot(); changed();
+    };
+    let metroTimer = null;
+    form.metro.onchange = () => { metroWanted = form.metro.value; paintMetroDot(); changed(); };
+
     // ---------- категория, состояние, цена ----------
     const setCat = (c) => {
       st.category = c;
       $$('[data-cat]').forEach((b) => { const on = b.dataset.cat === c; b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false'); });
       $('#cond-field').classList.toggle('hidden', !CONDITION_CATS.has(c));
+      if (st.sub && !subsOf(c).some((x) => x.id === st.sub)) { st.sub = ''; st.attrs = {}; }
+      renderSubs(); renderAttrs();
       fetchHint(); changed();
     };
     const setCond = (c) => { st.condition = c; $$('[data-cond]').forEach((b) => { const on = b.dataset.cond === c; b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false'); }); changed(); };
@@ -1201,17 +1470,23 @@
       title: form.title.value.trim(), category: st.category, condition: CONDITION_CATS.has(st.category) ? st.condition : '',
       price: st.negotiable ? '' : priceDigits(), priceUnit: st.priceUnit, city: form.city.value.trim(),
       delivery: form.delivery.checked, description: form.description.value.trim(),
-      photos: st.photos.filter((p) => p.file).map((p) => p.file)
+      photos: st.photos.filter((p) => p.file).map((p) => p.file),
+      subcategory: st.sub, attrs: st.attrs, metro: $('#metro-field').classList.contains('hidden') ? '' : form.metro.value,
+      district: form.district.value.trim(), video: st.video && st.video.file ? st.video.file : ''
     });
+    // Заполнены ли главные характеристики (те, что видны в карточке).
+    const attrsDone = (b) => { const x = subOf(b.subcategory); return !x || !x.summary.length || x.summary.every((k) => b.attrs[k] !== undefined); };
     const CHECK = [
       ['s-photos', 'Фото', (b) => b.photos.length > 0, false],
       ['s-what', 'Название', (b) => b.title.length >= 3, true],
       ['s-what', 'Категория', (b) => !!b.category, true],
+      ['s-what', 'Раздел', (b) => !!b.subcategory || (!!b.category && !subsOf(b.category).length), true],
+      ['s-what', 'Характеристики', (b) => !!b.subcategory && attrsDone(b), false],
       ['s-price', 'Цена', (b) => !!b.price || st.negotiable, false],
       ['s-where', 'Город', (b) => b.city.length >= 2, true],
       ['s-desc', 'Описание', (b) => b.description.length >= 20, false]
     ];
-    const ERR = { 's-what': (b) => (b.title.length < 3 ? 'Напишите название — хотя бы пару слов.' : !b.category ? 'Выберите категорию.' : ''), 's-where': (b) => (b.city.length < 2 ? 'Укажите город.' : '') };
+    const ERR = { 's-what': (b) => (b.title.length < 3 ? 'Напишите название — хотя бы пару слов.' : !b.category ? 'Выберите категорию.' : !b.subcategory && subsOf(b.category).length ? 'Выберите раздел — так объявление попадёт в нужные фильтры.' : ''), 's-where': (b) => (b.city.length < 2 ? 'Укажите город.' : '') };
     let saveTimer = null;
     function changed() {
       const b = body();
@@ -1229,15 +1504,17 @@
       $('#check').innerHTML = String(html`${CHECK.map(([sid, t, ok, req]) => html`<li class="${ok(b) ? 'ok' : ''}"><a href="#${sid}" data-goto="${sid}">${ic(ok(b) ? 'check' : 'plus', 15, 2.4)}${t}${req ? '*' : ''}</a></li>`)}`);
       $$('[data-goto]').forEach((a) => { a.onclick = (e) => { e.preventDefault(); $(`#${a.dataset.goto}`).scrollIntoView({ behavior: 'smooth', block: 'start' }); }; });
       const first = st.photos.find((p) => p.url && !p.loading);
-      $('#preview').innerHTML = String(card({ id: 0, title: b.title || 'Название объявления', price: b.price ? Number(b.price) : null, priceUnit: b.priceUnit, city: b.city || 'Город', createdAt: Date.now(), photo: first ? first.url : null, delivery: b.delivery }));
+      $('#preview').innerHTML = String(card({ id: 0, title: b.title || 'Название объявления', price: b.price ? Number(b.price) : null, priceUnit: b.priceUnit, city: b.city || 'Город', createdAt: Date.now(), photo: first ? first.url : null, delivery: b.delivery,
+        summary: attrSummary(b.subcategory, b.attrs), metro: b.metro, hasVideo: !!st.video }));
       if (st.tried) for (const sid of Object.keys(ERR)) showErr(sid, ERR[sid](b));
       const has = b.title || b.photos.length || b.description || b.price;
       if (!l && !has) draftDrop();
-      if (!l && has) { clearTimeout(saveTimer); saveTimer = setTimeout(() => draftSave({ ...b, price: b.price, negotiable: st.negotiable, photos: st.photos.filter((p) => p.file).map((p) => ({ file: p.file, url: p.url })) }), 400); }
+      if (!l && has) { clearTimeout(saveTimer); saveTimer = setTimeout(() => draftSave({ ...b, price: b.price, negotiable: st.negotiable, photos: st.photos.filter((p) => p.file).map((p) => ({ file: p.file, url: p.url })), video: st.video && st.video.file ? { file: st.video.file, url: st.video.url, duration: st.video.duration } : null }), 400); }
     }
     const showErr = (sid, msg) => { const s = $(`#${sid}`); s.classList.toggle('bad', !!msg); const e = $('.ed-err', s); e.hidden = !msg; e.innerHTML = msg ? String(html`${ic('warn', 16, 2)}${msg}`) : ''; };
     form.title.oninput = () => { changed(); fetchHintSoon(); };
-    form.city.oninput = changed;
+    form.city.oninput = () => { changed(); clearTimeout(metroTimer); metroTimer = setTimeout(loadMetro, 300); };
+    form.district.oninput = changed;
     form.description.oninput = changed;
     form.delivery.onchange = changed;
     const dd = $('#draft-drop');
@@ -1248,13 +1525,14 @@
     const submit = async () => {
       if (sending) return;
       if (st.busy) { toast('Подождите, фото ещё загружаются', true); return; }
+      if (st.video && st.video.uploading) { toast(`Видео ещё загружается — ${Math.round((st.video.progress || 0) * 100)}%. Подождите немного`, true); return; }
       st.tried = true;
       const b = body();
       const bad = Object.keys(ERR).find((sid) => ERR[sid](b));
       changed();
       if (bad) {
         $(`#${bad}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
-        const f = bad === 's-what' && b.title.length < 3 ? form.title : bad === 's-where' ? form.city : null;
+        const f = bad === 's-what' && b.title.length < 3 ? form.title : bad === 's-where' ? form.city : bad === 's-what' && b.category && !b.subcategory ? $('[data-sub]') : null;
         if (f) setTimeout(() => f.focus({ preventScroll: true }), 350);
         return;
       }
@@ -1274,9 +1552,9 @@
     form.onsubmit = (e) => { e.preventDefault(); submit(); };
     $$('[data-submit]').forEach((x) => { x.onclick = submit; });
 
-    cleanup = () => { document.body.classList.remove('editing'); clearTimeout(saveTimer); };
+    cleanup = () => { document.body.classList.remove('editing'); clearTimeout(saveTimer); if (st.video && st.video.local) URL.revokeObjectURL(st.video.local); st.video = null; };
     setCat(st.category); setCond(st.condition); setUnit(st.priceUnit); setNeg(st.negotiable);
-    renderPhotos();
+    renderPhotos(); renderVideo(); loadMetro();
     changed();
     if (l) fetchHint();
   }
@@ -3364,7 +3642,8 @@
     setTitle(`Проверка: ${l.title}`);
     const words = l.matches.flatMap((m) => m.words);
     const open = reports.filter((r) => !r.resolvedAt);
-    const specs = [['Категория', catName(l.category)], ['Цена', price(l.price, l.priceUnit)], ['Город', l.city], ['Состояние', CONDITION_LABEL[l.condition]],
+    const specs = [['Категория', catName(l.category)], ['Раздел', subName(l.subcategory) || '—'], ...(l.specs || []).map((x) => [x.label, x.value]),
+      ['Цена', price(l.price, l.priceUnit)], ['Город', l.city], ...(l.metro ? [['Метро', l.metro]] : []), ...(l.district ? [['Район', l.district]] : []), ['Состояние', CONDITION_LABEL[l.condition]],
       ['Доставка', l.delivery ? 'Отправит по России' : 'Только встреча'], ['Создано', when(l.createdAt)], ['Изменено', when(l.updatedAt)],
       ['Просмотры', NF.format(l.views)], ['В избранном', NF.format(l.favCount)], ['Диалогов', NF.format(l.chats)]];
     const nextUrl = next ? `/admin/l/${next}` : '/admin?status=pending';
@@ -3387,6 +3666,7 @@
           ${l.checks.length ? html`<div class="banner warn"><strong>Обратите внимание — автопроверка:</strong>
             <ul class="chk-ul">${l.checks.map((c) => html`<li>${ic(CHECK_ICON[c.kind] || 'warn', 16, 2)}<span>${c.text}${c.ref ? html` · <a href="/admin/l/${c.ref}" target="_blank">открыть</a>` : ''}</span></li>`)}</ul></div>` : ''}
           <h1 class="mod-title">${highlight(l.title, words)}</h1>
+          ${l.video ? html`<div class="mod-video"><video src="${l.video}#t=0.1" controls playsinline preload="metadata"></video><span class="muted">${ic('video', 16)}Видео — проверьте так же, как фото: только этот товар, без контактов и ссылок</span></div>` : ''}
           <div class="mod-photos">${l.photos.length ? l.photos.map((p, i) => html`<a href="${p}" target="_blank" class="mod-photo"><img src="${p}" alt="Фото ${i + 1}" loading="lazy"><span>${i + 1}</span></a>`) : html`<div class="empty" style="padding:28px"><p style="margin:0">Без фото</p></div>`}</div>
           <section><h2 class="h2">Описание</h2><p class="desc">${l.description ? highlight(l.description, words) : html`<span class="muted">Описания нет</span>`}</p></section>
           <section><h2 class="h2">Все поля</h2><div class="specs">${specs.map(([k, v]) => html`<div class="spec"><div class="k">${k}</div><div class="v">${v}</div></div>`)}</div></section>
