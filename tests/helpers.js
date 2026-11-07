@@ -38,6 +38,7 @@ async function startServer(extraEnv = {}) {
     UPLOAD_DIR: path.join(tmp, 'uploads'),
     TRUST_PROXY: '0',
     ANTHROPIC_API_KEY: '',
+    METRO_SOURCE: path.join(ROOT, 'tests', 'fixtures', 'metro.json'), // справочник метро без сети
     ...extraEnv
   };
   // cwd — временная папка, чтобы не подхватить .env боевого сайта.

@@ -114,8 +114,16 @@ function setAvatar(userId, file) {
 // Старая цена, если цену снизили за последние 30 дней (зачёркнутая цена в карточке и на странице объявления).
 const priceWasOf = (r) => (r.price_was && r.price_drop_at > Date.now() - 30 * 24 * 3600 * 1000 ? r.price_was : null);
 
+function attrsOf(r) {
+  try { const a = JSON.parse(r.attrs || '{}'); return a && typeof a === 'object' ? a : {}; } catch { return {}; }
+}
+
 function cardFromRow(r) {
   return {
+    subcategory: r.subcategory || '',
+    summary: taxonomy.summaryOf(r.subcategory, attrsOf(r)),
+    metro: r.metro || '',
+    hasVideo: !!r.video,
     id: r.id,
     title: r.title,
     price: r.price,
@@ -133,12 +141,16 @@ function cardFromRow(r) {
 
 const CARD_SELECT = `
   SELECT l.id, l.title, l.price, l.price_unit, l.city, l.category, l.delivery, l.status, l.created_at, l.price_was, l.price_drop_at,
+    l.subcategory, l.attrs, l.metro, l.video,
     (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
     EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id = l.id AND f.user_id = ?) AS is_fav
   FROM listings l JOIN users u ON u.id = l.user_id`;
 
-function searchText(title, description) {
-  return norm(`${title} ${description}`);
+// Текст для поиска: название, описание, подкатегория и характеристики из списков («Toyota», «Автомат»).
+function searchText(title, description, v = {}) {
+  const sub = taxonomy.SUB[v.subcategory];
+  const extra = sub ? [sub.name, ...sub.fields.filter((f) => f.type === 'select' && v.attrs && v.attrs[f.key]).map((f) => v.attrs[f.key])] : [];
+  return norm(`${title} ${description} ${extra.join(' ')}`);
 }
 
 function median(nums) {
@@ -176,9 +188,20 @@ function validateListing(body) {
   if (!CATEGORY_IDS.has(category)) throw new HttpError(400, 'Выберите категорию');
   if (city.length < 2) throw new HttpError(400, 'Укажите город');
   const photos = Array.isArray(body.photos) ? body.photos.slice(0, 10).map(String) : [];
+  // Подкатегория — из списка своей категории; характеристики — только её поля.
+  const subcategory = taxonomy.SUB[body.subcategory] && taxonomy.SUB[body.subcategory].category === category ? body.subcategory : '';
+  let attrs = {};
+  try { attrs = taxonomy.cleanAttrs(subcategory, body.attrs); } catch (e) { throw new HttpError(400, e.message); }
+  // Метро — только станция этого города из справочника; если справочника пока нет — сохраняем как есть.
+  let station = str(body.metro, 60);
+  if (station && metro.has(city) && !metro.isStation(city, station)) throw new HttpError(400, 'Выберите станцию метро из списка');
+  if (station && !metro.has(city) && metro.cities().length) station = '';
+  const district = str(body.district, 60);
+  // video: undefined — не менять (автозагрузка), '' — убрать, имя файла — новое видео.
+  const video = body.video === undefined ? undefined : str(body.video, 60);
   // Похоже на запрещённое — публикуем после проверки модератором.
   const flags = checkProhibited(title, description).map((f) => f.title).join(', ');
-  return { title, description, category, city, priceUnit, condition, delivery, price, photos, flags };
+  return { title, description, category, city, priceUnit, condition, delivery, price, photos, flags, subcategory, attrs, metro: station, district, video };
 }
 
 function attachPhotos(userId, listingId, files) {
@@ -202,6 +225,8 @@ function attachPhotos(userId, listingId, files) {
 function deleteListingFiles(listingId) {
   const files = db.prepare('SELECT file FROM uploads WHERE listing_id = ?').all(listingId);
   for (const { file } of files) fs.rm(path.join(UPLOAD_DIR, file), { force: true }, () => {});
+  const l = db.prepare('SELECT video FROM listings WHERE id = ?').get(listingId);
+  if (l && l.video) video.remove(l.video);
 }
 
 function loadListing(id) {
@@ -223,9 +248,14 @@ function route(method, pattern, handler) {
   routes.push({ method, re, keys, handler });
 }
 
+// Подкатегории и характеристики, станции метро (справочник hh.ru), видео в объявлении.
+const taxonomy = require('./lib/taxonomy');
+const metro = require('./lib/metro')({ dataDir: DATA_DIR });
+const video = require('./lib/video')({ route, db, h: { HttpError, requireUser, readJson, rateLimit, now }, dir: UPLOAD_DIR });
+
 // Модерация (очередь, проверка «от и до», жалобы, история) и чат поддержки — в отдельных модулях.
 const autoChecks = require('./lib/checks')({ db, marketEstimate });
-const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, setAvatar, str, now, norm, autoChecks, OWNER_EMAIL, redirect, file: fileResponse, PUBLIC_URL: PUBLIC_URL || `http://localhost:${PORT}` };
+const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, taxonomy, metro, video, attrsOf, setAvatar, str, now, norm, autoChecks, OWNER_EMAIL, redirect, file: fileResponse, PUBLIC_URL: PUBLIC_URL || `http://localhost:${PORT}` };
 const push = createPush({ db, subject: `mailto:${SUPPORT_EMAIL || 'support@torgana.ru'}`, allowHttp: process.env.PUSH_ALLOW_HTTP === '1' });
 const alerts = require('./lib/alerts')({ route, db, mailer, push, h: helpers, categories: CATEGORIES });
 helpers.alerts = alerts; // push и подборки нужны модерации, поддержке и отзывам
@@ -280,6 +310,8 @@ route('GET', '/api/config', () => ({
   categories: CATEGORIES,
   cities: CITIES,
   priceUnits: PRICE_UNITS,
+  subcategories: taxonomy.publicTaxonomy(),
+  metroCities: metro.cities(),
   ai: !!AI_KEY,
   payments: PAYMENTS_ENABLED,
   mail: mailer.ready(),
@@ -289,6 +321,9 @@ route('GET', '/api/config', () => ({
   metrika: (seoSetting('seo') || {}).metrika || '',
   operator: (({ name, inn, ogrnip }) => ({ name, inn, ogrnip }))(legal.operator())
 }));
+
+// Станции метро города (для выбора в объявлении и фильтра в поиске).
+route('GET', '/api/metro', (ctx) => ({ stations: metro.stations(ctx.query.get('city') || '') }));
 
 route('GET', '/api/me', (ctx) => {
   const unread = ctx.user ? unreadCount(ctx.user.id) + supportChat.unreadFor(ctx.user.id) : 0;
@@ -511,8 +546,12 @@ route('GET', '/api/listings/:id', (ctx) => {
   const isFav = ctx.user ? !!db.prepare('SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?').get(ctx.user.id, id) : false;
   const favCount = db.prepare('SELECT COUNT(*) AS n FROM favorites WHERE listing_id = ?').get(id).n;
   const uid = ctx.user ? ctx.user.id : 0;
-  const similar = db.prepare(`${CARD_SELECT} WHERE l.status = 'active' AND u.is_blocked = 0 AND l.category = ? AND l.id != ? ORDER BY l.created_at DESC LIMIT 4`)
-    .all(uid, l.category, id).map(cardFromRow);
+  // Похожие: сначала из той же подкатегории, потом из категории.
+  const similar = db.prepare(`${CARD_SELECT} WHERE l.status = 'active' AND u.is_blocked = 0 AND l.category = ? AND l.id != ?
+    ORDER BY (l.subcategory = ? AND l.subcategory != '') DESC, l.created_at DESC LIMIT 4`)
+    .all(uid, l.category, id, l.subcategory).map(cardFromRow);
+  const attrs = attrsOf(l);
+  const station = l.metro ? (metro.stations(l.city).find((s) => s.name === l.metro) || { name: l.metro, line: '', color: '' }) : null;
   let market = null;
   if (l.price) {
     const est = marketEstimate({ id, category: l.category, title: l.title, priceUnit: l.price_unit });
@@ -525,6 +564,7 @@ route('GET', '/api/listings/:id', (ctx) => {
     listing: {
       id: l.id, title: l.title, description: l.description, category: l.category, price: l.price, priceUnit: l.price_unit, priceWas: priceWasOf(l),
       city: l.city, condition: l.condition, delivery: !!l.delivery, status: l.status, views: l.views, favCount,
+      subcategory: l.subcategory, attrs, specs: taxonomy.describe(l.subcategory, attrs), metro: station, district: l.district, video: video.url(l.video),
       createdAt: l.created_at, updatedAt: l.updated_at, photos, isFav, isOwner: !!isOwner,
       rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : '',
       appealReply: (isOwner || isAdmin) ? l.appeal_reply : '', flags: (isOwner || isAdmin) ? l.flags : ''
@@ -540,11 +580,14 @@ route('GET', '/api/listings/:id', (ctx) => {
 // Все объявления публикуются после проверки модератором; любая правка — снова на проверку.
 function createListing(u, v) {
   const t = now();
-  const info = db.prepare(`INSERT INTO listings (user_id, title, description, category, price, price_unit, city, condition, delivery, search_text, city_lc, status, flags, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`)
-    .run(u.id, v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description), norm(v.city), v.flags, t, t);
+  const info = db.prepare(`INSERT INTO listings (user_id, title, description, category, price, price_unit, city, condition, delivery, search_text, city_lc, status, flags,
+    subcategory, attrs, metro, district, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`)
+    .run(u.id, v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description, v), norm(v.city), v.flags,
+      v.subcategory || '', JSON.stringify(v.attrs || {}), v.metro || '', v.district || '', t, t);
   const id = Number(info.lastInsertRowid);
   attachPhotos(u.id, id, v.photos);
+  if (v.video) video.attach(u.id, id, v.video);
   if (!u.city) db.prepare('UPDATE users SET city = ? WHERE id = ?').run(v.city, u.id);
   logEvent(id, u.id, 'created', { flags: v.flags, ...(v.via ? { via: v.via } : {}) });
   autoChecks.run(id);
@@ -553,15 +596,20 @@ function createListing(u, v) {
 
 // В историю пишем, что именно изменилось.
 function updateListing(u, l, v) {
-  const before = { title: l.title, description: l.description, category: l.category, price: l.price, priceUnit: l.price_unit, city: l.city, condition: l.condition, delivery: !!l.delivery };
-  const after = { title: v.title, description: v.description, category: v.category, price: v.price, priceUnit: v.priceUnit, city: v.city, condition: v.condition, delivery: !!v.delivery };
+  const before = { title: l.title, description: l.description, category: l.category, price: l.price, priceUnit: l.price_unit, city: l.city, condition: l.condition, delivery: !!l.delivery,
+    subcategory: l.subcategory, attrs: JSON.stringify(attrsOf(l)), metro: l.metro, district: l.district };
+  const after = { title: v.title, description: v.description, category: v.category, price: v.price, priceUnit: v.priceUnit, city: v.city, condition: v.condition, delivery: !!v.delivery,
+    subcategory: v.subcategory === undefined ? l.subcategory : v.subcategory, attrs: v.attrs === undefined ? before.attrs : JSON.stringify(v.attrs),
+    metro: v.metro === undefined ? l.metro : v.metro, district: v.district === undefined ? l.district : v.district };
   const changes = Object.fromEntries(Object.keys(before).filter((k) => before[k] !== after[k]).map((k) => [k, [before[k], after[k]]]));
   const oldPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(l.id).map((r) => r.file);
+  const extra = { subcategory: after.subcategory, attrs: JSON.parse(after.attrs) };
   db.prepare(`UPDATE listings SET title = ?, description = ?, category = ?, price = ?, price_unit = ?, city = ?, condition = ?, delivery = ?,
-    search_text = ?, city_lc = ?, status = 'pending', flags = ?, updated_at = ? WHERE id = ?`)
-    .run(v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description), norm(v.city),
-      v.flags || (l.status === 'pending' ? l.flags : ''), now(), l.id);
+    search_text = ?, city_lc = ?, status = 'pending', flags = ?, subcategory = ?, attrs = ?, metro = ?, district = ?, updated_at = ? WHERE id = ?`)
+    .run(v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description, extra), norm(v.city),
+      v.flags || (l.status === 'pending' ? l.flags : ''), after.subcategory, after.attrs, after.metro, after.district, now(), l.id);
   attachPhotos(u.id, l.id, v.photos);
+  if (v.video !== undefined && v.video !== l.video) { video.attach(u.id, l.id, v.video); changes.video = [l.video ? 'было' : 'не было', v.video ? 'новое' : 'убрано']; }
   const newPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(l.id).map((r) => r.file);
   if (oldPhotos.join() !== newPhotos.join()) changes.photos = [oldPhotos.length, newPhotos.length];
   logEvent(l.id, u.id, 'edited', { changes, flags: v.flags, from: l.status, ...(v.via ? { via: v.via } : {}) });
@@ -574,7 +622,9 @@ helpers.validateListing = validateListing;
 route('POST', '/api/listings', async (ctx) => {
   const u = requireUser(ctx);
   rateLimit(`create:${u.id}`, 30, 60 * 60 * 1000);
-  const id = createListing(u, validateListing(await readJson(ctx.req)));
+  const v = validateListing(await readJson(ctx.req));
+  video.check(u.id, v.video);
+  const id = createListing(u, v);
   return { id, status: 'pending' };
 });
 
@@ -592,7 +642,9 @@ route('PATCH', '/api/listings/:id', async (ctx) => {
     logEvent(id, u.id, 'status', { status: body.status });
     return { ok: true };
   }
-  updateListing(u, l, validateListing(body));
+  const v = validateListing(body);
+  if (v.video && v.video !== l.video) video.check(u.id, v.video);
+  updateListing(u, l, v);
   return { ok: true, status: 'pending' };
 });
 
@@ -860,7 +912,7 @@ const SECURITY_HEADERS = {
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'X-Frame-Options': 'DENY',
   // mc.yandex.ru — Яндекс.Метрика (загружается только после согласия на статистические cookie).
-  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob: https://mc.yandex.ru https://mc.yandex.com; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' https://mc.yandex.ru https://mc.yandex.com; script-src 'self' https://mc.yandex.ru; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob: https://mc.yandex.ru https://mc.yandex.com; style-src 'self' 'unsafe-inline'; font-src 'self'; media-src 'self' blob:; connect-src 'self' https://mc.yandex.ru https://mc.yandex.com; script-src 'self' https://mc.yandex.ru; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 };
 
 function serveFile(res, filePath, cache) {
@@ -877,6 +929,27 @@ function serveFile(res, filePath, cache) {
       ...SECURITY_HEADERS
     });
     fs.createReadStream(filePath).pipe(res);
+  });
+}
+
+// Видео отдаём частями (Range): браузер сразу начинает показ и может перематывать.
+function serveVideo(req, res, filePath) {
+  fs.stat(filePath, (err, st) => {
+    if (err || !st.isFile()) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('Не найдено'); return; }
+    const base = { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=31536000, immutable', ...SECURITY_HEADERS };
+    const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+    if (!m || (m[1] === '' && m[2] === '')) {
+      res.writeHead(200, { ...base, 'Content-Length': st.size });
+      if (req.method === 'HEAD') { res.end(); return; }
+      fs.createReadStream(filePath).pipe(res);
+      return;
+    }
+    let start = m[1] === '' ? Math.max(0, st.size - Number(m[2])) : Number(m[1]);
+    let end = m[1] !== '' && m[2] !== '' ? Math.min(Number(m[2]), st.size - 1) : st.size - 1;
+    if (start >= st.size || start > end) { res.writeHead(416, { ...base, 'Content-Range': `bytes */${st.size}` }); res.end(); return; }
+    res.writeHead(206, { ...base, 'Content-Range': `bytes ${start}-${end}/${st.size}`, 'Content-Length': end - start + 1 });
+    if (req.method === 'HEAD') { res.end(); return; }
+    fs.createReadStream(filePath, { start, end }).pipe(res);
   });
 }
 
@@ -911,6 +984,7 @@ function serveText(res, type, text) {
 function serveStatic(req, res, pathname, search) {
   if (pathname.startsWith('/uploads/')) {
     const name = pathname.slice('/uploads/'.length);
+    if (video.NAME_RE.test(name)) { serveVideo(req, res, path.join(UPLOAD_DIR, name)); return; }
     if (!/^[a-f0-9]{32}\.(jpg|png|webp)$/.test(name)) { res.writeHead(404); res.end(); return; }
     serveFile(res, path.join(UPLOAD_DIR, name), 'public, max-age=31536000, immutable');
     return;
@@ -990,7 +1064,9 @@ setInterval(() => {
     fs.rm(path.join(UPLOAD_DIR, file), { force: true }, () => {});
     db.prepare('DELETE FROM uploads WHERE file = ?').run(file);
   }
+  video.cleanup();
 }, 60 * 60 * 1000).unref();
+metro.start();
 
 mailer.start();
 // 1.14: вход только с подтверждённой почтой. Один раз завершаем старые сессии с неподтверждённой почтой —
