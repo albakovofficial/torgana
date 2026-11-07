@@ -490,6 +490,7 @@
     [/^\/u\/(\d+)$/, viewUser],
     [/^\/admin$/, viewAdmin],
     [/^\/admin\/l\/(\d+)$/, viewAdminListing],
+    [/^\/admin\/device$/, viewDevice],
     [/^\/admin\/u\/(\d+)$/, viewAdminUser],
     [/^\/page\/([a-z]+)$/, viewPage]
   ];
@@ -3289,8 +3290,9 @@
     const status = q.get('status') || 'dash';
     const title = ADMIN_NAV.flatMap((g) => g[1]).find(([k]) => k === status);
     setTitle(title ? `${title[2]} — модерация` : 'Модерация');
-    const stats = await api('GET', '/api/admin/stats');
-    app.innerHTML = String(adminShell(status, stats, html`<div id="adm-box" class="adm-box"><div class="loader"></div></div>`));
+    const [stats, dev] = await Promise.all([api('GET', '/api/admin/stats'), api('GET', '/api/admin/device').catch(() => null)]);
+    const arm = dev && dev.required && !dev.armed ? html`<div class="banner warn adm-arm">${ic('shield', 20, 2)}<div><b>Защита входа в модерацию не включена.</b> Подтвердите это устройство кодом из письма — после этого на новых устройствах модерация будет открываться только по коду.</div><a class="btn btn-dark btn-sm" href="/admin/device">Включить</a></div>` : '';
+    app.innerHTML = String(adminShell(status, stats, html`${arm}<div id="adm-box" class="adm-box"><div class="loader"></div></div>`));
     const box = $('#adm-box');
     const extraUrl = { mail: '/api/admin/mail', site: '/api/admin/update' }[status];
     const extra = extraUrl ? await api('GET', extraUrl) : null;
@@ -3810,7 +3812,7 @@
         </section>
         <section class="panel settings" style="max-width:none">
           <h2 class="h2" style="margin:0">Мои устройства</h2>
-          <p class="muted" style="margin:0;font-size:14px">Модерация открывается только на подтверждённых устройствах: на новом — код из письма. Устройство помним 30 дней.</p>
+          <p class="muted" style="margin:0;font-size:14px">Когда защита включена, модерация открывается только на подтверждённых устройствах: на новом — код из письма. Устройство помним 30 дней. Включается защита первым подтверждённым кодом — так никто не окажется заперт, если письма не доходят.</p>
           ${dev.items.length ? html`<div class="bk-devs">${dev.items.map((x) => html`<div class="bk-dev"><span class="bk-dev-ic">${ic(/iPhone|Android/.test(x.label) ? 'chat' : 'eye', 18, 2)}</span>
               <span class="bk-dev-t"><b>${x.label}${x.current ? html` <span class="tag accent">это устройство</span>` : ''}</b><span>${x.ip ? `IP ${x.ip} · ` : ''}заходили ${when(x.lastAt)} · до ${dateShort(x.until)}</span></span>
               <button type="button" class="btn btn-line btn-sm" data-dev-rm="${x.id}">${x.current ? 'Выйти' : 'Забыть'}</button></div>`)}</div>`
@@ -3854,8 +3856,11 @@
   async function viewDevice() {
     setTitle('Вход в модерацию');
     const st = await api('GET', '/api/admin/device').catch(() => ({}));
-    if (st.trusted) { render(); return; }
-    authPage('Вход в модерацию', `Это устройство мы видим впервые. Чтобы модерацию не открыл никто, кроме вас, — даже зная пароль, — пришлём код на ${st.email || 'вашу почту'}. Устройство запомним на 30 дней.`,
+    if (st.confirmed || (st.trusted && st.armed)) { if (location.pathname === '/admin/device') go('/admin', true); else render(); return; }
+    const arming = !st.armed; // защита ещё не включена — человек включает её сам
+    authPage(arming ? 'Защита модерации' : 'Вход в модерацию', arming
+      ? `Пришлём код на ${st.email || 'вашу почту'}. Когда введёте его, модерация на новых устройствах будет открываться только по коду из письма — даже если кто-то узнает пароль. Это устройство запомним на 30 дней.`
+      : `Это устройство мы видим впервые. Чтобы модерацию не открыл никто, кроме вас, — даже зная пароль, — пришлём код на ${st.email || 'вашу почту'}. Устройство запомним на 30 дней.`,
       html`<div id="dev-code"><button type="button" class="btn btn-dark btn-lg btn-block" data-dev-send>${ic('mail', 18, 2)}Отправить код</button></div><div id="dev-mail" class="dev-mail" aria-live="polite"></div>`,
       html`<p class="alt"><a href="/">На главную</a></p>`);
     let timer = null;
@@ -3863,7 +3868,7 @@
       const box = $('#dev-mail');
       if (!box || !x) return;
       const L = x.letter;
-      if (x.trusted) { clearTimeout(timer); toast('Почта сейчас не работает — модерация открыта без кода. Почините её в разделе «Почта»', true); render(); return; }
+      if (x.armed && x.trusted && !x.confirmed) { clearTimeout(timer); toast('Почта сейчас не работает — модерация открыта без кода. Почините её в разделе «Почта»', true); render(); return; }
       box.innerHTML = String(!L ? '' : L.status === 'sent'
         ? html`<div class="bk-state ok">${ic('check', 20, 2.4)}<div><b>Письмо отправлено в ${hm(L.sentAt)}</b><span>Почтовый сервис его принял. Если письма нет пару минут — посмотрите «Спам» и «Рассылки», найдите «код для входа в модерацию».</span></div></div>`
         : L.error
@@ -3877,7 +3882,7 @@
     const startCode = (r) => codeForm($('#dev-code'), {
       email: r.email || st.email, wait: r.wait || 60,
       send: async () => { const x = await api('POST', '/api/admin/device/send'); setTimeout(watch, 800); return x; },
-      check: async (code) => { await api('POST', '/api/admin/device/verify', { code }); toast('Устройство подтверждено на 30 дней'); render(); }
+      check: async (code) => { await api('POST', '/api/admin/device/verify', { code }); toast(arming ? 'Защита включена — это устройство подтверждено на 30 дней' : 'Устройство подтверждено на 30 дней'); if (location.pathname === '/admin/device') go('/admin?status=backup', true); else render(); }
     });
     if (st.letter && st.letter.createdAt > Date.now() - 15 * 60 * 1000) { startCode({ email: st.email, wait: Math.max(0, 60 - Math.round((Date.now() - st.letter.createdAt) / 1000)) }); paint(st); return; }
     $('[data-dev-send]').onclick = async (e) => {
