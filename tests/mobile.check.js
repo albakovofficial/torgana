@@ -74,10 +74,15 @@ async function seed(base, browser) {
   const car = (await seller.post('/api/listings', { title: 'Toyota Camry 2.5, один владелец', category: 'transport', subcategory: 'cars', price: '2350000', city: 'Москва', metro: 'Павелецкая', district: 'Замоскворечье',
     attrs: { brand: 'Toyota', year: 2018, mileage: 86500, gearbox: 'Автомат', fuel: 'Бензин', body: 'Седан', drive: 'Передний' }, photos: carPhotos, video: vs.data.file,
     description: 'Обслуживание у официального дилера, два комплекта резины.' })).data.id;
-  await admin.post(`/api/admin/listings/${car}/restore`);
+  await admin.post(`/api/admin/listings/${car}/restore`); // подписчик (Борис) получит «Новое у продавца»
   const conv = await buyer.post('/api/conversations', { listingId: ids[0] });
   await buyer.post(`/api/conversations/${conv.data.id}/messages`, { body: 'Здравствуйте! Коляска ещё продаётся?' });
   await seller.post(`/api/conversations/${conv.data.id}/messages`, { body: 'Да, можно посмотреть сегодня вечером.' });
+  // 1.17: торг в чате — первое предложение отклонено, второе ждёт ответа; подписка на продавца.
+  const of1 = await buyer.post(`/api/conversations/${conv.data.id}/offer`, { price: 29000 });
+  await seller.post(`/api/offers/${of1.data.message.offerId}/decline`);
+  await buyer.post(`/api/conversations/${conv.data.id}/offer`, { price: 31500 });
+  await buyer.post(`/api/users/${seller.user.id}/follow`, { follow: true });
   // статистика: несколько разных «гостей» видели и открыли объявление
   const ua = (i) => `Mozilla/5.0 (Linux; Android 14; Pixel ${i}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36`;
   for (let i = 0; i < 6; i++) {
@@ -251,7 +256,16 @@ function pages(d) {
     ['search-cars-filters', `/search?category=transport&sub=cars&a_gearbox=${encodeURIComponent('Автомат')}&a_year_min=2015&city=${encodeURIComponent('Москва')}&metro=${encodeURIComponent('Павелецкая')}`, null],
     ['edit-car', `/edit/${d.car}`, d.seller],
     ['edit-flat', `/edit/${d.ids[2]}`, d.seller],
-    ['admin-check-car', `/admin/l/${d.car}`, d.admin]
+    ['admin-check-car', `/admin/l/${d.car}`, d.admin],
+    // 1.17: торг, быстрые ответы, подписки
+    ['chat-offer-seller', `/messages/${d.conv}`, d.seller],
+    ['chat-offer-modal', `/messages/${d.conv}`, d.buyer, '[data-make-offer]'],
+    ['chat-replies-modal', `/messages/${d.conv}`, d.seller, '[data-qr-edit]'],
+    ['listing-offer-modal', `/l/${d.car}`, d.buyer, '[data-offer]'],
+    ['user-follow', `/u/${d.seller.user.id}`, d.buyer],
+    ['profile-following', '/profile/following', d.buyer],
+    ['profile-following-empty', '/profile/following', d.seller],
+    ['unsubscribe-follow', `/unsubscribe?t=${'0'.repeat(32)}&k=follow-1`, null]
   ];
 }
 

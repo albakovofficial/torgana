@@ -274,6 +274,7 @@ const billing = require('./lib/billing')({ route, db, h: helpers, mailer, baseUr
 const business = require('./lib/business')({ route, db, h: helpers, billing, mailer, stats });
 const promo = require('./lib/promo')({ route, db, h: helpers, billing, business, stats, mailer, searchSpec, specSql, categoryIds: CATEGORY_IDS });
 const feed = require('./lib/feed')({ route, db, h: helpers, business });
+const deals = require('./lib/deals')({ route, db, h: helpers, alerts }); // предложение цены, быстрые ответы, подписки
 helpers.business = business;
 
 // Поисковики и Метрика: коды подтверждения Вебмастера и Search Console, номер счётчика — «Модерация → Поиск и статистика».
@@ -569,7 +570,8 @@ route('GET', '/api/listings/:id', (ctx) => {
       rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : '',
       appealReply: (isOwner || isAdmin) ? l.appeal_reply : '', flags: (isOwner || isAdmin) ? l.flags : ''
     },
-    seller: { id: seller.id, name: seller.name, city: seller.city, avatar: photoUrl(seller.avatar), createdAt: seller.created_at, activeCount: sellerActive, rating: reviews.ratingOf(seller.id), badges: badgesOf(seller) },
+    seller: { id: seller.id, name: seller.name, city: seller.city, avatar: photoUrl(seller.avatar), createdAt: seller.created_at, activeCount: sellerActive, rating: reviews.ratingOf(seller.id), badges: badgesOf(seller),
+      followers: deals.followers(seller.id), following: deals.isFollowing(ctx.user ? ctx.user.id : 0, seller.id) },
     similar,
     market,
     promo: isOwner ? promo.currentOf(id) : null
@@ -825,8 +827,8 @@ route('GET', '/api/conversations/:id', (ctx) => {
   const c = loadConversation(u, parseInt(ctx.params.id, 10));
   const after = parseInt(ctx.query.get('after') || '0', 10) || 0;
   db.prepare('UPDATE messages SET read_at = ? WHERE conversation_id = ? AND sender_id != ? AND read_at IS NULL').run(now(), c.id, u.id);
-  const messages = db.prepare('SELECT id, sender_id, body, photo, created_at, read_at FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id LIMIT 500')
-    .all(c.id, after).map((m) => ({ id: m.id, mine: m.sender_id === u.id, body: m.body, photo: photoUrl(m.photo), createdAt: m.created_at, read: !!m.read_at }));
+  const messages = db.prepare('SELECT id, sender_id, body, photo, kind, offer_id, created_at, read_at FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id LIMIT 500')
+    .all(c.id, after).map((m) => ({ id: m.id, mine: m.sender_id === u.id, body: m.body, photo: photoUrl(m.photo), kind: m.kind, offerId: m.offer_id, createdAt: m.created_at, read: !!m.read_at }));
   const l = loadListing(c.listing_id);
   const otherId = c.buyer_id === u.id ? c.seller_id : c.buyer_id;
   const other = db.prepare('SELECT id, name, avatar, created_at FROM users WHERE id = ?').get(otherId);
@@ -836,6 +838,7 @@ route('GET', '/api/conversations/:id', (ctx) => {
     review: reviews.chatState(u.id, c),
     listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, photo: photoUrl(photo && photo.file) },
     other: { id: other.id, name: other.name, avatar: photoUrl(other.avatar), createdAt: other.created_at },
+    offers: deals.offersOf(c.id), // состояния всех предложений — обновляются при каждом опросе
     messages
   };
 });
@@ -863,7 +866,8 @@ route('GET', '/api/users/:id', (ctx) => {
   const uid = ctx.user ? ctx.user.id : 0;
   const items = db.prepare(`${CARD_SELECT} WHERE l.user_id = ? AND l.status = 'active' ORDER BY l.created_at DESC LIMIT 60`).all(uid, id).map(cardFromRow);
   const sold = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ? AND status = \'sold\'').get(id).n;
-  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rating: reviews.ratingOf(u.id), badges: badgesOf(u), shop: business.shopOf(u) }, items };
+  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rating: reviews.ratingOf(u.id), badges: badgesOf(u), shop: business.shopOf(u),
+    followers: deals.followers(u.id), following: deals.isFollowing(uid, u.id) }, items };
 });
 
 // Юридические документы (реквизиты и раздел «Запрещено» подставляются на сервере).

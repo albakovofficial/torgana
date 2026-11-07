@@ -1639,3 +1639,63 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
 @media (max-width: 900px) { .card-sum { font-size: 12.5px; } }
 .item-where { column-gap: 6px; row-gap: 2px; }
 .item-where > * { white-space: nowrap; }
+
+/* ---------- 1.17: торг, быстрые ответы, подписки ---------- */
+.msg.offer-msg { white-space: normal; padding: 6px; background: transparent !important; color: var(--text) !important; max-width: min(320px, 86%); }
+.msg.offer-msg .t { padding: 0 8px 2px; color: var(--muted); }
+.offer-card { display: flex; flex-direction: column; gap: 6px; padding: 16px 16px 14px; border: 1.5px solid var(--accent); border-radius: 20px; background: #fff; box-shadow: 0 6px 20px rgba(31, 94, 74, .08); }
+.msg.out .offer-card { background: var(--accent-soft); }
+.offer-k { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--accent); }
+.offer-sum { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.offer-sum b { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.offer-sum s { font-size: 15px; color: var(--muted); }
+.offer-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; min-height: 22px; }
+.offer-foot .btn { flex: 1; height: 40px; }
+.offer-st { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.offer-st.ok { color: var(--accent); }
+.offer-st.wait { color: var(--text-2); }
+.offer-link { margin-left: auto; padding: 0; border: 0; background: none; font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+.offer-link:hover { color: var(--danger); }
+.msg.offer-off .offer-card { border-color: var(--line); box-shadow: none; background: #fff; }
+.msg.offer-off .offer-k { color: var(--muted); }
+.msg.offer-off .offer-sum b { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 2px; }
+.msg.offer-reply.out { background: var(--accent); }
+.msg.offer-reply.in { background: var(--accent-soft); color: #1d3b31; }
+.chat-offer { flex: none; width: 48px; height: 48px; font-size: 20px; font-weight: 800; color: var(--accent); background: var(--accent-soft); }
+.chat-offer:hover { background: var(--accent); color: #fff; }
+.chat-tools { display: flex; gap: 6px; padding: 10px 14px 0; overflow-x: auto; scrollbar-width: none; border-top: 1px solid var(--line); }
+.chat-tools::-webkit-scrollbar { display: none; }
+.chat-tools:empty { display: none; }
+.chat-tools + .chat-form { border-top: 0; }
+.chat-tools .chip { flex: none; height: 34px; padding: 0 12px; font-size: 13px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.chat-tools .qr-edit { color: var(--muted); border-style: dashed; }
+.offer-money { max-width: none; }
+.offer-picks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.offer-picks .chip { height: 38px; font-weight: 600; color: var(--text); }
+.offer-picks .chip .cnt { color: var(--accent); opacity: 1; }
+.offer-note { display: flex; gap: 8px; align-items: flex-start; margin: 16px 0 0; padding: 12px 14px; border-radius: 16px; background: var(--surface); font-size: 13.5px; line-height: 1.45; color: var(--text-2); }
+.offer-note svg { flex: none; margin-top: 1px; color: var(--accent); }
+.qr-list { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow-y: auto; }
+.qr-item { display: flex; align-items: center; gap: 10px; padding: 10px 8px 10px 14px; border-radius: 16px; background: var(--surface); font-size: 14.5px; line-height: 1.4; }
+.qr-item span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.qr-empty { padding: 18px; border-radius: 16px; background: var(--surface); text-align: center; color: var(--muted); font-size: 14px; }
+.qr-add { display: flex; gap: 8px; margin-top: 12px; }
+.qr-add .input { flex: 1; }
+.qr-add .btn { flex: none; width: 52px; padding: 0; }
+.seller-follow { display: flex; flex-direction: column; gap: 8px; }
+.seller-follow .muted { font-size: 13px; text-align: center; }
+.seller-follow b { color: var(--text); }
+.follow-btn.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.follow-btn.on:hover { background: var(--accent-soft); color: var(--accent); }
+.fl-sellers { display: flex; flex-direction: column; gap: 10px; }
+.fl-seller { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 22px; background: #fff; }
+.fl-who { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; color: var(--text); }
+.fl-who:hover { color: var(--text); }
+.fl-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fl-txt b { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 15.5px; }
+.fl-txt > span { font-size: 13px; color: var(--muted); }
+@media (max-width: 600px) {
+  .fl-seller { flex-wrap: wrap; }
+  .fl-seller .btn { width: 100%; }
+  .chat-offer { width: 44px; height: 44px; }
+}
