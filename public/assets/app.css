@@ -2562,3 +2562,54 @@ body.pv-open { overflow: hidden; }
 .bzf-ava { margin-top: -56px; align-self: flex-start; }
 .bz .plan.free .btn-soft { background: #fff; }
 @media (max-width: 760px) { .bzf-ava { margin-top: -48px; } }
+
+/* ---------- блок «О разделе» на страницах /c/… (1.33): данные раздела, города, соседние разделы ---------- */
+.sec-about { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; margin-top: 40px; }
+.sec-about:empty { display: none; }
+.sa-main { display: flex; flex-direction: column; gap: 16px; padding: 26px; border: 1px solid var(--line); border-radius: 28px; background: #fff; }
+.sa-main h2 { margin: 4px 0 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+.sa-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.sa-tile { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 18px; background: var(--surface); min-width: 0; }
+.sa-tile > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.sa-tile b { font-size: 18px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sa-tile > span:last-child > span { font-size: 12px; color: var(--muted); }
+.sa-tile .bz-ic { width: 40px; height: 40px; border-radius: 13px; }
+.sa-main p { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--text-2); }
+.sa-search { display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 5px 0 18px; border-radius: 999px; background: var(--surface); }
+.sa-search > span { display: inline-flex; color: var(--muted); }
+.sa-search input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; outline: none; font-size: 15px; }
+.sa-search .btn { height: 40px; }
+.sa-safe { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 18px; background: #EDF3F0; color: #23332D; }
+.sa-safe:hover { color: #23332D; background: #E5EEE9; }
+.sa-safe > span:first-child { width: 36px; height: 36px; flex: none; border-radius: 12px; background: #fff; color: var(--accent); display: grid; place-items: center; }
+.sa-safe-t { flex: 1; display: flex; flex-direction: column; gap: 3px; font-size: 13.5px; line-height: 1.45; }
+.sa-safe-t b { font-weight: 650; color: var(--accent); }
+.sa-side { display: flex; flex-direction: column; gap: 14px; padding: 26px; border-radius: 28px; background: var(--surface); }
+.sa-h { display: flex; align-items: center; gap: 10px; }
+.sa-h b { font-size: 15px; }
+.sa-h ~ .sa-h { margin-top: 6px; padding-top: 16px; border-top: 1px solid #E4E4E0; }
+.bz-ic.sm { width: 32px; height: 32px; border-radius: 11px; }
+.sa-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.sa-chips a { height: 34px; padding: 0 13px; border-radius: 999px; background: #fff; color: var(--text); display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.sa-chips a span { font-weight: 600; color: var(--muted); }
+.sa-chips a:hover { color: var(--accent); }
+.sa-links { display: flex; flex-direction: column; gap: 6px; }
+.sa-links a { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 14px 0 16px; border-radius: 14px; background: #fff; color: var(--text); font-size: 14px; }
+.sa-links a span { flex: 1; min-width: 0; }
+.sa-links a em { font-style: normal; font-size: 13px; font-weight: 600; color: var(--muted); }
+.sa-links a svg { flex: none; color: var(--muted); }
+.sa-links a:hover { color: var(--accent); }
+@media (max-width: 1100px) { .sec-about { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) {
+  .sec-about { margin-top: 28px; }
+  .sa-search input { font-size: 14px; }
+  .sa-main, .sa-side { padding: 20px; border-radius: 24px; }
+  .sa-tiles { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------- 1.34: подсказки города — как список выбора (pickList), а не системный datalist ---------- */
+.city-sug { z-index: 75; }
+.city-sug .pick-list { padding: 6px; }
+.city-sug .pick-it { min-height: 42px; }
+.city-sug .pick-it.act { background: var(--surface); }
+.city-sug .pick-it.on { background: rgba(31, 94, 74, .08); }

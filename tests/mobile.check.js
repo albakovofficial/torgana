@@ -201,6 +201,9 @@ function pages(d) {
     ['confirm', '/confirm', null],
     ['category-city', '/c/personal/kazan', null],
     ['category', '/c/personal', null],
+    ['section-sub', '/c/transport/cars', null],
+    ['search-city', '/search?category=transport', null, 'city'],
+    ['section-sub-city', '/c/transport/cars/moskva', null],
     ['cookie', '/', null],
     ['admin-seo', '/admin?status=seo', d.admin],
     ['confirm-code', '/confirm', null, 'code'],
@@ -402,6 +405,17 @@ async function main() {
           await page.click(sel.startsWith('#') ? `${sel} + .pick-btn` : sel);
           await page.waitForTimeout(300);
           if (!(await page.$('.pick .pick-it'))) errors.push('список не открылся');
+        } else if (open === 'city') {
+          // Подсказки города — красивым списком (1.34), а не системным datalist; набор текста сужает список.
+          if (vpName === 'mobile') { const t = await page.$('#filters-toggle'); if (t && await t.isVisible()) { await t.click(); await page.waitForTimeout(200); } }
+          await page.click('#f-city');
+          await page.waitForTimeout(200);
+          if (!(await page.$('.city-sug .pick-it'))) errors.push('список городов не открылся');
+          await page.screenshot({ path: path.join(SHOTS, `${vpName}-search-city-open.png`) });
+          await page.fill('#f-city', 'Вор');
+          await page.waitForTimeout(200);
+          const first = await page.textContent('.city-sug .pick-it');
+          if (!/Воронеж/.test(first || '')) errors.push(`первым должен быть Воронеж, а не «${first}»`);
         } else if (open === 'push-ask') {
           // Первый заход вошедшего: один раз спрашиваем про уведомления; после «Не сейчас» — больше никогда.
           // Если браузер проверки не умеет push (так бывает в GitHub Actions), вопроса быть не должно — но метка ставится.

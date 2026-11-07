@@ -300,6 +300,67 @@
   }
   new MutationObserver(() => $$('select.select:not([data-enh])').forEach(enhanceSelect)).observe(document.body, { childList: true, subtree: true });
 
+  // 1.34: поле города — подсказки красивым списком в стиле pickList вместо системного <datalist>.
+  // Вписать город не из списка по-прежнему можно (input остаётся обычным полем). data-any — первый пункт «Вся Россия» (пусто).
+  function enhanceCity(inp) {
+    if (inp.dataset.enh) return;
+    inp.dataset.enh = '1';
+    const id = `cs-${Math.random().toString(36).slice(2, 8)}`;
+    inp.setAttribute('role', 'combobox'); inp.setAttribute('aria-autocomplete', 'list'); inp.setAttribute('aria-expanded', 'false'); inp.setAttribute('aria-controls', id);
+    let box = null; let items = []; let act = -1;
+    const norm = (t) => String(t).toLowerCase().replace(/ё/g, 'е');
+    const close = () => { if (box) { box.remove(); box = null; } inp.setAttribute('aria-expanded', 'false'); inp.removeAttribute('aria-activedescendant'); window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
+    function place() {
+      if (!box) return;
+      const r = inp.getBoundingClientRect();
+      const below = window.innerHeight - r.bottom - 12;
+      const up = below < 220 && r.top > below;
+      box.style.left = `${Math.max(8, r.left)}px`;
+      box.style.width = `${Math.max(240, r.width)}px`;
+      box.style.maxHeight = `${Math.min(320, (up ? r.top : below) - 8)}px`;
+      box.style.top = up ? '' : `${r.bottom + 6}px`;
+      box.style.bottom = up ? `${window.innerHeight - r.top + 6}px` : '';
+    }
+    const pick = (v) => { inp.value = v; close(); inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); };
+    const mark = (i) => {
+      act = i;
+      $$('.pick-it', box).forEach((b, k) => b.classList.toggle('act', k === i));
+      const el = box && $$('.pick-it', box)[i];
+      if (el) { el.scrollIntoView({ block: 'nearest' }); inp.setAttribute('aria-activedescendant', el.id); }
+    };
+    function open() {
+      const t = norm(inp.value.trim());
+      const cur = inp.value.trim();
+      const all = S.config.cities || [];
+      // Сначала города, которые начинаются с набранного, потом — где оно встречается внутри.
+      const hit = t && !all.some((c) => norm(c) === t) ? [...all.filter((c) => norm(c).startsWith(t)), ...all.filter((c) => !norm(c).startsWith(t) && norm(c).includes(t))] : all;
+      items = [...(inp.dataset.any && (!t || hit.length === all.length) ? [{ v: '', label: inp.dataset.any }] : []), ...hit.map((c) => ({ v: c, label: c }))];
+      if (!items.length) { close(); return; }
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'pick pop city-sug'; box.id = id; box.setAttribute('role', 'listbox');
+        box.addEventListener('mousedown', (e) => e.preventDefault());
+        box.addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) pick(b.dataset.v); });
+        document.body.append(box);
+        window.addEventListener('scroll', place, true); window.addEventListener('resize', place);
+      }
+      box.innerHTML = String(html`<div class="pick-list">${items.map((x, k) => html`<button type="button" class="pick-it${x.v === cur ? ' on' : ''}" role="option" id="${id}-${k}" data-v="${x.v}" tabindex="-1" aria-selected="${x.v === cur ? 'true' : 'false'}"><span class="pick-t"><b>${x.label}</b></span>${x.v === cur ? ic('check', 18, 2.4) : ''}</button>`)}</div>`);
+      inp.setAttribute('aria-expanded', 'true');
+      act = -1;
+      place();
+    }
+    inp.addEventListener('focus', open);
+    inp.addEventListener('click', () => { if (!box) open(); });
+    inp.addEventListener('input', (e) => { if (e.isTrusted) open(); });
+    inp.addEventListener('blur', () => setTimeout(close, 120));
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && box) { e.preventDefault(); close(); return; }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (!box) open(); if (box) mark(Math.max(0, Math.min(items.length - 1, act + (e.key === 'ArrowDown' ? 1 : -1)))); return; }
+      if (e.key === 'Enter' && box && act >= 0) { e.preventDefault(); pick(items[act].v); }
+    });
+  }
+  new MutationObserver(() => $$('input[data-cities]:not([data-enh])').forEach(enhanceCity)).observe(document.body, { childList: true, subtree: true });
+
   // ================= характеристики (1.22) =================
   // Короткие списки — чипсами, длинные — частые значения чипсами и «Все N» с поиском, цвета — кружками.
   // Одна разметка для формы объявления и фильтров поиска.
@@ -785,7 +846,7 @@
     [/^\/$/, viewHome],
     [/^\/search$/, viewSearch],
     [/^\/l\/(\d+)(?:-[a-z0-9-]*)?$/, viewListing],
-    [/^\/c\/([a-z]+(?:\/[a-z0-9-]+)?)$/, viewCategory],
+    [/^\/c\/([a-z]+(?:\/[a-z0-9_-]+)?(?:\/[a-z0-9-]+)?)$/, viewCategory],
     [/^\/new$/, viewEditor],
     [/^\/edit\/(\d+)$/, viewEditor],
     [/^\/login$/, viewLogin],
@@ -973,15 +1034,40 @@
   }
 
   // ================= поиск =================
-  // /c/:категория и /c/:категория/:город — страницы разделов для поисковиков; внутри — обычный поиск.
+  // Страницы разделов (как в lib/seo.js): /c/:категория, /c/:категория/:раздел, /c/:категория/:город,
+  // /c/:категория/:раздел/:город. Внутри — обычный поиск и внизу блок «О разделе».
   function viewCategory(part) {
-    const [cat, citySlug] = part.split('/');
+    const [cat, a, b] = part.split('/');
+    const sub = a && subsOf(cat).some((x) => x.id === a) ? a : '';
+    const citySlug = sub ? b : a;
     const city = citySlug ? S.config.cities.find((c) => slugify(c) === citySlug) : '';
-    if (!S.config.categories.some((c) => c.id === cat) || (citySlug && !city)) { viewNotFound(); return undefined; }
-    return viewSearch(null, new URLSearchParams({ category: cat, ...(city ? { city } : {}) }));
+    if (!S.config.categories.some((c) => c.id === cat) || (citySlug && !city) || (!sub && b)) { viewNotFound(); return undefined; }
+    return viewSearch(null, new URLSearchParams({ category: cat, ...(sub ? { sub } : {}), ...(city ? { city } : {}) }), { category: cat, sub, city });
+  }
+  // Блок «О разделе»: числа, города и соседние разделы — с сервера (/api/sections/info), из настоящих объявлений.
+  // Сумма для примера запроса — в том виде, который понимает поиск (lib/search.js: «2 млн», «800к»; дроби он не разбирает).
+  const shortSum = (n) => (n >= 1e6 ? `${Math.max(1, Math.round(n / 1e6))} млн` : n >= 1000 ? `${Math.round(n / 1000)}к` : String(n));
+  function secAbout(d) {
+    const tile = (icon, tone, v, t) => html`<div class="sa-tile"><span class="bz-ic ${tone}">${ic(icon, 19, 1.9)}</span><span><b>${v}</b><span>${t}</span></span></div>`;
+    const priced = d.count && d.min !== null && d.max !== null;
+    const word = (d.name.split(/[ ,—]+/)[0] || '').toLowerCase();
+    const example = priced && d.max > 0 ? `${word} до ${shortSum(Math.max(d.min, Math.round((d.min + d.max) / 2 / 1000) * 1000))}` : word;
+    return html`<div class="sa-main">
+        <span class="bz-label">О разделе</span><h2>${d.h1} на Торгане</h2>
+        <div class="sa-tiles">${tile('list', 'green', NF.format(d.count), plural(d.count, 'объявление', 'объявления', 'объявлений'))}${priced ? (d.min === d.max ? tile('tag', 'blue', rub(d.min), 'цена') : html`${tile('down', 'blue', rub(d.min), 'самая низкая цена')}${tile('trend', 'amber', rub(d.max), 'самая высокая')}`) : ''}</div>
+        <p>Все объявления прошли проверку модератором. Ищите обычными словами и уточняйте фильтрами: ${d.fields.length ? d.fields.join(', ') : 'раздел, город, цена и доставка'}.</p>
+        ${example ? html`<form class="sa-search" data-search role="search"><span>${ic('search', 18)}</span><label class="sr" for="sa-q">Поиск</label><input id="sa-q" name="q" type="search" placeholder="Например: ${example}" autocomplete="off" enterkeyhint="search"><button class="btn btn-accent btn-sm" type="submit">Найти</button></form>` : ''}
+        <a class="sa-safe" href="/page/safety"><span>${ic('shield', 18)}</span><span class="sa-safe-t">Договаривайтесь в чате Торганы и не вносите предоплату незнакомым продавцам.<b>Как покупать безопасно ›</b></span></a>
+      </div>
+      <div class="sa-side">
+        ${d.cities.length ? html`<div class="sa-h"><span class="bz-ic green sm">${ic('pin', 16, 2)}</span><b>${d.name} в других городах</b></div>
+        <div class="sa-chips">${d.cities.map((c) => html`<a href="${c.path}">${c.name}${c.n ? html`<span>${NF.format(c.n)}</span>` : ''}</a>`)}</div>` : ''}
+        ${d.subs.length ? html`<div class="sa-h"><span class="bz-ic violet sm">${ic('list', 16, 2)}</span><b>${d.sub ? `Рядом в разделе «${d.catName}»` : 'Разделы'}</b></div>
+        <div class="sa-links">${d.subs.map((x) => html`<a href="${x.path}"><span>${x.label}</span>${x.n ? html`<em>${NF.format(x.n)}</em>` : ''}${ic('right', 16, 2)}</a>`)}</div>` : ''}
+      </div>`;
   }
 
-  async function viewSearch(_, q) {
+  async function viewSearch(_, q, sec = null) {
     const params = Object.fromEntries(q.entries());
     const sub = subOf(params.sub) ? params.sub : '';
     const category = (sub && Object.keys(S.config.subcategories).find((c) => subsOf(c).some((x) => x.id === sub))) || params.category || '';
@@ -1013,8 +1099,7 @@
             </select></div>
           <div id="f-extra" class="f-extra"></div>
           <div class="field"><label for="f-city">Город</label>
-            <input id="f-city" name="city" class="input" list="cities" placeholder="Вся Россия" value="${params.city || ''}">
-            <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
+            <input id="f-city" name="city" class="input" data-cities data-any="Вся Россия" autocomplete="off" placeholder="Вся Россия" value="${params.city || ''}"></div>
           <div id="f-metro"></div>
           <div class="field"><span class="label">Цена, ₽</span>
             <div class="row"><label class="sr" for="f-min">Цена от</label><input id="f-min" name="min" class="input" inputmode="numeric" placeholder="от" value="${params.min || ''}">
@@ -1040,8 +1125,17 @@
         <div class="understood" id="understood"></div>
         <div id="results">${skeletonGrid(9)}</div>
         <div class="more hidden"></div>
+        ${sec ? html`<section class="sec-about" id="sec-about" aria-label="О разделе"></section>` : ''}
       </section>
     </div>`);
+    if (sec) {
+      api('GET', `/api/sections/info?${new URLSearchParams(sec)}`).then((d) => {
+        const box = $('#sec-about'); if (!box) return;
+        box.innerHTML = String(secAbout(d));
+        const h = $('.results-head h1'); if (h) h.textContent = d.h1;
+        setTitle(d.h1);
+      }).catch(() => {});
+    }
 
     const ff = $('#filter-form');
     // Раздел и характеристики зависят от категории и раздела — перестраиваем без перезагрузки.
@@ -1303,7 +1397,7 @@
     : html`<button class="thumb ${i === 0 ? 'on' : ''}" data-t="${i}" aria-label="Фото ${i + 1}"><img src="${m.src}" alt="" loading="lazy"></button>`))}</div>` : ''}
           </div>
           <section class="sp-sec"><h2 class="h2">Характеристики</h2>
-            <nav class="sp-path" aria-label="Раздел">${specPath.map((t, k) => html`${k ? html`<span aria-hidden="true">›</span>` : ''}<a href="${k ? `/search?${new URLSearchParams({ category: l.category, sub: l.subcategory })}` : cpath(l.category)}">${t}</a>`)}</nav>
+            <nav class="sp-path" aria-label="Раздел">${specPath.map((t, k) => html`${k ? html`<span aria-hidden="true">›</span>` : ''}<a href="${k ? `/c/${l.category}/${l.subcategory}` : cpath(l.category)}">${t}</a>`)}</nav>
             ${tiles.length ? html`<div class="sp-tiles">${tiles.map((x) => html`<div class="sp-tile"><small>${x.label}</small><b>${specVal(x)}</b></div>`)}</div>` : ''}
             ${rest.length ? kv(rest) : ''}</section>
           ${l.description ? html`<section><h2 class="h2">Описание</h2><p class="desc">${l.description}</p></section>` : ''}
@@ -1670,8 +1764,7 @@
             </div></div>`)}
           ${step(4, 's-where', 'Где', '', html`
             <div class="field"><label for="city">Город</label>
-              <div class="ed-icon-input">${ic('pin', 18)}<input id="city" name="city" class="input" list="cities" autocomplete="address-level2" value="${src.city || S.user.city || S.city || ''}" placeholder="Начните вводить город"></div>
-              <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
+              <div class="ed-icon-input">${ic('pin', 18)}<input id="city" name="city" class="input" data-cities autocomplete="off" value="${src.city || S.user.city || S.city || ''}" placeholder="Начните вводить город"></div></div>
             <div class="ed-where2">
               <div class="field hidden" id="metro-field"><label for="metro">Метро</label>
                 <select id="metro" name="metro" class="select"><option value="">Не указывать</option></select></div>
@@ -3335,8 +3428,7 @@
         <form id="sf" class="set-form">
           <div class="set-fields">
             <div class="field"><label for="s-name">Имя</label><input id="s-name" name="name" class="input" maxlength="60" value="${u.name}" required autocomplete="name"></div>
-            <div class="field"><label for="s-city">Город</label><div class="ed-icon-input">${ic('pin', 18)}<input id="s-city" name="city" class="input" list="cities" value="${u.city || ''}" placeholder="Подставим в новые объявления"></div>
-              <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
+            <div class="field"><label for="s-city">Город</label><div class="ed-icon-input">${ic('pin', 18)}<input id="s-city" name="city" class="input" data-cities autocomplete="off" value="${u.city || ''}" placeholder="Подставим в новые объявления"></div></div>
             <div class="field wide"><label for="s-phone">Телефон</label><input id="s-phone" name="phone" class="input" type="tel" inputmode="tel" maxlength="30" value="${u.phone || ''}" placeholder="+7" autocomplete="tel">${phoneNote}</div>
           </div>
           <div class="set-foot"><span>Имя и фото сразу обновятся во всех ваших объявлениях</span><button type="reset" class="btn btn-soft">Отменить</button><button class="btn btn-accent" type="submit">Сохранить</button></div>
@@ -3851,7 +3943,7 @@
         <div class="field"><label for="fd-url">Ссылка</label><input id="fd-url" name="url" class="input" inputmode="url" value="${f.url}" placeholder="https://example.ru/avito.xml"></div>
         <div class="row stack-m">
           <div class="field" style="flex:1"><label for="fd-cat">Категория, если не распознана</label><select id="fd-cat" name="category" class="select"><option value="">Не загружать такие</option>${S.config.categories.map((c) => html`<option value="${c.id}" ${c.id === f.category ? raw('selected') : ''}>${c.name}</option>`)}</select></div>
-          <div class="field" style="flex:1"><label for="fd-city">Город, если нет в адресе</label><input id="fd-city" name="city" class="input" list="cities" value="${f.city}" placeholder="${S.user.city || 'Казань'}"><datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
+          <div class="field" style="flex:1"><label for="fd-city">Город, если нет в адресе</label><input id="fd-city" name="city" class="input" data-cities autocomplete="off" value="${f.city}" placeholder="${S.user.city || 'Казань'}"></div>
         </div>
         <div class="set-btns"><button class="btn btn-dark" type="submit">${f.url ? 'Сохранить и загрузить' : 'Подключить фид'}</button>${f.url ? html`<button type="button" class="btn btn-soft" data-run ${st.running ? raw('disabled') : ''}>${ic('refresh', 16, 2)}Загрузить сейчас</button>` : ''}</div>
       </form>
@@ -4974,13 +5066,7 @@
           <a class="btn btn-accent" href="/messages/support">Написать в поддержку</a></section>
         <p>Или на почту: ${contact}. Укажите ссылку на объявление или диалог, если вопрос о них. На сообщение в чате ответим там же, а если включены уведомления — дадим знать push или письмом. Реквизиты — на странице <a href="/page/contacts">«Реквизиты и контакты»</a>.</p>
         <h2>Частые вопросы</h2>
-        <div class="help-faq">
-          <div><b>Почему объявление появилось не сразу?</b><p>Каждое объявление и каждую правку проверяет модератор, а потом оно публикуется. Статус виден в профиле, в «Моих объявлениях».</p></div>
-          <div><b>Почему отклонили объявление?</b><p>Если модератор указал причину, она видна в профиле в разделе «На исправлении». Исправьте объявление или подайте апелляцию — её рассмотрит человек.</p></div>
-          <div><b>Сколько стоит размещение?</b><p>Для частных лиц — бесплатно и без лимитов. Платными могут быть только дополнительные услуги: продвижение объявления и тарифы для бизнеса.</p></div>
-          <div><b>Сколько висит объявление?</b><p>30 дней. Потом оно снимается с показа, и его можно бесплатно опубликовать снова.</p></div>
-          <div><b>Не приходит письмо от Торганы</b><p>Проверьте папку «Спам». Если письма нет и там, напишите в поддержку.</p></div>
-          <div><b>Как удалить аккаунт?</b><p>Напишите в поддержку с почты, на которую зарегистрирован аккаунт, — удалим профиль, объявления и переписку.</p></div>
+        <div class="help-faq">${(S.config.supportFaq || []).map(([t, a]) => html`<div><b>${t}</b><p>${a}</p></div>`)}
         </div>`]
     };
     const p = PAGES[slug];
