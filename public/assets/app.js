@@ -2283,22 +2283,52 @@
   const MY_STATUS = { active: 'Активные', pending: 'На проверке', rejected: 'На исправлении', sold: 'Проданные', archived: 'Сняты' };
   const MY_TAG = { active: ['ok', 'Опубликовано'], pending: ['wait', 'На проверке'], rejected: ['bad', 'Нужно исправить'], sold: ['dark', 'Продано'], archived: ['off', 'Снято'] };
 
-  // Карточка человека слева в профиле — своя и публичная: фото, имя, город, дата, цифры.
-  function idCard(u, { own = false, stats = [], badges = '', extra = '', foot = '', ratingHref = '' }) {
+  // Насколько заполнен профиль: имя есть всегда, дальше фото, город и (если есть почта) подтверждённый email.
+  function profileTodo(u) {
+    const todo = [
+      [!!u.avatar, 'Добавить фото', 'avatar'],
+      [!!u.city, 'Указать город', 'city'],
+      ...(S.config.mail ? [[u.emailVerified, 'Подтвердить почту', 'verify']] : [])
+    ];
+    return { todo: todo.filter((t) => !t[0]), pct: Math.round(((todo.filter((t) => t[0]).length + 1) / (todo.length + 1)) * 100) };
+  }
+  // Своя карточка слева в профиле и настройках: фото с камерой, имя, значки, цифры, заполненность.
+  function idCard(u, stats = []) {
+    const { todo, pct } = profileTodo(u);
+    const badges = html`${trustBadges(u.badges)}${S.config.mail ? (u.emailVerified
+      ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>`
+      : html`<span class="pf-badge warn">${ic('warn', 13, 2)} Почта не подтверждена</span>`) : ''}
+      ${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
     return html`<div class="pf-card">
       <div class="pf-who">
-        <div class="pf-ava">${ava(u, own ? 'lg' : 'xl')}${own ? html`<button class="pf-cam" type="button" data-ava-pick aria-label="${u.avatar ? 'Сменить фото профиля' : 'Добавить фото профиля'}">${ic('camera', 15, 2)}</button>` : ''}</div>
+        <div class="pf-ava">${ava(u, 'lg')}<button class="pf-cam" type="button" data-ava-pick aria-label="${u.avatar ? 'Сменить фото профиля' : 'Добавить фото профиля'}">${ic('camera', 15, 2)}</button></div>
         <div class="pf-who-txt">
-          ${own ? html`<div class="pf-name">${u.name}</div>` : html`<h1 class="pf-name">${u.name}</h1>`}
+          <div class="pf-name">${u.name}</div>
           <div class="pf-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
-          ${u.rating ? ratingLine(u.rating, ratingHref) : ''}
-          ${badges ? html`<div class="pf-badges">${badges}</div>` : ''}
+          ${u.rating ? ratingLine(u.rating, '/profile/reviews') : ''}
         </div>
+        <a class="icon-btn pf-gear" href="/profile/settings" aria-label="Настройки">${ic('gear', 20)}</a>
       </div>
-      ${stats.length ? html`<div class="pf-nums">${stats.map(([n, k, key]) => html`<div class="pf-num"><b ${key === 'followers' ? raw('data-followers') : ''}>${NF.format(n)}</b><span>${k}</span></div>`)}</div>` : ''}
-      ${extra}
-      ${foot}
+      ${String(badges).trim() ? html`<div class="pf-badges">${badges}</div>` : ''}
+      ${stats.length ? html`<div class="pf-nums">${stats.map(([n, k, href]) => html`<a class="pf-num" href="${href}"><b>${NF.format(n)}</b><span>${k}</span></a>`)}</div>` : ''}
+      ${pct < 100 ? html`<div class="pf-progress">
+        <div class="pf-progress-head"><span>Профиль заполнен</span><b>${pct}%</b></div>
+        <div class="pf-bar"><i style="width:${pct}%"></i></div>
+        <div class="pf-todo">${todo.map((t) => html`<button type="button" class="chip" data-todo="${t[2]}">${ic('plus', 15, 2)}${t[1]}</button>`)}</div>
+      </div>` : ''}
     </div>`;
+  }
+  // Камера на фото и подсказки «Добавить фото», «Указать город», «Подтвердить почту».
+  function bindIdCard(again) {
+    $('[data-ava-pick]').onclick = () => pickAvatar(again);
+    $$('[data-todo]').forEach((b) => {
+      b.onclick = () => {
+        const t = b.dataset.todo;
+        if (t === 'avatar') pickAvatar(again);
+        else if (t === 'city') go('/profile/settings#s-city');
+        else verifyModal(again);
+      };
+    });
   }
 
   // Значки доверия продавца: «Телефон подтверждён», «ИП проверен» / «Компания проверена».
@@ -2316,11 +2346,12 @@
     return { '/favorites': 'fav', '/messages': 'msg', '/admin': 'admin', '/new': 'new' }[p.startsWith('/messages') ? '/messages' : p] || p;
   }
   // Пункт меню со значком — один для меню профиля, панели ≡ и меню модерации.
-  const navLink = (href, icon, label, on, right = '') => html`<a href="${href}" class="${on ? 'on' : ''}"${on ? raw(' aria-current="page"') : ''}>${ic(icon, 20)}<span class="lbl">${label}</span>${right}</a>`;
+  const navLink = (href, icon, label, on, right = '', key = '') => html`<a href="${href}" class="${on ? 'on' : ''}"${on ? raw(' aria-current="page"') : ''}${key ? raw(` data-k="${key}"`) : ''}>${ic(icon, 20)}<span class="lbl">${label}</span>${right}</a>`;
+  // На телефоне в профиле меню прячется, а четыре пункта (data-k: msg, fav, searches, reviews) становятся плитками.
   function profileNav(full = false) {
     const active = navKey();
     const u = S.user;
-    const item = (href, icon, label, key = href, right = '') => navLink(href, icon, label, active === key, right);
+    const item = (href, icon, label, key = href, right = '') => navLink(href, icon, label, active === key, right, key);
     const head = (t) => html`<div class="pf-nav-h">${t}</div>`;
     const help = HELP_LINKS.map(([href, icon]) => item(href, icon, FOOTER_LABEL[href]));
     if (!u) {
@@ -2330,29 +2361,24 @@
         ${head('Помощь')}${help}
       </nav>`;
     }
-    const set = (id, icon, label) => item(`/profile/settings#${id}`, icon, label, '');
+    const pub = item(`/u/${u.id}`, 'eye', 'Как меня видят покупатели');
     return html`<nav class="pf-nav ${full ? 'full' : ''}" aria-label="${full ? 'Меню' : 'Разделы профиля'}">
       ${item('/profile', 'tag', 'Мои объявления', 'listings')}
-      ${item('/profile/reviews', 'star', 'Отзывы', 'reviews', u.rating && u.rating.count ? html`<span class="nav-rating">${starSvg(true, 14)}${fmtAvg(u.rating)}</span>` : '')}
+      ${item('/messages', 'chat', 'Сообщения', 'msg', html`<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span>`)}
+      ${item('/favorites', 'heart', 'Избранное', 'fav')}
       ${item('/profile/searches', 'bell', 'Поиски', 'searches', freshBadge())}
       ${item('/profile/following', 'users', 'Подписки', 'following', html`<span class="badge ${S.fresh && S.fresh.follow ? '' : 'hidden'}" data-fresh-follow>${S.fresh ? S.fresh.follow || 0 : 0}</span>`)}
-      ${item('/favorites', 'heart', 'Избранное', 'fav')}
-      ${item('/messages', 'chat', 'Сообщения', 'msg', html`<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span>`)}
+      ${item('/profile/reviews', 'star', 'Отзывы', 'reviews', u.rating && u.rating.count ? html`<span class="nav-rating">${starSvg(true, 14)}${fmtAvg(u.rating)}</span>` : '')}
       ${item('/profile/business', 'store', 'Для бизнеса', 'business', u.plan ? html`<span class="nav-plan">${u.plan.id === 'pro' ? 'Про' : 'Магазин'}</span>` : '')}
-      ${full ? '' : item('/profile/settings', 'gear', 'Настройки', 'settings')}
+      ${full ? '' : html`<hr>${item('/profile/settings', 'gear', 'Настройки', 'settings')}`}
       ${item('/messages/support', 'headset', 'Поддержка', 'support')}
       ${u.isAdmin ? item('/admin', 'shield', 'Модерация', 'admin') : ''}
-      ${full ? html`${head('Настройки профиля')}
-        ${set('s-photo', 'camera', 'Фото профиля')}
-        ${set('sf', 'user', 'Имя, город и телефон')}
-        ${set('sn', 'bell', 'Уведомления')}
-        ${set('s-biz', 'shield', 'Для бизнеса')}
-        ${set('sp', 'lock', 'Пароль')}
-        ${set('s-acc', 'gear', 'Аккаунт')}
+      ${full ? html`${head('Настройки')}
+        ${SET_SECTIONS.map(([id, icon, label]) => item(`/profile/settings#${id}`, icon, label, ''))}
         ${head('Публичный профиль')}
-        ${item(`/u/${u.id}`, 'eye', 'Как меня видят покупатели')}
+        ${pub}
         <button type="button" data-share-me>${ic('share', 20)}<span class="lbl">Поделиться профилем</span></button>
-        ${head('Помощь')}${help}` : ''}
+        ${head('Помощь')}${help}` : pub}
       <hr>
       <button type="button" class="out" data-logout>${ic('logout', 20, 2)}<span class="lbl">Выйти из аккаунта</span></button>
     </nav>`;
@@ -2430,30 +2456,16 @@
   async function viewProfile(section, q) {
     if (!requireAuth()) return;
     if (!section && q.get('tab') === 'settings') { go(`/profile/settings${location.hash}`, true); return; }
+    if (section === 'settings') { viewSettings(); return; }
     const hub = !section || section === 'listings';
     const statId = section && section.startsWith('stats/') ? section.slice(6) : null;
     const bizSub = section && section.startsWith('business') ? section.split('/')[1] || '' : null;
     const sec = statId ? 'stats' : bizSub !== null ? 'business' : section || 'listings';
     const BIZ_TITLE = { '': 'Для бизнеса', shop: 'Витрина магазина', stats: 'Статистика магазина', feed: 'Автозагрузка' };
-    setTitle(sec === 'business' ? BIZ_TITLE[bizSub] : { settings: 'Настройки', stats: 'Статистика', reviews: 'Отзывы', searches: 'Поиски', following: 'Подписки' }[sec] || 'Профиль');
+    setTitle(sec === 'business' ? BIZ_TITLE[bizSub] : { stats: 'Статистика', reviews: 'Отзывы', searches: 'Поиски', following: 'Подписки' }[sec] || 'Профиль');
     const u = S.user;
     const { items } = await api('GET', '/api/my/listings');
     const count = (st) => items.filter((i) => i.status === st).length;
-    const todo = [
-      [!!u.avatar, 'Добавить фото', 'avatar'],
-      [!!u.city, 'Указать город', 'city'],
-      ...(S.config.mail ? [[u.emailVerified, 'Подтвердить почту', 'verify']] : [])
-    ];
-    const pct = Math.round(((todo.filter((t) => t[0]).length + 1) / (todo.length + 1)) * 100); // имя есть всегда
-    const badges = html`${trustBadges(u.badges)}${S.config.mail ? (u.emailVerified
-      ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>`
-      : html`<span class="pf-badge warn">${ic('warn', 13, 2)} Почта не подтверждена</span>`) : ''}
-      ${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
-    const progress = pct < 100 ? html`<div class="pf-progress">
-        <div class="pf-progress-head"><strong>Профиль заполнен на ${pct}%</strong></div>
-        <div class="pf-bar"><i style="width:${pct}%"></i></div>
-        <div class="pf-todo">${todo.filter((t) => !t[0]).map((t) => html`<button type="button" class="chip" data-todo="${t[2]}">${ic('plus', 15, 2)}${t[1]}</button>`)}</div>
-      </div>` : '';
     const fix = items.filter((i) => i.status === 'rejected');
     const attention = fix.length ? html`<div class="pf-attn">
         <span class="pf-attn-ic">${ic('warn', 20, 2)}</span>
@@ -2468,25 +2480,16 @@
         : bizSub === '' ? html`<a class="btn btn-soft" href="/business">${ic('tag', 18, 2)}<span>Тарифы и цены</span></a>` : bizSub === 'shop' ? html`<a class="btn btn-soft" href="/u/${u.id}">${ic('eye', 18, 2)}<span>Как видят покупатели</span></a>` : ''}</div>`
       : sec === 'stats'
       ? html`<div class="pf-head"><h1>Статистика</h1><div class="seg" role="tablist">${[['7', '7 дней'], ['30', '30 дней'], ['0', 'Всё время']].map(([v, t]) => html`<a role="tab" aria-selected="${v === days ? 'true' : 'false'}" class="${v === days ? 'on' : ''}" href="/profile/stats/${statId}?days=${v}">${t}</a>`)}</div></div>`
-      : sec === 'settings'
-      ? html`<div class="pf-head"><h1>Настройки</h1></div>`
       : sec === 'following'
       ? html`<div class="pf-head"><h1>Подписки</h1></div>`
       : sec === 'searches'
       ? html`<div class="pf-head"><h1>Поиски</h1><a class="btn btn-soft" href="/search">${ic('search', 18, 2)}<span>Новый поиск</span></a></div>`
       : sec === 'reviews'
       ? html`<div class="pf-head"><h1>Отзывы</h1><div class="seg" role="tablist">${[['', 'Обо мне'], ['mine', 'Я оставил']].map(([v, t]) => html`<a role="tab" aria-selected="${(q.get('tab') || '') === v ? 'true' : 'false'}" class="${(q.get('tab') || '') === v ? 'on' : ''}" href="/profile/reviews${v ? `?tab=${v}` : ''}">${t}</a>`)}</div></div>`
-      : html`<div class="pf-head"><h1>Мои объявления</h1><a class="btn btn-dark" href="/new" aria-label="Разместить объявление">${ic('plus', 18, 2.2)}<span>Разместить</span></a></div>`;
+      : html`<div class="pf-head"><h1>Мои объявления</h1><a class="btn btn-accent" href="/new" aria-label="Разместить объявление">${ic('plus', 18, 2.2)}<span>Разместить</span></a></div>`;
     app.innerHTML = String(html`<div class="wrap pf2 ${hub ? 'is-hub' : 'is-section'}">
       <aside class="pf-side">
-        ${idCard(u, {
-          own: true,
-          badges,
-          ratingHref: '/profile/reviews',
-          stats: [[count('active'), plural(count('active'), 'активное', 'активных', 'активных')], [count('sold'), 'продано']],
-          extra: progress
-        })}
-        ${attention}
+        ${idCard(u, [[count('active'), plural(count('active'), 'активное', 'активных', 'активных'), '/profile?status=active'], [count('sold'), 'продано', '/profile?status=sold']])}
         ${profileNav()}
       </aside>
       <section class="pf-main">
@@ -2497,21 +2500,12 @@
       </section>
     </div>`);
     const again = () => viewProfile(section, q);
-    $('[data-ava-pick]').onclick = () => pickAvatar(again);
-    $$('[data-todo]').forEach((b) => {
-      b.onclick = async () => {
-        const t = b.dataset.todo;
-        if (t === 'avatar') pickAvatar(again);
-        else if (t === 'city') go('/profile/settings#s-city');
-        else verifyModal(again);
-      };
-    });
+    bindIdCard(again);
     if (sec === 'stats') return renderStats(statId, days);
     if (sec === 'business') return renderBusinessHub(bizSub, bizDays, again);
     if (sec === 'reviews') return renderMyReviews(q.get('tab') === 'mine' ? 'mine' : 'about', again);
     if (sec === 'searches') return renderSavedSearches(again);
     if (sec === 'following') return renderFollowing(again);
-    if (sec === 'settings') return renderSettings(again);
     return renderMyListings(items, q.get('status') || 'active', again);
   }
 
@@ -2650,12 +2644,18 @@
     </div>`);
   }
 
-  // Уведомления: какие push и письма бывают (поле API, название, пояснение).
-  const NOTIFY_PUSH = [['pushMessages', 'Сообщения', 'Новые сообщения в чатах и ответы поддержки'], ['pushSearches', 'Поиски и подписки', 'Новые объявления по вашим поискам и от продавцов, на которых вы подписаны'],
-    ['pushPrices', 'Снижение цены', 'Объявления из избранного стали дешевле'], ['pushModeration', 'Модерация и отзывы', 'Решения по объявлениям, новые отзывы о вас']];
-  const NOTIFY_MAIL = [['notifyMessages', 'Сообщения', 'Если не прочитали в течение 5 минут, не чаще раза в 15 минут'], ['notifyDigest', 'Подборка за день', 'Новое по поискам и подпискам, снижение цен — одним письмом'],
-    ['notifyModeration', 'Решения модерации', 'Опубликовано, отклонено, ответ на апелляцию'], ['notifyReviews', 'Отзывы', 'Новый отзыв о вас, решения по отзывам и ответ продавца']];
-  const notifySwitch = (u, k, t, sub) => html`<label class="switch"><span>${t}<small>${sub}</small></span><input type="checkbox" name="${k}" ${u[k] ? raw('checked') : ''}><span class="track"></span></label>`;
+  // Уведомления таблицей: событие, пояснение, поле push и поле письма (null — такого канала у события нет).
+  const NOTIFY_ROWS = [
+    ['Сообщения', 'Чаты и ответы поддержки. Письмо — если не прочитали за 5 минут', 'pushMessages', 'notifyMessages'],
+    ['Поиски и подписки', 'Новые объявления по вашим поискам и от продавцов, на которых вы подписаны', 'pushSearches', null],
+    ['Снижение цены', 'Подешевело то, что у вас в избранном', 'pushPrices', null],
+    ['Подборка за день', 'Новое по поискам и подпискам и снижение цен — одним письмом', null, 'notifyDigest'],
+    ['Модерация', 'Решения по объявлениям и апелляциям, проверка бизнеса, оплаты', 'pushModeration', 'notifyModeration'],
+    ['Отзывы', 'Новый отзыв о вас и решения по отзывам', 'pushReviews', 'notifyReviews']
+  ];
+  const notifyCell = (u, k, title, kind) => (k
+    ? html`<label class="mini-switch"><input type="checkbox" name="${k}" aria-label="${kind} — ${title}" ${u[k] ? raw('checked') : ''}><span class="track"></span></label>`
+    : html`<span class="ntf-none" title="Для этого события нет">—</span>`);
 
   // Этот телефон или компьютер: включить, проверить, выключить push.
   async function renderPushDevice(el) {
@@ -2675,8 +2675,11 @@
   // Для бизнеса: заявка на проверку ИП или компании (ИНН, ОГРН/ОГРНИП) и её статус.
   function bizBlock(b) {
     if (b && b.status === 'verified') return html`<div class="biz-ok">${ic('shield', 22, 2)}<span><b>${b.name} — ${b.kind === 'ip' ? 'ИП проверен' : 'компания проверена'}</b><span>ИНН ${b.inn} · ${b.kind === 'ip' ? 'ОГРНИП' : 'ОГРН'} ${b.ogrn}. Значок видят покупатели у ваших объявлений.</span></span></div>
-      <div><button type="button" class="btn btn-line btn-sm" data-biz-del>Убрать данные бизнеса</button></div>`;
-    return html`${b && b.status === 'pending' ? html`<div class="banner warn">Заявка отправлена ${when(b.at)} — модератор сверит данные по ЕГРЮЛ/ЕГРИП, обычно в течение дня.</div>` : ''}
+      <div class="set-btns"><a class="btn btn-soft btn-sm" href="/profile/business">${ic('store', 16, 2)}Тарифы и продвижение</a><button type="button" class="btn btn-line btn-sm" data-biz-del>Убрать данные бизнеса</button></div>`;
+    const stage = b && b.status === 'pending' ? 2 : 1;
+    const step = (n, icon, t, sub) => html`<li class="${n === stage ? 'on' : n < stage ? 'done' : ''}"><span class="bs-n">${n}</span><span class="bs-ic">${ic(n < stage ? 'check' : icon, 20)}</span><b>${t}</b><small>${sub}</small></li>`;
+    return html`<ol class="biz-steps">${step(1, 'edit', 'Заполните данные', 'Название, ИНН и ОГРН')}${step(2, 'shield', 'Проверка модератором', 'Сверим с ЕГРЮЛ или ЕГРИП')}${step(3, 'store', 'Значок у объявлений', 'Покупатели видят, что вы бизнес')}</ol>
+      ${b && b.status === 'pending' ? html`<div class="banner warn">Заявка отправлена ${when(b.at)} — модератор сверит данные по ЕГРЮЛ/ЕГРИП, обычно в течение дня.</div>` : ''}
       ${b && b.status === 'rejected' ? html`<div class="banner danger"><strong>Проверка не пройдена:</strong> ${b.note}</div>` : ''}
       <p class="muted" style="margin:0;font-size:14px">ИП и компании получают значок «ИП проверен» или «Компания проверена» — покупатели доверяют таким продавцам больше. Данные сверяет модератор, другие пользователи видят только название.</p>
       <form id="bf" class="biz-form" novalidate>
@@ -2704,98 +2707,157 @@
     });
   }
 
-  function renderSettings(reload) {
+  // ================= настройки =================
+  // Слева карточка и пять разделов, справа открыт один. Раздел — в #якоре, старые ссылки (#s-photo, #s-city) ведут в «Профиль».
+  // На телефоне без якоря — карточка и список разделов; раздел открывается своим экраном со ссылкой «Настройки».
+  const SET_SECTIONS = [['sf', 'user', 'Профиль'], ['sn', 'bell', 'Уведомления'], ['sp', 'lock', 'Пароль и вход'], ['s-biz', 'shield', 'Для бизнеса'], ['s-acc', 'mail', 'Аккаунт']];
+  const SET_ALIAS = { 's-photo': 'sf', 's-city': 'sf' };
+  // Яндекс ID и VK ID: включённые на сайте и уже привязанные (отвязать можно, даже если вход выключили).
+  const myOauth = (u) => OAUTH.filter(([k]) => (S.config.oauth && S.config.oauth[k]) || u.oauth.includes(k));
+  function viewSettings() {
+    setTitle('Настройки');
     const u = S.user;
-    const row = (label, value, action = '') => html`<div class="set-row"><div><span class="set-k">${label}</span><span class="set-v">${value}</span></div>${action}</div>`;
-    $('#box').innerHTML = String(html`<div class="set">
-      <section class="set-group" id="s-photo">
-        <h2>Фото профиля</h2>
-        <div class="set-ava">${ava(u, 'lg')}
-          <div><p class="muted">Фото видят покупатели и продавцы — на объявлениях и в чатах. JPG, PNG или WebP, обрежем по кругу.</p>
-            <div class="set-btns"><button type="button" class="btn btn-dark btn-sm" data-ava-set>${u.avatar ? 'Заменить фото' : 'Загрузить фото'}</button>
-              ${u.avatar ? html`<button type="button" class="btn btn-line btn-sm" data-ava-del>Убрать</button>` : ''}</div></div>
-        </div>
-      </section>
-
-      <form class="set-group" id="sf">
-        <h2>Профиль</h2>
-        <div class="field"><label for="s-name">Имя</label><input id="s-name" name="name" class="input" maxlength="60" value="${u.name}" required autocomplete="name"></div>
-        <div class="field"><label for="s-city">Город</label><input id="s-city" name="city" class="input" list="cities" value="${u.city || ''}" placeholder="Подставим в новые объявления">
-          <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
-        <div class="field"><label for="s-phone">Телефон</label><input id="s-phone" name="phone" class="input" type="tel" inputmode="tel" maxlength="30" value="${u.phone || ''}" placeholder="+7" autocomplete="tel">
-          <span class="help">${u.phoneVia ? `Подтверждён через ${u.phoneVia === 'vk' ? 'VK ID' : 'Яндекс ID'} · ` : ''}Другим пользователям не показывается</span></div>
-        <div><button class="btn btn-dark" type="submit">Сохранить</button></div>
-      </form>
-
-      <section class="set-group set-wide" id="sn">
-        <h2>Уведомления</h2>
-        <div id="push-dev"></div>
-        <div class="set-cols">
-          <div class="set-col"><h3 class="set-h3">${ic('bell', 18, 2)}Push на телефон и компьютер</h3>
-            ${NOTIFY_PUSH.map(([k, t, sub]) => notifySwitch(u, k, t, sub))}</div>
-          ${S.config.mail ? html`<div class="set-col"><h3 class="set-h3">${ic('mail', 18, 2)}Письма на ${u.email}</h3>
-            ${NOTIFY_MAIL.map(([k, t, sub]) => notifySwitch(u, k, t, sub))}</div>` : ''}
-        </div>
-      </section>
-
-      <form class="set-group" id="sp" autocomplete="on">
-        <h2>Пароль</h2>
-        <input type="email" name="username" value="${u.email}" autocomplete="username" hidden>
-        <div class="field"><label for="p-cur">Текущий пароль</label><input id="p-cur" name="current" class="input" type="password" autocomplete="current-password" required></div>
-        <div class="field"><label for="p-new">Новый пароль</label><input id="p-new" name="password" class="input" type="password" minlength="8" autocomplete="new-password" required><span class="help">Минимум 8 символов. На других устройствах потребуется войти заново.</span></div>
-        <div><button class="btn btn-dark" type="submit">Сменить пароль</button></div>
-      </form>
-
-      <section class="set-group" id="s-biz">
-        <h2>Для бизнеса</h2>
-        ${bizBlock(u.business)}
-      </section>
-
-      <section class="set-group" id="s-acc">
-        <h2>Аккаунт</h2>
-        ${row('Email для входа', u.email, S.config.mail ? (u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 14, 2.4)} Подтверждён</span>` : html`<button type="button" class="btn btn-soft btn-sm" id="verify-again">Подтвердить</button>`) : '')}
-        ${row('На Торгане', `с ${since(u.createdAt)}`)}
-        ${OAUTH.filter(([k]) => (S.config.oauth && S.config.oauth[k]) || u.oauth.includes(k)).map(([k, name]) => row(`Вход через ${name}`, u.oauth.includes(k) ? 'привязан' : 'не привязан',
-          u.oauth.includes(k) ? html`<button type="button" class="btn btn-line btn-sm" data-unlink="${k}">Отвязать</button>` : html`<button type="button" class="btn btn-soft btn-sm" data-link="${k}">Привязать</button>`))}
-        <div class="set-row"><div><span class="set-k">Удалить аккаунт</span><span class="set-v muted">Напишите в поддержку с этого email — удалим аккаунт и данные.</span></div><a class="btn btn-soft btn-sm" href="/messages/support">Поддержка</a></div>
-      </section>
-    </div>`);
-    // Переход из меню ≡ к группе настроек (#sp) или к полю (#s-city).
-    const to = location.hash.length > 1 && document.getElementById(location.hash.slice(1));
-    if (to) { const field = to.matches('input'); to.scrollIntoView({ block: field ? 'center' : 'start' }); if (field) to.focus(); }
-    $('[data-ava-set]').onclick = () => pickAvatar(reload);
-    const del = $('[data-ava-del]'); if (del) del.onclick = () => removeAvatar(reload);
-    $('#sf').onsubmit = async (e) => {
-      e.preventDefault();
-      const f = e.target;
-      try {
-        const r = await api('PATCH', '/api/me', { name: f.name.value, city: f.city.value, phone: f.phone.value });
-        S.user = r.user; toast('Сохранено'); renderHeader(); reload();
-      } catch (ex) { toast(ex.message, true); }
+    const hash = location.hash.slice(1);
+    const cur = SET_ALIAS[hash] || (SET_SECTIONS.some(([id]) => id === hash) ? hash : '');
+    const mailOn = (k) => k && S.config.mail;
+    const nAll = NOTIFY_ROWS.reduce((n, [, , p, m]) => n + (p ? 1 : 0) + (mailOn(m) ? 1 : 0), 0);
+    const nOn = NOTIFY_ROWS.reduce((n, [, , p, m]) => n + (p && u[p] ? 1 : 0) + (mailOn(m) && u[m] ? 1 : 0), 0);
+    const b = u.business;
+    const hint = {
+      sf: 'Фото, имя, город, телефон',
+      sn: `Включено ${nOn} из ${nAll}`,
+      sp: ['Пароль', ...myOauth(u).map(([, name]) => name)].join(', '),
+      's-biz': b ? { verified: b.kind === 'ip' ? 'ИП проверен' : 'Компания проверена', pending: 'Заявка на проверке', rejected: 'Проверка не пройдена' }[b.status] : 'Значок «ИП проверен»',
+      's-acc': u.email
     };
-    $$('#sn input[name]').forEach((inp) => {
-      inp.onchange = async () => {
-        try { const r = await api('PATCH', '/api/me', { [inp.name]: inp.checked }); S.user = r.user; toast(inp.checked ? 'Включено' : 'Выключено'); } catch (ex) { inp.checked = !inp.checked; toast(ex.message, true); }
-      };
+    app.innerHTML = String(html`<div class="wrap setx ${cur ? 'has-sec' : ''}">
+      <div class="setx-head"><h1>Настройки</h1><p>Как вас видят покупатели и как Торгана с вами связывается</p></div>
+      <aside class="setx-side">
+        ${idCard(u)}
+        <nav class="setx-nav" aria-label="Разделы настроек">${SET_SECTIONS.map(([id, icon, label]) => html`<a href="/profile/settings#${id}" data-sec="${id}"><span class="setx-ic">${ic(icon, 20)}</span><span class="setx-t"><b>${label}</b><small>${hint[id]}</small></span>${ic('right', 18, 2)}</a>`)}</nav>
+        <a class="setx-pub" href="/u/${u.id}">${ic('eye', 18)}Как меня видят покупатели</a>
+        <div class="setx-m"><a class="btn btn-soft" href="/profile">Мой профиль</a><button type="button" class="btn btn-soft" data-logout>Выйти</button></div>
+      </aside>
+      <section class="setx-main"><a class="setx-back" href="/profile/settings">${ic('left', 18, 2)}Настройки</a><div id="box" class="setx-panel"></div></section>
+    </div>`);
+    const again = () => viewSettings();
+    bindIdCard(again);
+    const open = (id) => {
+      $$('[data-sec]').forEach((a) => { const on = a.dataset.sec === id; a.classList.toggle('on', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+      renderSettings(id, again);
+    };
+    // Разделы переключаются без перезагрузки страницы; «Назад» в браузере вернёт прошлый раздел.
+    $('.setx-nav').addEventListener('click', (e) => {
+      const a = e.target.closest('[data-sec]');
+      if (!a || e.metaKey || e.ctrlKey || e.shiftKey) return;
+      e.preventDefault();
+      history.pushState({}, '', a.getAttribute('href'));
+      $('.setx').classList.add('has-sec');
+      open(a.dataset.sec);
+      if (window.matchMedia('(max-width: 600px)').matches) window.scrollTo(0, 0);
     });
-    renderPushDevice($('#push-dev'));
-    $$('[data-link]').forEach((b) => { b.onclick = () => oauthGo(b.dataset.link, { link: true }); });
-    $$('[data-unlink]').forEach((b) => {
-      b.onclick = async () => { try { await api('POST', `/api/auth/oauth/${b.dataset.unlink}/unlink`); toast('Отвязано'); await refreshMe(); reload(); } catch (e) { toast(e.message, true); } };
-    });
+    open(cur || 'sf');
+  }
+
+  function renderSettings(sec, reload) {
+    const u = S.user;
+    const head = (t, sub) => html`<div class="set-h"><h2>${t}</h2><p>${sub}</p></div>`;
+    const row = (icon, label, value, action = '') => html`<div class="set-row"><span class="set-ic">${ic(icon, 20)}</span><div><span class="set-k">${label}</span><span class="set-v">${value}</span></div>${action}</div>`;
+    const oauth = myOauth(u);
+    const names = oauth.map(([, name]) => name).join(' или ');
+    const phoneNote = u.phoneVia
+      ? html`<div class="set-note ok">${ic('shield', 18, 2)}<span>Подтверждён через ${u.phoneVia === 'vk' ? 'VK ID' : 'Яндекс ID'} — у объявлений значок «Телефон подтверждён». Другим пользователям номер не показывается.</span></div>`
+      : oauth.length ? html`<div class="set-note">${ic('shield', 18, 2)}<span>Подтвердите номер через ${names} — у объявлений появится значок «Телефон подтверждён». Другим пользователям номер не показывается.</span><a href="/profile/settings#sp">Подтвердить</a></div>`
+        : html`<span class="help">Другим пользователям не показывается</span>`;
+    const body = {
+      sf: () => html`${head('Профиль', 'Покупатели видят это в объявлениях и в чате')}
+        <div class="set-ava" id="s-photo">${u.avatar ? ava(u, 'xl') : html`<span class="set-ava-empty">${ic('camera', 28, 1.8)}</span>`}
+          <div class="set-ava-t"><b>Фото профиля</b><span>С фото вам чаще пишут. JPG, PNG или WebP — обрежем по кругу</span></div>
+          <div class="set-btns"><button type="button" class="btn btn-accent" data-ava-set>${ic('camera', 18, 2)}${u.avatar ? 'Заменить' : 'Загрузить фото'}</button>${u.avatar ? html`<button type="button" class="btn btn-soft" data-ava-del>Убрать</button>` : ''}</div>
+        </div>
+        <form id="sf" class="set-form">
+          <div class="set-fields">
+            <div class="field"><label for="s-name">Имя</label><input id="s-name" name="name" class="input" maxlength="60" value="${u.name}" required autocomplete="name"></div>
+            <div class="field"><label for="s-city">Город</label><div class="ed-icon-input">${ic('pin', 18)}<input id="s-city" name="city" class="input" list="cities" value="${u.city || ''}" placeholder="Подставим в новые объявления"></div>
+              <datalist id="cities">${S.config.cities.map((c) => html`<option value="${c}">`)}</datalist></div>
+            <div class="field wide"><label for="s-phone">Телефон</label><input id="s-phone" name="phone" class="input" type="tel" inputmode="tel" maxlength="30" value="${u.phone || ''}" placeholder="+7" autocomplete="tel">${phoneNote}</div>
+          </div>
+          <div class="set-foot"><span>Имя и фото сразу обновятся во всех ваших объявлениях</span><button type="reset" class="btn btn-soft">Отменить</button><button class="btn btn-accent" type="submit">Сохранить</button></div>
+        </form>`,
+      sn: () => html`${head('Уведомления', 'О чём сообщать и куда. Переключатели сохраняются сразу')}
+        <div id="push-dev"></div>
+        <table class="ntf" id="sn">
+          <thead><tr><th scope="col">Событие</th><th scope="col">${ic('bell', 16, 2)}Push</th>${S.config.mail ? html`<th scope="col">${ic('mail', 16, 2)}Письмо</th>` : ''}</tr></thead>
+          <tbody>${NOTIFY_ROWS.filter(([, , p]) => p || S.config.mail).map(([t, sub, p, m]) => html`<tr><th scope="row"><b>${t}</b><small>${sub}</small></th><td>${notifyCell(u, p, t, 'Push')}</td>${S.config.mail ? html`<td>${notifyCell(u, m, t, 'Письмо')}</td>` : ''}</tr>`)}</tbody>
+        </table>
+        ${S.config.mail ? html`<p class="set-small">Письма приходят на ${u.email}</p>` : ''}`,
+      sp: () => html`${head('Пароль и вход', oauth.length ? `Входите по паролю или в одно касание через ${names}` : 'Пароль для входа на Торгану')}
+        ${oauth.length ? html`<div class="set-block"><h3>Быстрый вход</h3><div class="set-list">${oauth.map(([k, name]) => {
+    const on = u.oauth.includes(k);
+    return html`<div class="set-row oauth-${k}"><span class="oauth-mark" aria-hidden="true">${k === 'vk' ? 'VK' : 'Я'}</span><div><span class="set-v">${name}</span><span class="set-k">${on ? `Привязан${u.phoneVia === k ? ' · телефон подтверждён' : ''}` : 'Не привязан'}</span></div>
+      ${on ? html`<button type="button" class="btn btn-line btn-sm" data-unlink="${k}">Отвязать</button>` : html`<button type="button" class="btn btn-soft btn-sm" data-link="${k}">Привязать</button>`}</div>`;
+  })}</div></div>` : ''}
+        <form class="set-block set-form" id="sp" autocomplete="on">
+          <h3>Сменить пароль</h3>
+          <input type="email" name="username" value="${u.email}" autocomplete="username" hidden>
+          <div class="set-fields">
+            <div class="field"><label for="p-cur">Текущий пароль</label><input id="p-cur" name="current" class="input" type="password" autocomplete="current-password" required></div>
+            <div class="field"><label for="p-new">Новый пароль</label><input id="p-new" name="password" class="input" type="password" minlength="8" autocomplete="new-password" required></div>
+          </div>
+          <div class="set-foot"><span>Минимум 8 символов. На других устройствах потребуется войти заново</span><button class="btn btn-accent" type="submit">Сменить пароль</button></div>
+        </form>`,
+      's-biz': () => html`${head('Для бизнеса', 'ИП и компании получают значок у всех объявлений — покупатели доверяют таким продавцам больше')}${bizBlock(u.business)}`,
+      's-acc': () => html`${head('Аккаунт', 'Почта для входа и писем от Торганы')}
+        <div class="set-list">
+          ${row('mail', 'Почта', u.email, S.config.mail ? (u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 14, 2.4)} Подтверждена</span>` : html`<button type="button" class="btn btn-soft btn-sm" id="verify-again">Подтвердить</button>`) : '')}
+          ${row('clock', 'На Торгане', `с ${since(u.createdAt)}`)}
+          ${row('logout', 'Выйти из аккаунта', 'На этом устройстве', html`<button type="button" class="btn btn-soft btn-sm" data-logout>Выйти</button>`)}
+        </div>
+        <div class="set-danger"><div><b>Удалить аккаунт</b><span>Напишите в поддержку с этой почты — удалим профиль, объявления и переписку.</span></div><a class="btn btn-line btn-sm" href="/messages/support">Написать в поддержку</a></div>`
+    };
+    $('#box').innerHTML = String(body[sec]());
+    // Пришли по ссылке на поле (#s-city) или фото (#s-photo) — покажем его.
+    const to = location.hash.length > 1 && location.hash.slice(1) !== sec && document.getElementById(location.hash.slice(1));
+    if (to) { const field = to.matches('input'); to.scrollIntoView({ block: 'center' }); if (field) to.focus(); }
     const q = new URLSearchParams(location.search).get('oauth');
     if (q) { toast(q === 'linked' ? 'Готово — сервис привязан' : 'Этот аккаунт сервиса уже привязан к другому пользователю', q !== 'linked'); history.replaceState({}, '', location.pathname + location.hash); }
-    bindBizForm(reload);
-    $('#sp').onsubmit = async (e) => {
-      e.preventDefault();
-      const f = e.target; const b = $('button[type=submit]', f); b.disabled = true;
-      try {
-        const r = await api('POST', '/api/me/password', { current: f.current.value, password: f.password.value });
-        f.reset();
-        toast(r.signedOut ? `Пароль изменён. Вышли на других устройствах: ${r.signedOut}` : 'Пароль изменён');
-      } catch (ex) { toast(ex.message, true); }
-      b.disabled = false;
-    };
+    if (sec === 'sf') {
+      $('[data-ava-set]').onclick = () => pickAvatar(reload);
+      const del = $('[data-ava-del]'); if (del) del.onclick = () => removeAvatar(reload);
+      $('#sf').onsubmit = async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        try {
+          const r = await api('PATCH', '/api/me', { name: f.name.value, city: f.city.value, phone: f.phone.value });
+          S.user = r.user; toast('Сохранено'); renderHeader(); reload();
+        } catch (ex) { toast(ex.message, true); }
+      };
+    }
+    if (sec === 'sn') {
+      $$('#sn input[name]').forEach((inp) => {
+        inp.onchange = async () => {
+          try { const r = await api('PATCH', '/api/me', { [inp.name]: inp.checked }); S.user = r.user; toast(inp.checked ? 'Включено' : 'Выключено'); } catch (ex) { inp.checked = !inp.checked; toast(ex.message, true); }
+        };
+      });
+      renderPushDevice($('#push-dev'));
+    }
+    if (sec === 'sp') {
+      $$('[data-link]').forEach((b) => { b.onclick = () => oauthGo(b.dataset.link, { link: true }); });
+      $$('[data-unlink]').forEach((b) => {
+        b.onclick = async () => { try { await api('POST', `/api/auth/oauth/${b.dataset.unlink}/unlink`); toast('Отвязано'); await refreshMe(); reload(); } catch (e) { toast(e.message, true); } };
+      });
+      $('#sp').onsubmit = async (e) => {
+        e.preventDefault();
+        const f = e.target; const btn = $('button[type=submit]', f); btn.disabled = true;
+        try {
+          const r = await api('POST', '/api/me/password', { current: f.current.value, password: f.password.value });
+          f.reset();
+          toast(r.signedOut ? `Пароль изменён. Вышли на других устройствах: ${r.signedOut}` : 'Пароль изменён');
+        } catch (ex) { toast(ex.message, true); }
+        btn.disabled = false;
+      };
+    }
+    if (sec === 's-biz') bindBizForm(reload);
     const va = $('#verify-again');
     if (va) va.onclick = () => verifyModal(reload);
   }
@@ -2805,24 +2867,33 @@
     const { user: u, items } = await api('GET', `/api/users/${id}`);
     setTitle(u.name);
     const own = S.user && S.user.id === u.id;
-    app.innerHTML = String(html`<div class="wrap pf2 pf-pub">
-      <aside class="pf-side">
-        ${idCard(u, {
-          badges: html`${trustBadges(u.badges)}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}`,
-          ratingHref: `/u/${u.id}?tab=reviews`,
-          stats: [[u.activeCount, plural(u.activeCount, 'объявление', 'объявления', 'объявлений')], [u.soldCount, 'продано'], [u.followers || 0, plural(u.followers || 0, 'подписчик', 'подписчика', 'подписчиков'), 'followers']],
-          extra: u.rating.count ? html`<div class="pf-rv-sum">${ratingSummary(u.rating)}</div>` : '',
-          foot: html`<div class="pf-pub-actions">${own ? '' : followBtn(u.id, u.following, 'btn-dark')}<button type="button" class="btn btn-soft btn-block" data-share>${ic('share', 18)}Поделиться профилем</button>${own ? html`<a class="btn btn-dark btn-block" href="/profile">Мой профиль</a>` : ''}</div>`
-        })}
-      </aside>
-      <section class="pf-main">
-        ${u.shop ? shopHero(u.shop) : ''}
-        <div class="seg seg-lg" role="tablist">
-          <a role="tab" aria-selected="${tab === 'ads' ? 'true' : 'false'}" class="${tab === 'ads' ? 'on' : ''}" href="/u/${u.id}">Объявления <span class="n">${u.activeCount}</span></a>
-          <a role="tab" aria-selected="${tab === 'reviews' ? 'true' : 'false'}" class="${tab === 'reviews' ? 'on' : ''}" href="/u/${u.id}?tab=reviews">${starSvg(true, 15)}Отзывы <span class="n">${u.rating.count}</span></a>
+    const followers = u.followers || 0;
+    // Сверху — широкая карточка продавца, ниже вкладки и объявления во всю ширину.
+    app.innerHTML = String(html`<div class="wrap pub">
+      ${own ? html`<div class="pub-own">${ic('eye', 18)}<span>Так ваш профиль видят покупатели</span><a href="/profile/settings">Изменить профиль</a><a href="/profile">Мой профиль</a></div>` : ''}
+      <section class="pub-hero" aria-label="Продавец">
+        <div class="pub-ava">${ava(u, 'xl')}</div>
+        <div class="pub-who">
+          <h1>${u.name}</h1>
+          <div class="pub-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
+          ${ratingLine(u.rating, `/u/${u.id}?tab=reviews`)}
+          <div class="pf-badges">${trustBadges(u.badges)}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}</div>
         </div>
-        <div id="box">${tab === 'ads' ? (items.length ? grid(items) : html`<div class="pf-empty sm"><h3>Активных объявлений нет</h3><p>Загляните позже.</p></div>`) : html`<div class="loader"></div>`}</div>
+        <div class="pub-side">
+          <div class="pf-nums">
+            <div class="pf-num"><b>${NF.format(u.activeCount)}</b><span>${plural(u.activeCount, 'объявление', 'объявления', 'объявлений')}</span></div>
+            <div class="pf-num"><b>${NF.format(u.soldCount)}</b><span>продано</span></div>
+            <div class="pf-num"><b data-followers>${NF.format(followers)}</b><span>${plural(followers, 'подписчик', 'подписчика', 'подписчиков')}</span></div>
+          </div>
+          <div class="pub-acts">${own ? html`<a class="btn btn-accent btn-block" href="/profile/settings">${ic('edit', 18)}Изменить профиль</a>` : followBtn(u.id, u.following, 'btn-accent')}<button type="button" class="icon-btn pub-share" data-share aria-label="Поделиться профилем">${ic('share', 19)}</button></div>
+        </div>
       </section>
+      ${u.shop ? shopHero(u.shop) : ''}
+      <div class="seg seg-lg" role="tablist">
+        <a role="tab" aria-selected="${tab === 'ads' ? 'true' : 'false'}" class="${tab === 'ads' ? 'on' : ''}" href="/u/${u.id}">Объявления <span class="n">${u.activeCount}</span></a>
+        <a role="tab" aria-selected="${tab === 'reviews' ? 'true' : 'false'}" class="${tab === 'reviews' ? 'on' : ''}" href="/u/${u.id}?tab=reviews">${starSvg(true, 15)}Отзывы <span class="n">${u.rating.count}</span></a>
+      </div>
+      <div id="box">${tab === 'ads' ? (items.length ? grid(items) : html`<div class="pf-empty sm"><h3>Активных объявлений нет</h3><p>Загляните позже.</p></div>`) : html`<div class="loader"></div>`}</div>
     </div>`);
     $('[data-share]').onclick = () => shareLink(`${location.origin}/u/${u.id}`, `${u.name} на Торгане`);
     if (tab !== 'reviews') return;
@@ -2832,6 +2903,7 @@
       const d = await api('GET', `/api/users/${u.id}/reviews?stars=${starsFilter}&offset=${offset}`);
       acc = acc.concat(d.items); offset += d.items.length;
       $('#box').innerHTML = String(html`<div class="rv">
+        ${u.rating.count ? html`<div class="pub-rv-sum">${ratingSummary(u.rating)}</div>` : ''}
         ${u.rating.count ? html`<div class="pf-status">${[[0, 'Все', u.rating.count], ...[5, 4, 3, 2, 1].filter((k) => u.rating.dist[k]).map((k) => [k, `${k} ★`, u.rating.dist[k]])].map(([k, t, n]) => html`<button type="button" class="chip ${k === starsFilter ? 'active' : ''}" data-stars="${k}">${t}<span class="cnt">${n}</span></button>`)}</div>` : ''}
         ${acc.length ? html`<div class="rv-list">${acc.map((rv) => reviewCard(rv))}</div>` : html`<div class="pf-empty sm"><h3>Отзывов пока нет</h3><p>Отзыв о продавце может оставить покупатель после переписки по объявлению.</p></div>`}
         ${d.more ? html`<div class="more"><button class="btn btn-soft btn-lg" type="button" data-more-rv>Показать ещё</button></div>` : ''}

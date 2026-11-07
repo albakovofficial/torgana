@@ -273,7 +273,16 @@ function pages(d) {
     ['profile-following-empty', '/profile/following', d.seller],
     ['unsubscribe-follow', `/unsubscribe?t=${'0'.repeat(32)}&k=follow-1`, null],
     // 1.18: копии и безопасность
-    ['admin-backup', '/admin?status=backup', d.admin]
+    ['admin-backup', '/admin?status=backup', d.admin],
+    // 1.19: настройки по разделам, публичный профиль с карточкой сверху
+    ['settings-profile', '/profile/settings#sf', d.seller],
+    ['settings-notify', '/profile/settings#sn', d.seller],
+    ['settings-login', '/profile/settings#sp', d.seller],
+    ['settings-biz', '/profile/settings#s-biz', d.buyer],
+    ['settings-biz-ok', '/profile/settings#s-biz', d.shop],
+    ['settings-account', '/profile/settings#s-acc', d.seller],
+    ['settings-city', '/profile/settings#s-city', d.buyer],
+    ['user-own', `/u/${d.seller.user.id}`, d.seller]
   ];
 }
 

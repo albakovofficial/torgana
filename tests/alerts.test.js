@@ -161,3 +161,11 @@ test('устройство отписалось в браузере (410) — п
   await new Promise((r) => setTimeout(r, 300));
   assert.equal((await boris.get('/api/push')).data.devices, 1);
 });
+
+test('push об отзывах — свой переключатель, отдельно от модерации', async () => {
+  assert.equal((await anna.get('/api/me')).data.user.pushReviews, true);
+  const r = await anna.patch('/api/me', { pushReviews: false });
+  assert.equal(r.data.user.pushReviews, false);
+  assert.equal(r.data.user.pushModeration, true);
+  await anna.patch('/api/me', { pushReviews: true });
+});
