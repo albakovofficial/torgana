@@ -35,6 +35,8 @@ const AI_MODEL = process.env.AI_MODEL || 'claude-sonnet-5-5';
 const SUPPORT_EMAIL = legal.operator().email;
 const TRUST_PROXY = process.env.TRUST_PROXY === '1';
 const PAYMENTS_ENABLED = false; // Безопасная сделка включится после подключения платёжной системы.
+const DAY = 24 * 3600 * 1000;
+const LISTING_TTL = Number(process.env.LISTING_TTL_MS) || 30 * DAY; // срок показа объявления (в тестах — короче)
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const db = openDb(path.join(DATA_DIR, 'torgana.db'));
@@ -134,6 +136,7 @@ function cardFromRow(r) {
     city: r.city,
     category: r.category,
     delivery: !!r.delivery,
+    exchange: !!r.exchange,
     status: r.status,
     photo: photoUrl(r.photo),
     createdAt: r.created_at,
@@ -143,7 +146,7 @@ function cardFromRow(r) {
 }
 
 const CARD_SELECT = `
-  SELECT l.id, l.title, l.price, l.price_unit, l.city, l.category, l.delivery, l.status, l.created_at, l.price_was, l.price_drop_at,
+  SELECT l.id, l.title, l.price, l.price_unit, l.city, l.category, l.delivery, l.exchange, l.status, l.created_at, l.price_was, l.price_drop_at,
     l.subcategory, l.attrs, l.metro, l.video,
     (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
     EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id = l.id AND f.user_id = ?) AS is_fav
@@ -202,9 +205,20 @@ function validateListing(body) {
   const district = str(body.district, 60);
   // video: undefined — не менять (автозагрузка), '' — убрать, имя файла — новое видео.
   const video = body.video === undefined ? undefined : str(body.video, 60);
+  // Торг и обмен: undefined — не менять (автозагрузка из фида).
+  const bargain = body.bargain === undefined ? undefined : body.bargain ? 1 : 0;
+  const exchange = body.exchange === undefined ? undefined : body.exchange ? 1 : 0;
+  // Публикация в выбранное время — не дальше чем через 30 дней; время в прошлом или «сразу» — null.
+  let publishAt = null;
+  if (body.publishAt) {
+    publishAt = Number(body.publishAt);
+    if (!Number.isFinite(publishAt)) throw new HttpError(400, 'Проверьте время публикации');
+    if (publishAt <= now()) publishAt = null;
+    else if (publishAt > now() + 31 * DAY) throw new HttpError(400, 'Отложить публикацию можно не больше чем на 30 дней');
+  }
   // Похоже на запрещённое — публикуем после проверки модератором.
   const flags = checkProhibited(title, description).map((f) => f.title).join(', ');
-  return { title, description, category, city, priceUnit, condition, delivery, price, photos, flags, subcategory, attrs, metro: station, district, video };
+  return { title, description, category, city, priceUnit, condition, delivery, bargain, exchange, publishAt, price, photos, flags, subcategory, attrs, metro: station, district, video };
 }
 
 function attachPhotos(userId, listingId, files) {
@@ -578,7 +592,8 @@ route('GET', '/api/listings/:id', (ctx) => {
   return {
     listing: {
       id: l.id, title: l.title, description: l.description, category: l.category, price: l.price, priceUnit: l.price_unit, priceWas: priceWasOf(l),
-      city: l.city, condition: l.condition, delivery: !!l.delivery, status: l.status, views: l.views, favCount,
+      city: l.city, condition: l.condition, delivery: !!l.delivery, bargain: !!l.bargain, exchange: !!l.exchange, status: l.status, views: l.views, favCount,
+      publishAt: (isOwner || isAdmin) ? l.publish_at : null, expiresAt: (isOwner || isAdmin) ? l.expires_at : null,
       subcategory: l.subcategory, attrs, specs: taxonomy.describe(l.subcategory, attrs), metro: station, district: l.district, video: video.url(l.video),
       createdAt: l.created_at, updatedAt: l.updated_at, photos, isFav, isOwner: !!isOwner,
       rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : '',
@@ -596,10 +611,10 @@ route('GET', '/api/listings/:id', (ctx) => {
 // Все объявления публикуются после проверки модератором; любая правка — снова на проверку.
 function createListing(u, v) {
   const t = now();
-  const info = db.prepare(`INSERT INTO listings (user_id, title, description, category, price, price_unit, city, condition, delivery, search_text, city_lc, status, flags,
+  const info = db.prepare(`INSERT INTO listings (user_id, title, description, category, price, price_unit, city, condition, delivery, bargain, exchange, publish_at, search_text, city_lc, status, flags,
     subcategory, attrs, metro, district, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`)
-    .run(u.id, v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description, v), norm(v.city), v.flags,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`)
+    .run(u.id, v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, v.bargain ?? 1, v.exchange ?? 0, v.publishAt || null, searchText(v.title, v.description, v), norm(v.city), v.flags,
       v.subcategory || '', JSON.stringify(v.attrs || {}), v.metro || '', v.district || '', t, t);
   const id = Number(info.lastInsertRowid);
   attachPhotos(u.id, id, v.photos);
@@ -613,17 +628,19 @@ function createListing(u, v) {
 // В историю пишем, что именно изменилось.
 function updateListing(u, l, v) {
   const before = { title: l.title, description: l.description, category: l.category, price: l.price, priceUnit: l.price_unit, city: l.city, condition: l.condition, delivery: !!l.delivery,
-    subcategory: l.subcategory, attrs: JSON.stringify(attrsOf(l)), metro: l.metro, district: l.district };
+    bargain: !!l.bargain, exchange: !!l.exchange, subcategory: l.subcategory, attrs: JSON.stringify(attrsOf(l)), metro: l.metro, district: l.district };
   const after = { title: v.title, description: v.description, category: v.category, price: v.price, priceUnit: v.priceUnit, city: v.city, condition: v.condition, delivery: !!v.delivery,
+    bargain: v.bargain === undefined ? before.bargain : !!v.bargain, exchange: v.exchange === undefined ? before.exchange : !!v.exchange,
     subcategory: v.subcategory === undefined ? l.subcategory : v.subcategory, attrs: v.attrs === undefined ? before.attrs : JSON.stringify(v.attrs),
     metro: v.metro === undefined ? l.metro : v.metro, district: v.district === undefined ? l.district : v.district };
   const changes = Object.fromEntries(Object.keys(before).filter((k) => before[k] !== after[k]).map((k) => [k, [before[k], after[k]]]));
   const oldPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(l.id).map((r) => r.file);
   const extra = { subcategory: after.subcategory, attrs: JSON.parse(after.attrs) };
-  db.prepare(`UPDATE listings SET title = ?, description = ?, category = ?, price = ?, price_unit = ?, city = ?, condition = ?, delivery = ?,
+  // Время публикации выбирают только до первой публикации (alerted = 0); потом правка просто уходит на проверку.
+  db.prepare(`UPDATE listings SET title = ?, description = ?, category = ?, price = ?, price_unit = ?, city = ?, condition = ?, delivery = ?, bargain = ?, exchange = ?, publish_at = ?,
     search_text = ?, city_lc = ?, status = 'pending', flags = ?, subcategory = ?, attrs = ?, metro = ?, district = ?, updated_at = ? WHERE id = ?`)
-    .run(v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, searchText(v.title, v.description, extra), norm(v.city),
-      v.flags || (l.status === 'pending' ? l.flags : ''), after.subcategory, after.attrs, after.metro, after.district, now(), l.id);
+    .run(v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, after.bargain ? 1 : 0, after.exchange ? 1 : 0, l.alerted ? null : v.publishAt || null,
+      searchText(v.title, v.description, extra), norm(v.city), v.flags || (l.status === 'pending' ? l.flags : ''), after.subcategory, after.attrs, after.metro, after.district, now(), l.id);
   attachPhotos(u.id, l.id, v.photos);
   if (v.video !== undefined && v.video !== l.video) { video.attach(u.id, l.id, v.video); changes.video = [l.video ? 'было' : 'не было', v.video ? 'новое' : 'убрано']; }
   const newPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(l.id).map((r) => r.file);
@@ -633,6 +650,38 @@ function updateListing(u, l, v) {
 }
 helpers.createListing = createListing;
 helpers.updateListing = updateListing;
+
+// Публикация. Объявление висит LISTING_TTL (30 дней) бесплатно, потом снимается — опубликовать снова можно в один клик, тоже бесплатно.
+// Если срок уже кончился (или fresh — отложенная публикация), объявление публикуется как новое: дата «сейчас», наверху выдачи по дате.
+// Правка опубликованного объявления срок не продлевает.
+function publishListing(id, fresh = false) {
+  const t = now();
+  db.prepare(`UPDATE listings SET status = 'active', publish_at = NULL,
+    created_at = CASE WHEN ? OR (expires_at IS NOT NULL AND expires_at <= ?) THEN ? ELSE created_at END,
+    expires_at = CASE WHEN ? OR expires_at IS NULL OR expires_at <= ? THEN ? ELSE expires_at END, updated_at = ? WHERE id = ?`)
+    .run(fresh ? 1 : 0, t, t, fresh ? 1 : 0, t, t + LISTING_TTL, t, id);
+  alerts.onPublished(id); // сохранённые поиски, подписчики, снижение цены
+}
+helpers.publishListing = publishListing;
+
+// Раз в минуту: публикуем запланированные и снимаем те, у кого прошло 30 дней.
+// Не снимаем объявления из фида (их ведёт автозагрузка) и с идущей рекламой — она оплачена на свой срок.
+function listingTick() {
+  const t = now();
+  for (const { id } of db.prepare('SELECT id FROM listings WHERE status = \'scheduled\' AND publish_at <= ?').all(t)) {
+    publishListing(id, true);
+    logEvent(id, null, 'published', { scheduled: true });
+    alerts.moderation(id, 'approved');
+  }
+  const expired = db.prepare(`SELECT id FROM listings WHERE status = 'active' AND expires_at <= ?
+    AND id NOT IN (SELECT listing_id FROM feed_items WHERE gone = 0 AND listing_id IS NOT NULL)
+    AND id NOT IN (SELECT listing_id FROM promotions WHERE status IN ('active', 'marking') AND listing_id IS NOT NULL)`).all(t);
+  for (const { id } of expired) {
+    db.prepare('UPDATE listings SET status = \'archived\', updated_at = ? WHERE id = ?').run(t, id);
+    logEvent(id, null, 'expired', {});
+    alerts.moderation(id, 'expired');
+  }
+}
 helpers.validateListing = validateListing;
 
 route('POST', '/api/listings', async (ctx) => {
@@ -654,9 +703,12 @@ route('PATCH', '/api/listings/:id', async (ctx) => {
     if (!['active', 'sold', 'archived'].includes(body.status)) throw new HttpError(400, 'Неверный статус');
     if (l.status === 'rejected') throw new HttpError(400, 'Объявление отклонено модерацией — исправьте его или подайте апелляцию');
     if (l.status === 'pending') throw new HttpError(400, 'Объявление на проверке у модератора');
-    db.prepare('UPDATE listings SET status = ?, updated_at = ? WHERE id = ?').run(body.status, now(), id);
+    // «Опубликовать снова» (и «Опубликовать сейчас» для запланированного) — бесплатно; после 30 дней — как новое.
+    if (body.status === 'active' && l.status !== 'active') publishListing(id, l.status === 'scheduled');
+    else db.prepare('UPDATE listings SET status = ?, publish_at = NULL, updated_at = ? WHERE id = ?').run(body.status, now(), id);
     logEvent(id, u.id, 'status', { status: body.status });
-    return { ok: true };
+    const r = db.prepare('SELECT status, expires_at FROM listings WHERE id = ?').get(id);
+    return { ok: true, status: r.status, expiresAt: r.expires_at };
   }
   const v = validateListing(body);
   if (v.video && v.video !== l.video) video.check(u.id, v.video);
@@ -696,7 +748,7 @@ route('GET', '/api/my/listings', (ctx) => {
     FROM listings l WHERE l.user_id = ? ORDER BY l.created_at DESC`).all(u.id);
   return {
     items: rows.map((r) => ({
-      ...cardFromRow(r), views: r.views, favCount: r.fav_count, rejectReason: r.reject_reason,
+      ...cardFromRow(r), views: r.views, favCount: r.fav_count, rejectReason: r.reject_reason, publishAt: r.publish_at, expiresAt: r.expires_at,
       appealText: r.appeal_text, appealAt: r.appeal_at, appealReply: r.appeal_reply, flags: r.flags, promo: promo.currentOf(r.id)
     }))
   };
@@ -850,7 +902,7 @@ route('GET', '/api/conversations/:id', (ctx) => {
   return {
     conversation: { id: c.id, role: c.buyer_id === u.id ? 'buyer' : 'seller' },
     review: reviews.chatState(u.id, c),
-    listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, photo: photoUrl(photo && photo.file) },
+    listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, bargain: !!l.bargain, photo: photoUrl(photo && photo.file) },
     other: { id: other.id, name: other.name, avatar: photoUrl(other.avatar), createdAt: other.created_at },
     offers: deals.offersOf(c.id), // состояния всех предложений — обновляются при каждом опросе
     messages
@@ -1108,6 +1160,7 @@ if (mailer.ready() && !db.prepare('SELECT 1 FROM settings WHERE key = ?').get('m
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('mail_codes', JSON.stringify({ on: false, at: Date.now(), by: 'owner-request' }));
 }
 alerts.start({ tickMs: Number(process.env.DIGEST_TICK_MS) || undefined, minAge: process.env.DIGEST_MIN_AGE_MS ? Number(process.env.DIGEST_MIN_AGE_MS) : undefined, anyHour: process.env.DIGEST_ANY_HOUR === '1' });
+setInterval(() => { try { listingTick(); } catch (e) { console.error('listings:', e.message); } }, Number(process.env.LISTING_TICK_MS) || 60 * 1000).unref();
 // Автопроверка объявлений, которые ждали проверки до появления автопроверок (один раз при запуске).
 for (const { id } of db.prepare('SELECT id FROM listings WHERE status = \'pending\' AND checks = \'\'').all()) autoChecks.run(id);
 
