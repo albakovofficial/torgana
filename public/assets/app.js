@@ -502,12 +502,12 @@
         <button class="btn btn-accent btn-sm" type="submit">Найти</button>
       </form>
       <nav class="header-nav" aria-label="Основное">
-        <a href="/favorites" class="icon-btn hd-ic hide-m" aria-label="Избранное" title="Избранное">${ic('heart', 21, 1.9)}</a>
-        <a href="/messages" class="icon-btn hd-ic hide-m" aria-label="Сообщения" title="Сообщения">${ic('chat', 21, 1.9)}<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span></a>
-        ${S.user ? html`<button type="button" class="icon-btn hd-ic bell-btn" data-bell aria-label="Уведомления" title="Уведомления" aria-haspopup="dialog">${ic('bell', 21, 1.9)}<span class="badge ${S.notices ? '' : 'hidden'}" data-notices>${S.notices || 0}</span></button>` : ''}
+        <a href="/favorites" class="icon-btn hd-ic hide-m" aria-label="Избранное" title="Избранное">${ic('heart', 22, 1.8)}</a>
+        <a href="/messages" class="icon-btn hd-ic hide-m" aria-label="Сообщения" title="Сообщения">${ic('chat', 22, 1.8)}<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span></a>
+        ${S.user ? html`<button type="button" class="icon-btn hd-ic bell-btn" data-bell aria-label="Уведомления" title="Уведомления" aria-haspopup="dialog">${ic('bell', 22, 1.8)}<span class="badge ${S.notices ? '' : 'hidden'}" data-notices>${S.notices || 0}</span></button>` : ''}
         <a href="/new" class="btn btn-dark btn-sm hide-m hd-new">${ic('plus', 17, 2.4)}Разместить</a>
         ${S.user ? '' : html`<a href="/login" class="nav-link hide-m">Войти</a>`}
-        <button type="button" class="icon-btn menu-btn" data-menu aria-label="Меню" aria-haspopup="dialog">${ic('menu', 22, 2)}</button>
+        <button type="button" class="menu-btn menu-pill" data-menu aria-label="${S.user ? 'Меню профиля' : 'Меню'}" aria-haspopup="dialog">${ic('menu', 18, 2)}${S.user ? ava(S.user, 'mp-ava') : html`<span class="mp-ava mp-guest">${ic('user', 17, 1.9)}</span>`}</button>
       </nav>
     </div>`);
     $('[data-menu]', $('#header')).onclick = openMenu;

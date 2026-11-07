@@ -2388,3 +2388,14 @@ body.pv-open { overflow: hidden; }
   .bottom-nav a.on { width: 46px; padding: 0; }
   .bottom-nav a.on .bn-t { display: none; }
 }
+
+/* ---------- шапка (1.29, вариант 7): иконки без фона, меню ≡ вместе с аватаркой в одной капсуле ---------- */
+.hd-ic .badge, .bell-btn .badge { box-shadow: 0 0 0 2px #fff; }
+.menu-pill { height: 44px; padding: 0 5px 0 12px; margin-left: 6px; display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; border: 1px solid var(--line); background: #fff; color: var(--text); flex: none; cursor: pointer; }
+.menu-pill:hover { border-color: #D5D5D1; box-shadow: 0 2px 8px rgba(16, 16, 16, .06); }
+.menu-pill .mp-ava { width: 32px; height: 32px; font-size: 13px; }
+.mp-guest { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--surface); color: var(--text); }
+@media (max-width: 900px) {
+  .menu-pill { height: 40px; padding: 0 4px 0 10px; gap: 6px; }
+  .menu-pill .mp-ava { width: 30px; height: 30px; }
+}
