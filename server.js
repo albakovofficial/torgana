@@ -12,7 +12,7 @@ const { openDb } = require('./lib/db');
 const { HttpError, sendJson, readJson, parseCookies, rateLimit } = require('./lib/http');
 const auth = require('./lib/auth');
 const { CATEGORIES, CATEGORY_IDS, CITIES, PRICE_UNITS, CONDITIONS, SUPPORT_FAQ } = require('./lib/constants');
-const { norm, parseQuery, searchSpec, specSql } = require('./lib/search');
+const { norm, parseQuery, searchSpec, specSql, brandAliases } = require('./lib/search');
 const { suggestFromPhoto } = require('./lib/ai');
 const { createMailer } = require('./lib/mailer');
 const { createPush } = require('./lib/push');
@@ -173,7 +173,8 @@ const CARD_SELECT = `
 function searchText(title, description, v = {}) {
   const sub = taxonomy.SUB[v.subcategory];
   const extra = sub ? [sub.name, ...sub.fields.filter((f) => f.type === 'select' && v.attrs && v.attrs[f.key]).map((f) => v.attrs[f.key])] : [];
-  return norm(`${title} ${description} ${extra.join(' ')}`);
+  const text = `${title} ${description} ${extra.join(' ')}`;
+  return norm(`${text} ${brandAliases(text)}`);
 }
 
 function median(nums) {
@@ -1188,6 +1189,15 @@ if (mailer.ready() && !db.prepare('SELECT 1 FROM settings WHERE key = ?').get('c
   const n = db.prepare('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email_verified = 0)').run().changes;
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('codes_v1', JSON.stringify({ at: Date.now(), signedOut: n }));
   if (n) console.log(`Сессии с неподтверждённой почтой завершены: ${n}`);
+}
+// 1.35.1: один раз пересобираем текст для поиска — добавились русские написания марок («лада» → Lada).
+if (!db.prepare('SELECT 1 FROM settings WHERE key = ?').get('search_v2')) {
+  const rows = db.prepare('SELECT id, title, description, subcategory, attrs FROM listings').all();
+  const upd = db.prepare('UPDATE listings SET search_text = ? WHERE id = ?');
+  db.exec('BEGIN');
+  for (const r of rows) { let attrs = {}; try { attrs = JSON.parse(r.attrs || '{}'); } catch { /* пусто */ } upd.run(searchText(r.title, r.description, { subcategory: r.subcategory, attrs }), r.id); }
+  db.exec('COMMIT');
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('search_v2', JSON.stringify({ at: Date.now(), n: rows.length }));
 }
 // 7 ноября 2026: письма с кодами не доходили — по просьбе владельца коды выключены, пока почту не починят
 // (включаются в «Модерация → Почта»). Только на работающем сайте с подключённой почтой и только один раз.

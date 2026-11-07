@@ -1136,7 +1136,7 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
   .ss-card { padding: 10px 10px 10px 8px; gap: 6px; }
   .ss-ic { width: 40px; height: 40px; }
   .ss-new { height: 22px; padding: 0 8px; font-size: 11.5px; }
-  .feed .drop-badge { top: 6px; left: 6px; height: 20px; padding: 0 6px; font-size: 0; gap: 0; }
+  .feed .drop-badge { height: 20px; padding: 0 7px; font-size: 11px; gap: 0; }
   .feed .drop-badge svg { width: 12px; height: 12px; }
   .drop-badge { top: 8px; left: 8px; }
 }
@@ -1161,8 +1161,8 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
 .biz-ok span span { font-size: 14px; color: var(--text-2); }
 
 .adm-biz { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 22px; border: 1.5px solid var(--line); }
-.adm-biz.pending { border-color: #E9C46A; background: #FFFBF0; }
-.adm-biz.verified { border-color: var(--accent); background: var(--accent-soft); }
+.adm-biz.is-pending { border-color: #E9C46A; background: #FFFBF0; }
+.adm-biz.is-verified { border-color: var(--accent); background: var(--accent-soft); }
 .adm-biz-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 16px; }
 
 .oa-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
@@ -2613,3 +2613,69 @@ body.pv-open { overflow: hidden; }
 .city-sug .pick-it { min-height: 42px; }
 .city-sug .pick-it.act { background: var(--surface); }
 .city-sug .pick-it.on { background: rgba(31, 94, 74, .08); }
+
+/* 1.35: фильтры. Компьютер — применяются сразу, панель прокручивается сама; телефон — кнопка «Фильтры» и «Показать N» внизу. */
+#filters-toggle { display: none; }
+.f-go { display: flex; flex-direction: column; gap: 10px; }
+@media (min-width: 901px) {
+  .filters { max-height: calc(100vh - 112px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .f-go #f-show { display: none; }
+}
+@media (max-width: 900px) {
+  #filters-toggle { display: inline-flex; }
+  .f-go { position: sticky; bottom: 92px; z-index: 5; flex-direction: row; gap: 8px; margin: 0 -8px; padding: 8px; border-radius: 999px; background: rgba(255,255,255,.94); backdrop-filter: blur(8px); box-shadow: 0 6px 24px rgba(16,16,16,.10); }
+  .f-go #f-show { flex: 1; min-width: 0; padding: 0 12px; overflow: hidden; text-overflow: ellipsis; }
+  .f-go .btn-soft { width: auto; flex: none; padding: 0 16px; font-size: 14px; }
+}
+/* 1.35: шапка 901–1100 px не вылезает за экран — строка поиска сжимается, а не распирает шапку. */
+.header-search { min-width: 0; }
+.header-search input { min-width: 0; width: 100%; }
+@media (max-width: 1100px) and (min-width: 901px) { .header-in { gap: 12px; } .hd-new { padding: 0 14px; } }
+
+/* ---------- исправления по аудиту (1.35.1) ---------- */
+/* Плашка «Включите уведомления»: в узкой колонке текст не сжимается до слова в строке — кнопка уходит вниз. */
+.nudge { position: relative; flex-wrap: wrap; row-gap: 10px; padding-right: 44px; }
+.nudge-txt { flex: 1 1 190px; }
+.nudge [data-x] { position: absolute; top: 8px; right: 8px; }
+/* Ответ на предложение цены в чате — белый текст на зелёном. */
+.msg.offer-reply.out { color: #fff; }
+.msg.offer-reply.out .t { color: rgba(255, 255, 255, .72); }
+/* Контраст: подписи, которые надо прочитать (счётчики, «обязательно», время), — не светлее --muted. */
+.ed-req, .ed-count, .bs-n, .nt-t small { color: var(--muted); }
+.pf-status .chip.zero:not(.active) { color: #7C7C78; }
+.ml-tag.wait { color: #8A5A00; }
+/* Миниатюры объявления на телефоне — одной строкой с прокруткой, а не переносом на вторую. */
+@media (max-width: 760px) {
+  .thumbs { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 10px -20px 0; padding: 0 20px 4px; }
+  .thumbs::-webkit-scrollbar { display: none; }
+  .thumbs > * { flex: none; width: 64px; height: 64px; }
+}
+/* Плашка push в панели уведомлений — кнопка под текстом, когда тесно. */
+.nt-push { flex-wrap: wrap; }
+.nt-push span { flex: 1 1 180px; }
+/* «За что цена» на телефоне — все варианты видны, переносом, без прокрутки вбок. */
+@media (max-width: 760px) { .ed-units { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; } }
+
+.ed-add small, .ed-check a small { color: var(--muted); }
+/* Одна-две главные характеристики — плитки обычного размера, а не на всю ширину. */
+.sp-tiles { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+
+/* ---------- 1.35.2: сердечко и «Цена упала» ---------- */
+/* Сердечко крупнее и красным градиентом: контур — когда не в избранном, заливка — когда в избранном. */
+.fav-btn { width: 48px; height: 48px; }
+.fav-btn svg { width: 24px; height: 24px; }
+.fav-btn svg path { stroke: url(#tg-heart); }
+.fav-btn.on svg, .fav-btn.on svg path { fill: url(#tg-heart); stroke: url(#tg-heart); }
+.fav-btn:hover svg { transform: scale(1.08); }
+.fav-btn svg { transition: transform .15s; }
+@media (max-width: 900px) { .fav-btn { width: 40px; height: 40px; } .fav-btn svg { width: 22px; height: 22px; } }
+@media (max-width: 600px) { .feed .fav-btn { top: 6px; right: 6px; width: 34px; height: 34px; } .feed .fav-btn svg { width: 19px; height: 19px; } }
+/* «Цена упала» и «Новое» — внизу слева на фото: не спорят с сердечком, помещаются на любой ширине. */
+.card .drop-badge { top: auto; bottom: 10px; left: 10px; height: 26px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
+@media (max-width: 600px) { .feed .card .drop-badge { bottom: 6px; left: 6px; height: 20px; padding: 0 7px; font-size: 10.5px; } }
+/* 1.35.3: сердечко ещё крупнее; не в избранном — чёрный контур, в избранном — красный градиент. */
+.fav-btn { width: 52px; height: 52px; }
+.fav-btn svg { width: 28px; height: 28px; }
+.fav-btn:not(.on) svg, .fav-btn:not(.on) svg path { fill: none; stroke: var(--text); }
+@media (max-width: 900px) { .fav-btn { width: 46px; height: 46px; } .fav-btn svg { width: 25px; height: 25px; } }
+@media (max-width: 600px) { .feed .fav-btn { width: 38px; height: 38px; } .feed .fav-btn svg { width: 22px; height: 22px; } }
