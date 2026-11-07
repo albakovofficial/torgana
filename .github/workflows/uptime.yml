@@ -1,0 +1,38 @@
+# Сайт отвечает? Каждые 5 минут GitHub открывает главную, /api/config и /robots.txt.
+# Если сайт не ответил три раза подряд за минуту — проверка падает, и GitHub присылает письмо
+# владельцу репозитория (Settings → Notifications → Actions: «Send notifications for failed workflows only»).
+# GitHub может запускать расписание с задержкой в несколько минут — это нормально.
+name: Сайт доступен
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Проверить torgana.ru
+        run: |
+          check() {
+            for url in https://torgana.ru/ https://torgana.ru/api/config https://torgana.ru/robots.txt; do
+              code=$(curl -s -o /tmp/body -w '%{http_code} %{time_total}' -m 15 -A 'TorganaUptime/1.0 (+https://github.com/albakovofficial/torgana)' "$url") || code="000 -"
+              echo "$url → $code"
+              case "$code" in 200*) ;; *) return 1 ;; esac
+            done
+            grep -q '"categories"' /tmp/body 2>/dev/null || grep -q 'Sitemap' /tmp/body
+          }
+          for i in 1 2 3; do
+            if check; then echo "Сайт работает"; exit 0; fi
+            echo "Попытка $i не прошла, ждём 20 секунд"; sleep 20
+          done
+          echo "::error::torgana.ru не отвечает три раза подряд"
+          exit 1
