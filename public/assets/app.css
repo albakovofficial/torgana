@@ -1136,7 +1136,7 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
   .ss-card { padding: 10px 10px 10px 8px; gap: 6px; }
   .ss-ic { width: 40px; height: 40px; }
   .ss-new { height: 22px; padding: 0 8px; font-size: 11.5px; }
-  .feed .drop-badge { top: 6px; left: 6px; height: 20px; padding: 0 6px; font-size: 0; gap: 0; }
+  .feed .drop-badge { height: 20px; padding: 0 7px; font-size: 11px; gap: 0; }
   .feed .drop-badge svg { width: 12px; height: 12px; }
   .drop-badge { top: 8px; left: 8px; }
 }
@@ -2655,6 +2655,21 @@ body.pv-open { overflow: hidden; }
 .nt-push span { flex: 1 1 180px; }
 /* «За что цена» на телефоне — все варианты видны, переносом, без прокрутки вбок. */
 @media (max-width: 760px) { .ed-units { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; } }
-/* Значки на фото («Цена снижена», «Новое») не заезжают под сердечко. */
-.card .drop-badge, .card .sold-badge { max-width: calc(100% - 64px); overflow: hidden; text-overflow: ellipsis; }
+
 .ed-add small, .ed-check a small { color: var(--muted); }
+/* Одна-две главные характеристики — плитки обычного размера, а не на всю ширину. */
+.sp-tiles { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+
+/* ---------- 1.35.2: сердечко и «Цена упала» ---------- */
+/* Сердечко крупнее и красным градиентом: контур — когда не в избранном, заливка — когда в избранном. */
+.fav-btn { width: 48px; height: 48px; }
+.fav-btn svg { width: 24px; height: 24px; }
+.fav-btn svg path { stroke: url(#tg-heart); }
+.fav-btn.on svg, .fav-btn.on svg path { fill: url(#tg-heart); stroke: url(#tg-heart); }
+.fav-btn:hover svg { transform: scale(1.08); }
+.fav-btn svg { transition: transform .15s; }
+@media (max-width: 900px) { .fav-btn { width: 40px; height: 40px; } .fav-btn svg { width: 22px; height: 22px; } }
+@media (max-width: 600px) { .feed .fav-btn { top: 6px; right: 6px; width: 34px; height: 34px; } .feed .fav-btn svg { width: 19px; height: 19px; } }
+/* «Цена упала» и «Новое» — внизу слева на фото: не спорят с сердечком, помещаются на любой ширине. */
+.card .drop-badge { top: auto; bottom: 10px; left: 10px; height: 26px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
+@media (max-width: 600px) { .feed .card .drop-badge { bottom: 6px; left: 6px; height: 20px; padding: 0 7px; font-size: 10.5px; } }
