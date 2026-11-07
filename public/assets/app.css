@@ -2673,3 +2673,9 @@ body.pv-open { overflow: hidden; }
 /* «Цена упала» и «Новое» — внизу слева на фото: не спорят с сердечком, помещаются на любой ширине. */
 .card .drop-badge { top: auto; bottom: 10px; left: 10px; height: 26px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
 @media (max-width: 600px) { .feed .card .drop-badge { bottom: 6px; left: 6px; height: 20px; padding: 0 7px; font-size: 10.5px; } }
+/* 1.35.3: сердечко ещё крупнее; не в избранном — чёрный контур, в избранном — красный градиент. */
+.fav-btn { width: 52px; height: 52px; }
+.fav-btn svg { width: 28px; height: 28px; }
+.fav-btn:not(.on) svg, .fav-btn:not(.on) svg path { fill: none; stroke: var(--text); }
+@media (max-width: 900px) { .fav-btn { width: 46px; height: 46px; } .fav-btn svg { width: 25px; height: 25px; } }
+@media (max-width: 600px) { .feed .fav-btn { width: 38px; height: 38px; } .feed .fav-btn svg { width: 22px; height: 22px; } }
