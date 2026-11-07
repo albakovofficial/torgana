@@ -1730,3 +1730,8 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
 @media (prefers-reduced-motion: reduce) { .bk-dot { animation: none; } }
 .dev-mail:empty { display: none; }
 .dev-mail { margin-top: 16px; }
+.adm-arm { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.adm-arm > svg { flex: none; color: #9A6A00; }
+.adm-arm > div { flex: 1; min-width: 0; font-size: 14px; line-height: 1.45; }
+.adm-arm .btn { flex: none; }
+@media (max-width: 600px) { .adm-arm { flex-wrap: wrap; } .adm-arm .btn { width: 100%; } }

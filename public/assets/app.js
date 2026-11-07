@@ -490,6 +490,7 @@
     [/^\/u\/(\d+)$/, viewUser],
     [/^\/admin$/, viewAdmin],
     [/^\/admin\/l\/(\d+)$/, viewAdminListing],
+    [/^\/admin\/device$/, viewDevice],
     [/^\/admin\/u\/(\d+)$/, viewAdminUser],
     [/^\/page\/([a-z]+)$/, viewPage]
   ];
@@ -3289,8 +3290,9 @@
     const status = q.get('status') || 'dash';
     const title = ADMIN_NAV.flatMap((g) => g[1]).find(([k]) => k === status);
     setTitle(title ? `${title[2]} — модерация` : 'Модерация');
-    const stats = await api('GET', '/api/admin/stats');
-    app.innerHTML = String(adminShell(status, stats, html`<div id="adm-box" class="adm-box"><div class="loader"></div></div>`));
+    const [stats, dev] = await Promise.all([api('GET', '/api/admin/stats'), api('GET', '/api/admin/device').catch(() => null)]);
+    const arm = dev && dev.required && !dev.armed ? html`<div class="banner warn adm-arm">${ic('shield', 20, 2)}<div><b>Защита входа в модерацию не включена.</b> Подтвердите это устройство кодом из письма — после этого на новых устройствах модерация будет открываться только по коду.</div><a class="btn btn-dark btn-sm" href="/admin/device">Включить</a></div>` : '';
+    app.innerHTML = String(adminShell(status, stats, html`${arm}<div id="adm-box" class="adm-box"><div class="loader"></div></div>`));
     const box = $('#adm-box');
     const extraUrl = { mail: '/api/admin/mail', site: '/api/admin/update' }[status];
     const extra = extraUrl ? await api('GET', extraUrl) : null;
@@ -3810,7 +3812,7 @@
         </section>
         <section class="panel settings" style="max-width:none">
           <h2 class="h2" style="margin:0">Мои устройства</h2>
-          <p class="muted" style="margin:0;font-size:14px">Модерация открывается только на подтверждённых устройствах: на новом — код из письма. Устройство помним 30 дней.</p>
+          <p class="muted" style="margin:0;font-size:14px">Когда защита включена, модерация открывается только на подтверждённых устройствах: на новом — код из письма. Устройство помним 30 дней. Включается защита первым подтверждённым кодом — так никто не окажется заперт, если письма не доходят.</p>
           ${dev.items.length ? html`<div class="bk-devs">${dev.items.map((x) => html`<div class="bk-dev"><span class="bk-dev-ic">${ic(/iPhone|Android/.test(x.label) ? 'chat' : 'eye', 18, 2)}</span>
               <span class="bk-dev-t"><b>${x.label}${x.current ? html` <span class="tag accent">это устройство</span>` : ''}</b><span>${x.ip ? `IP ${x.ip} · ` : ''}заходили ${when(x.lastAt)} · до ${dateShort(x.until)}</span></span>
               <button type="button" class="btn btn-line btn-sm" data-dev-rm="${x.id}">${x.current ? 'Выйти' : 'Забыть'}</button></div>`)}</div>`
@@ -3854,8 +3856,11 @@
   async function viewDevice() {
     setTitle('Вход в модерацию');
     const st = await api('GET', '/api/admin/device').catch(() => ({}));
-    if (st.trusted) { render(); return; }
-    authPage('Вход в модерацию', `Это устройство мы видим впервые. Чтобы модерацию не открыл никто, кроме вас, — даже зная пароль, — пришлём код на ${st.email || 'вашу почту'}. Устройство запомним на 30 дней.`,
+    if (st.confirmed || (st.trusted && st.armed)) { if (location.pathname === '/admin/device') go('/admin', true); else render(); return; }
+    const arming = !st.armed; // защита ещё не включена — человек включает её сам
+    authPage(arming ? 'Защита модерации' : 'Вход в модерацию', arming
+      ? `Пришлём код на ${st.email || 'вашу почту'}. Когда введёте его, модерация на новых устройствах будет открываться только по коду из письма — даже если кто-то узнает пароль. Это устройство запомним на 30 дней.`
+      : `Это устройство мы видим впервые. Чтобы модерацию не открыл никто, кроме вас, — даже зная пароль, — пришлём код на ${st.email || 'вашу почту'}. Устройство запомним на 30 дней.`,
       html`<div id="dev-code"><button type="button" class="btn btn-dark btn-lg btn-block" data-dev-send>${ic('mail', 18, 2)}Отправить код</button></div><div id="dev-mail" class="dev-mail" aria-live="polite"></div>`,
       html`<p class="alt"><a href="/">На главную</a></p>`);
     let timer = null;
@@ -3863,7 +3868,7 @@
       const box = $('#dev-mail');
       if (!box || !x) return;
       const L = x.letter;
-      if (x.trusted) { clearTimeout(timer); toast('Почта сейчас не работает — модерация открыта без кода. Почините её в разделе «Почта»', true); render(); return; }
+      if (x.armed && x.trusted && !x.confirmed) { clearTimeout(timer); toast('Почта сейчас не работает — модерация открыта без кода. Почините её в разделе «Почта»', true); render(); return; }
       box.innerHTML = String(!L ? '' : L.status === 'sent'
         ? html`<div class="bk-state ok">${ic('check', 20, 2.4)}<div><b>Письмо отправлено в ${hm(L.sentAt)}</b><span>Почтовый сервис его принял. Если письма нет пару минут — посмотрите «Спам» и «Рассылки», найдите «код для входа в модерацию».</span></div></div>`
         : L.error
@@ -3877,7 +3882,7 @@
     const startCode = (r) => codeForm($('#dev-code'), {
       email: r.email || st.email, wait: r.wait || 60,
       send: async () => { const x = await api('POST', '/api/admin/device/send'); setTimeout(watch, 800); return x; },
-      check: async (code) => { await api('POST', '/api/admin/device/verify', { code }); toast('Устройство подтверждено на 30 дней'); render(); }
+      check: async (code) => { await api('POST', '/api/admin/device/verify', { code }); toast(arming ? 'Защита включена — это устройство подтверждено на 30 дней' : 'Устройство подтверждено на 30 дней'); if (location.pathname === '/admin/device') go('/admin?status=backup', true); else render(); }
     });
     if (st.letter && st.letter.createdAt > Date.now() - 15 * 60 * 1000) { startCode({ email: st.email, wait: Math.max(0, 60 - Math.round((Date.now() - st.letter.createdAt) / 1000)) }); paint(st); return; }
     $('[data-dev-send]').onclick = async (e) => {
@@ -4084,10 +4089,10 @@
   }
 
   // Модерация → Почта: подключение SMTP, проверка письмом, журнал отправки.
-  function renderMailAdmin(box, { config: c, stats: st }) {
+  function renderMailAdmin(box, { config: c, stats: st, codes }) {
     const SECURITY = [['ssl', 'SSL (обычно порт 465)'], ['starttls', 'STARTTLS (порт 587 или 2525)']];
     const STATUS = { pending: 'в очереди', sent: 'отправлено', failed: 'не доставлено' };
-    const KIND = { verify: 'Подтверждение email', reset: 'Восстановление пароля', message: 'Новое сообщение', moderation: 'Модерация', review: 'Отзывы', support: 'Ответ поддержки', account: 'Блокировка аккаунта', mod: 'Модератору о новом', billing: 'Оплата и тарифы', code: 'Код подтверждения', test: 'Проверка' };
+    const KIND = { device: 'Код для модерации', ops: 'Владельцу о сбое', verify: 'Подтверждение email', reset: 'Восстановление пароля', message: 'Новое сообщение', moderation: 'Модерация', review: 'Отзывы', support: 'Ответ поддержки', account: 'Блокировка аккаунта', mod: 'Модератору о новом', billing: 'Оплата и тарифы', code: 'Код подтверждения', test: 'Проверка' };
     const domain = (c.from || 'no-reply@torgana.ru').split('@')[1];
     box.innerHTML = String(html`
       <div class="stats">
@@ -4115,6 +4120,11 @@
           <p class="muted" style="margin:0;font-size:13px">Чтобы письма не попадали в спам, домен ${domain} подтверждается в SMTP.BZ, а в DNS домена добавляются записи SPF и DKIM, которые выдаст сервис.</p>
         </form>
         <div style="display:flex;flex-direction:column;gap:20px">
+          <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+            <h2 class="h2" style="margin:0">Коды по почте</h2>
+            <label class="switch"><span>Спрашивать код из письма<small>6 цифр при регистрации и входе с неподтверждённой почтой, код для входа в модерацию с нового устройства</small></span><input type="checkbox" id="m-codes" ${codes ? raw('checked') : ''} ${c.ready ? '' : raw('disabled')}><span class="track"></span></label>
+            ${codes ? '' : html`<div class="banner warn" style="font-size:14px">${c.ready ? 'Коды выключены: регистрация и вход — без кода, модерация — без подтверждения устройства. Включите, когда тестовое письмо дойдёт до почты.' : 'Почта не подключена — коды не отправить, поэтому они выключены.'}</div>`}
+          </div>
           <form class="panel" id="mt" style="display:flex;flex-direction:column;gap:14px">
             <h2 class="h2" style="margin:0">Проверка</h2>
             <p class="muted" style="margin:0;font-size:14px">Отправим тестовое письмо сразу, минуя очередь, и покажем ответ почтового сервиса.</p>
@@ -4137,6 +4147,11 @@
           </div>
         </div>
       </div>`);
+    const mc = $('#m-codes', box);
+    mc.onchange = async () => {
+      if (mc.checked && !(await confirmModal('Включить коды по почте?', 'Убедитесь, что тестовое письмо дошло: иначе новые пользователи не смогут зарегистрироваться, а вы — войти в модерацию с нового устройства.', 'Включить'))) { mc.checked = false; return; }
+      try { await api('PUT', '/api/admin/mail/codes', { on: mc.checked }); toast(mc.checked ? 'Коды включены' : 'Коды выключены'); render(); } catch (ex) { mc.checked = !mc.checked; toast(ex.message, true); }
+    };
     const f = $('#mf', box);
     // Selectel закрывает исходящий порт 465 — SMTP.BZ подключаем через 2525 со STARTTLS (как в ALBAKOV).
     $('#preset', box).onclick = () => { f.host.value = 'connect.smtp.bz'; f.port.value = '2525'; f.security.value = 'starttls'; if (!f.from.value) f.from.value = 'no-reply@torgana.ru'; if (!f.fromName.value) f.fromName.value = 'Торгана'; f.user.focus(); };

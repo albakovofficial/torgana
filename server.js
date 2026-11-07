@@ -278,8 +278,15 @@ const business = require('./lib/business')({ route, db, h: helpers, billing, mai
 const promo = require('./lib/promo')({ route, db, h: helpers, billing, business, stats, mailer, searchSpec, specSql, categoryIds: CATEGORY_IDS });
 const feed = require('./lib/feed')({ route, db, h: helpers, business });
 const deals = require('./lib/deals')({ route, db, h: helpers, alerts }); // предложение цены, быстрые ответы, подписки
+// Коды по почте (6 цифр при регистрации и входе, код для модерации) можно временно выключить в «Модерация → Почта»,
+// например пока письма не доходят. Выключены — вход без кода, как до 1.14.
+const codesOn = () => {
+  if (!mailer.ready()) return false;
+  const r = db.prepare('SELECT value FROM settings WHERE key = ?').get('mail_codes');
+  try { return r ? JSON.parse(r.value).on !== false : true; } catch { return true; }
+};
 // Копия в облако (Selectel S3), письма владельцу о сбоях, вход в модерацию по коду с нового устройства.
-const ops = require('./lib/ops')({ route, db, h: helpers, mailer, root: ROOT, dataDir: DATA_DIR, uploadDir: UPLOAD_DIR, ownerEmail: OWNER_EMAIL, publicUrl: PUBLIC_URL, secureCookies: SECURE_COOKIES,
+const ops = require('./lib/ops')({ route, db, h: helpers, mailer, codesOn, root: ROOT, dataDir: DATA_DIR, uploadDir: UPLOAD_DIR, ownerEmail: OWNER_EMAIL, publicUrl: PUBLIC_URL, secureCookies: SECURE_COOKIES,
   deviceCheck: process.env.ADMIN_DEVICE_CHECK !== '0' });
 opsApi = ops;
 helpers.business = business;
@@ -355,7 +362,7 @@ route('POST', '/api/auth/register', async (ctx) => {
     .run(email, name, auth.hashPassword(password), isAdmin, now(), now());
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
   // Почта подключена — войти можно только после кода из письма (6 цифр). Без почты код не отправить — входим сразу.
-  if (mailer.ready()) { mailer.sendCode(user); return { needCode: true, email: user.email }; }
+  if (codesOn()) { mailer.sendCode(user); return { needCode: true, email: user.email }; }
   const s = auth.createSession(db, user.id);
   ctx.setCookie(auth.sessionCookie(s.token, s.expires, SECURE_COOKIES));
   return { user: publicUser(user) };
@@ -373,7 +380,7 @@ route('POST', '/api/auth/login', async (ctx) => {
     user.is_admin = 1;
   }
   // Почта не подтверждена — сначала код (новый, если прошлому больше минуты).
-  if (!user.email_verified && mailer.ready()) { mailer.sendCode(user); return { needCode: true, email: user.email }; }
+  if (!user.email_verified && codesOn()) { mailer.sendCode(user); return { needCode: true, email: user.email }; }
   const s = auth.createSession(db, user.id);
   ctx.setCookie(auth.sessionCookie(s.token, s.expires, SECURE_COOKIES));
   return { user: publicUser(user) };
@@ -887,7 +894,14 @@ route('GET', '/api/pages/:slug', (ctx) => {
 // Раздел «Почта» в модерации: подключение, проверка, журнал отправки.
 route('GET', '/api/admin/mail', (ctx) => {
   requireAdmin(ctx);
-  return { config: mailer.publicConfig(), stats: mailer.stats() };
+  return { config: mailer.publicConfig(), stats: mailer.stats(), codes: codesOn() };
+});
+
+route('PUT', '/api/admin/mail/codes', async (ctx) => {
+  const a = requireAdmin(ctx);
+  const on = (await readJson(ctx.req)).on === true;
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run('mail_codes', JSON.stringify({ on, at: Date.now(), by: a.id }));
+  return { codes: on };
 });
 
 route('PUT', '/api/admin/mail', async (ctx) => {
@@ -1087,6 +1101,11 @@ if (mailer.ready() && !db.prepare('SELECT 1 FROM settings WHERE key = ?').get('c
   const n = db.prepare('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email_verified = 0)').run().changes;
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('codes_v1', JSON.stringify({ at: Date.now(), signedOut: n }));
   if (n) console.log(`Сессии с неподтверждённой почтой завершены: ${n}`);
+}
+// 7 ноября 2026: письма с кодами не доходили — по просьбе владельца коды выключены, пока почту не починят
+// (включаются в «Модерация → Почта»). Только на работающем сайте с подключённой почтой и только один раз.
+if (mailer.ready() && !db.prepare('SELECT 1 FROM settings WHERE key = ?').get('mail_codes')) {
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('mail_codes', JSON.stringify({ on: false, at: Date.now(), by: 'owner-request' }));
 }
 alerts.start({ tickMs: Number(process.env.DIGEST_TICK_MS) || undefined, minAge: process.env.DIGEST_MIN_AGE_MS ? Number(process.env.DIGEST_MIN_AGE_MS) : undefined, anyHour: process.env.DIGEST_ANY_HOUR === '1' });
 // Автопроверка объявлений, которые ждали проверки до появления автопроверок (один раз при запуске).

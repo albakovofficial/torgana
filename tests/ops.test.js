@@ -114,10 +114,10 @@ test('вход в модерацию с нового устройства — п
     // почта ещё не подключена — код не отправить, модерация открыта (иначе владелец не попадёт в «Почту»)
     assert.equal((await a.get('/api/admin/backup')).status, 200);
     await a.put('/api/admin/mail', { host: '127.0.0.1', port: smtp2.port, security: 'none', user: smtp2.user, pass: smtp2.pass, from: 'no-reply@torgana.test' });
+    // защита ещё не включена: пока модератор ни разу не подтвердил устройство, модерация открыта (никого не запираем)
     let r = await a.get('/api/admin/backup');
-    assert.equal(r.status, 403);
-    assert.equal(r.data.device, true);
-    assert.equal((await a.get('/api/admin/device')).data.trusted, false);
+    assert.equal(r.status, 200);
+    assert.deepEqual((({ trusted, armed, confirmed }) => ({ trusted, armed, confirmed }))((await a.get('/api/admin/device')).data), { trusted: true, armed: false, confirmed: false });
     r = await a.post('/api/admin/device/send');
     assert.equal(r.data.sent, true);
     assert.equal((await a.post('/api/admin/device/send')).data.sent, false, 'повтор — через минуту');
@@ -144,9 +144,11 @@ test('вход в модерацию с нового устройства — п
       await other.post('/api/auth/code', { email: 'admin@test.local', code: /^(\d{6})/.exec(lm.subject)[1] });
     }
     assert.equal((await other.get('/api/admin/backup')).status, 403);
-    // «забыть» устройство — снова нужен код
+    // «забыть» устройство — снова нужен код (защита остаётся включённой)
     await a.del(`/api/admin/devices/${list[0].id}`);
-    assert.equal((await a.get('/api/admin/backup')).status, 403);
+    r = await a.get('/api/admin/backup');
+    assert.equal(r.status, 403);
+    assert.equal(r.data.device, true);
     // обычные разделы сайта работают без кода
     assert.equal((await a.get('/api/me')).status, 200);
   } finally { await s2.stop(); await smtp2.close(); }
@@ -159,6 +161,11 @@ test('почта сломана — владелец входит в модер�
     const helper = await registerUser(s2.base, { name: 'Модератор 2', email: 'mod2@test.local' });
     // почтовый сервер «не отвечает»: порт, на котором никого нет
     await a.put('/api/admin/mail', { host: '127.0.0.1', port: 1, security: 'none', user: 'u', pass: 'p', from: 'no-reply@torgana.test' });
+    // защита была включена раньше (модератор уже подтверждал устройство)
+    const { DatabaseSync } = require('node:sqlite');
+    const sdb = new DatabaseSync(require('node:path').join(s2.tmp, 'data', 'torgana.db'));
+    sdb.prepare('INSERT INTO admin_device_armed (user_id, at) VALUES (?, ?)').run(a.user.id, Date.now());
+    sdb.close();
     assert.equal((await a.get('/api/admin/backup')).status, 403);
     await a.post('/api/admin/device/send');
     let d;
@@ -172,4 +179,26 @@ test('почта сломана — владелец входит в модер�
     assert.equal(d.mail.broken, true);
     assert.equal((await a.get('/api/admin/backup')).status, 200, 'владелец вошёл, чтобы починить почту');
   } finally { await s2.stop(); }
+});
+
+test('коды по почте можно выключить: регистрация без кода, модерация без подтверждения устройства', async () => {
+  const smtp3 = await startSmtp();
+  const s3srv = await startServer({ ADMIN_DEVICE_CHECK: '1', MAIL_TICK_MS: '150' });
+  try {
+    const a = await registerUser(s3srv.base, { name: 'Владелец', email: 'admin@test.local' });
+    await a.put('/api/admin/mail', { host: '127.0.0.1', port: smtp3.port, security: 'none', user: smtp3.user, pass: smtp3.pass, from: 'no-reply@torgana.test' });
+    assert.equal((await a.get('/api/admin/mail')).data.codes, true, 'по умолчанию включены');
+    let r = await client(s3srv.base).post('/api/auth/register', { name: 'Ира', email: 'ira@test.local', password: 'password123', consent: true });
+    assert.equal(r.data.needCode, true);
+    assert.equal((await client(s3srv.base).put('/api/admin/mail/codes', { on: false })).status, 401);
+    assert.equal((await a.put('/api/admin/mail/codes', { on: false })).data.codes, false);
+    r = await client(s3srv.base).post('/api/auth/register', { name: 'Оля', email: 'olya@test.local', password: 'password123', consent: true });
+    assert.ok(r.data.user, 'без кода — сразу вход');
+    const ira = client(s3srv.base);
+    r = await ira.post('/api/auth/login', { email: 'ira@test.local', password: 'password123' });
+    assert.ok(r.data.user, 'неподтверждённая почта — тоже без кода');
+    assert.equal((await a.get('/api/admin/device')).data.required, false);
+    assert.equal((await a.put('/api/admin/mail/codes', { on: true })).data.codes, true);
+    assert.equal((await a.get('/api/admin/device')).data.required, true);
+  } finally { await s3srv.stop(); await smtp3.close(); }
 });
