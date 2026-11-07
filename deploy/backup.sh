@@ -57,4 +57,5 @@ for d in "$BACKUP_DIR"/uploads/*/; do
 done
 
 date -Is > "$BACKUP_DIR/last-ok"
+chmod 644 "$BACKUP_DIR/last-ok" # сайт читает время копии и пишет владельцу, если она устарела
 echo "Готово. Копий базы: $(ls "$BACKUP_DIR"/db/torgana-*.db.gz 2>/dev/null | wc -l), занято: $(du -sh "$BACKUP_DIR" | cut -f1)"
