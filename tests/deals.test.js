@@ -14,7 +14,7 @@ before(async () => {
   seller = await registerUser(srv.base, { name: 'Олег', email: 'oleg@test.local' });
   buyer = await registerUser(srv.base, { name: 'Анна', email: 'anna@test.local' });
   other = await registerUser(srv.base, { name: 'Пётр', email: 'petr@test.local' });
-  lid = await publish(seller, admin, { title: 'Велосипед Merida', category: 'hobby', subcategory: 'bikes', city: 'Казань', price: 40000 });
+  lid = await publish(seller, admin, { title: 'Велосипед Merida', category: 'hobby', subcategory: 'bikes', attrs: { bikeType: 'Горный' }, city: 'Казань', price: 40000 });
   cid = (await buyer.post('/api/conversations', { listingId: lid })).data.id;
 });
 after(async () => { await srv.stop(); await smtp.close(); });

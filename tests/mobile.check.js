@@ -46,12 +46,12 @@ async function seed(base, browser) {
   ];
   // 1.16: раздел, характеристики, метро и район.
   const extra = [
-    { subcategory: 'kids' },
+    { subcategory: 'kids', attrs: { kidsGoods: 'Коляска', kidsAge: '0–1 год' } },
     { subcategory: 'phones', attrs: { brand: 'Apple', memory: '256 ГБ' }, metro: 'Тверская' },
-    { subcategory: 'flats_rent', attrs: { rooms: '2', area: 54, floor: 5, floors: 9 }, metro: 'Площадь Восстания', district: 'Центральный' },
+    { subcategory: 'flats_rent', attrs: { rooms: '2', area: 54, floor: 5, floors: 9, renovation: 'Евро', furnished: 'Есть' }, metro: 'Площадь Восстания', district: 'Центральный' },
     { subcategory: 'bikes', attrs: { bikeType: 'Горный' } },
-    { subcategory: 'furniture' },
-    { subcategory: 'repair' }
+    { subcategory: 'furniture', attrs: { furnType: 'Диван', material: 'Ткань', color: 'Серый' } },
+    { subcategory: 'repair', attrs: { where: 'Выезд к клиенту', proExp: '3–10 лет' } }
   ];
   const ids = [];
   for (let i = 0; i < items.length; i++) {
@@ -72,7 +72,7 @@ async function seed(base, browser) {
   await fetch(`${base}/api/videos/${vs.data.file}?offset=0`, { method: 'PUT', headers: { cookie: seller.cookie }, body: clip });
   const carPhotos = [(await seller.post('/api/uploads', { data: photoData })).data.file, (await seller.post('/api/uploads', { data: photoData })).data.file];
   const car = (await seller.post('/api/listings', { title: 'Toyota Camry 2.5, один владелец', category: 'transport', subcategory: 'cars', price: '2350000', city: 'Москва', metro: 'Павелецкая', district: 'Замоскворечье',
-    attrs: { brand: 'Toyota', year: 2018, mileage: 86500, gearbox: 'Автомат', fuel: 'Бензин', body: 'Седан', drive: 'Передний' }, photos: carPhotos, video: vs.data.file,
+    attrs: { brand: 'Toyota', year: 2018, mileage: 86500, gearbox: 'Автомат', fuel: 'Бензин', engine: 2.5, power: 181, body: 'Седан', drive: 'Передний', owners: '1', color: 'Белый', damage: 'Не битый' }, photos: carPhotos, video: vs.data.file,
     description: 'Обслуживание у официального дилера, два комплекта резины.' })).data.id;
   await admin.post(`/api/admin/listings/${car}/restore`); // подписчик (Борис) получит «Новое у продавца»
   const conv = await buyer.post('/api/conversations', { listingId: ids[0] });
@@ -306,7 +306,17 @@ function pages(d) {
     ['boost-modal-busy', `/l/${d.car}`, d.seller, '[data-promote]'],
     ['pay-boost', `/pay/${d.boostPay}`, d.seller],
     ['admin-tags', '/admin?status=tags', d.admin],
-    ['new-step-publish-boost', '/new', d.seller, 'step:5:boost']
+    ['new-step-publish-boost', '/new', d.seller, 'step:5:boost'],
+    // 1.22: характеристики чипсами, выбор из списка (метро, сортировка), карточка автора, уведомления
+    ['edit-car-attrs', `/edit/${d.car}`, d.seller, 'step:1'],
+    ['edit-sofa-attrs', `/edit/${d.ids[4]}`, d.seller, 'step:1'],
+    ['pick-metro', `/edit/${d.ids[2]}`, d.seller, 'pick:3:#metro'],
+    ['pick-brand', `/edit/${d.car}`, d.seller, 'pick:1:[data-field="brand"] [data-av-more]'],
+    ['pick-sort', '/search?category=transport', null, 'pick::#sort'],
+    ['listing-owner', `/l/${d.ids[0]}`, d.seller],
+    ['listing-owner-car', `/l/${d.car}`, d.seller],
+    ['notices', '/', d.seller, '[data-bell]'],
+    ['notices-empty', '/', d.buyer, '[data-bell]']
   ];
 }
 
@@ -377,6 +387,13 @@ async function main() {
           // Пустая форма: «Далее» с фото на «Что продаёте», ещё раз «Далее» — шаг подсвечивается и не пускает дальше.
           for (let k = 0; k < 2; k++) { await page.click('[data-next] >> visible=true'); await page.waitForTimeout(300); }
           if (!(await page.$('.ed-step.cur.bad#s-what'))) errors.push('ошибки шага не подсветились');
+        } else if (open && open.startsWith('pick:')) {
+          // Красивый выбор вместо системного списка: pick:<шаг формы>:<select или кнопка>.
+          const [, stepNo, sel] = open.match(/^pick:(\d*):(.*)$/);
+          if (stepNo) { await page.click(`[data-step="${stepNo}"]`); await page.waitForTimeout(300); }
+          await page.click(sel.startsWith('#') ? `${sel} + .pick-btn` : sel);
+          await page.waitForTimeout(300);
+          if (!(await page.$('.pick .pick-it'))) errors.push('список не открылся');
         } else if (open === 'step:5:boost') {
           // Продвижение при подаче: XL и метки, одна метка выбрана — цена на кнопке, превью с XL.
           await page.click('[data-step="5"]');
@@ -387,7 +404,7 @@ async function main() {
           await page.waitForTimeout(200);
           if (!(await page.$('#preview .card.is-xl .b-tag'))) errors.push('превью без XL и метки');
           if (!/128 ₽/.test(await page.textContent('[data-submit] >> visible=true'))) errors.push('на кнопке нет цены продвижения');
-        } else if (/^step:\d$/.test(open)) {
+        } else if (/^step:\d$/.test(open || '')) {
           await page.click(`[data-step="${open.slice(5)}"]`);
           await page.waitForTimeout(400);
           if (!(await page.$(`.ed-step.cur`))) errors.push('шаг не открылся');
@@ -426,7 +443,7 @@ async function main() {
         if (vpName === 'desktop' && m.navVisible) errors.push('нижнее меню видно на компьютере');
         if (m.appText < 20) errors.push('страница пустая');
         if (!m.onest) errors.push('шрифт Onest не загрузился');
-        await page.screenshot({ path: path.join(SHOTS, `${vpName}-${name}.png`), fullPage: !open });
+        await page.screenshot({ path: path.join(SHOTS, `${vpName}-${name}.png`), fullPage: !open || /^step:\d$/.test(open) });
         checked++;
         if (errors.length) problems.push(`${vpName} ${url}\n   - ${errors.join('\n   - ')}`);
         console.log(`${errors.length ? '✗' : '✓'} ${vpName.padEnd(7)} ${name}`);

@@ -181,7 +181,8 @@ function marketEstimate({ id = 0, category, title, priceUnit }) {
   return { median: median(rows.map((r) => r.price)), count: rows.length };
 }
 
-function validateListing(body) {
+// strict — форма объявления (1.22): главные характеристики раздела обязательны; автозагрузка из фида — без strict.
+function validateListing(body, { strict = false } = {}) {
   const title = str(body.title, 80);
   const description = str(body.description, 4000);
   const category = str(body.category, 40);
@@ -201,7 +202,7 @@ function validateListing(body) {
   // Подкатегория — из списка своей категории; характеристики — только её поля.
   const subcategory = taxonomy.SUB[body.subcategory] && taxonomy.SUB[body.subcategory].category === category ? body.subcategory : '';
   let attrs = {};
-  try { attrs = taxonomy.cleanAttrs(subcategory, body.attrs); } catch (e) { throw new HttpError(400, e.message); }
+  try { attrs = taxonomy.cleanAttrs(subcategory, body.attrs, { strict }); } catch (e) { throw new HttpError(400, e.message); }
   // Метро — только станция этого города из справочника; если справочника пока нет — сохраняем как есть.
   let station = str(body.metro, 60);
   if (station && metro.has(city) && !metro.isStation(city, station)) throw new HttpError(400, 'Выберите станцию метро из списка');
@@ -363,7 +364,7 @@ route('GET', '/api/metro', (ctx) => ({ stations: metro.stations(ctx.query.get('c
 
 route('GET', '/api/me', (ctx) => {
   const unread = ctx.user ? unreadCount(ctx.user.id) + supportChat.unreadFor(ctx.user.id) : 0;
-  return { user: publicUser(ctx.user), unread, fresh: ctx.user ? alerts.freshCounts(ctx.user.id) : null };
+  return { user: publicUser(ctx.user), unread, fresh: ctx.user ? alerts.freshCounts(ctx.user.id) : null, notices: ctx.user ? alerts.unreadNotices(ctx.user.id) : 0 };
 });
 
 route('POST', '/api/auth/register', async (ctx) => {
@@ -697,7 +698,7 @@ helpers.validateListing = validateListing;
 route('POST', '/api/listings', async (ctx) => {
   const u = requireUser(ctx);
   rateLimit(`create:${u.id}`, 30, 60 * 60 * 1000);
-  const v = validateListing(await readJson(ctx.req));
+  const v = validateListing(await readJson(ctx.req), { strict: true });
   video.check(u.id, v.video);
   const id = createListing(u, v);
   return { id, status: 'pending' };
@@ -720,7 +721,7 @@ route('PATCH', '/api/listings/:id', async (ctx) => {
     const r = db.prepare('SELECT status, expires_at FROM listings WHERE id = ?').get(id);
     return { ok: true, status: r.status, expiresAt: r.expires_at };
   }
-  const v = validateListing(body);
+  const v = validateListing(body, { strict: true });
   if (v.video && v.video !== l.video) video.check(u.id, v.video);
   updateListing(u, l, v);
   return { ok: true, status: 'pending' };

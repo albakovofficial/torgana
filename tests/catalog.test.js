@@ -75,6 +75,18 @@ test('характеристики проверяются: чужие поля �
   assert.match(r.data.error, /Год выпуска/);
   r = await seller.post('/api/listings', { title: 'Машина', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { gearbox: 'Телепорт' } });
   assert.equal(r.status, 400);
+  // 1.22: главные характеристики обязательны в форме (марка, год, пробег, коробка у автомобиля).
+  r = await seller.post('/api/listings', { title: 'Машина', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', year: 2019, gearbox: 'Автомат' } });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /Укажите «Пробег»/);
+  r = await seller.post('/api/listings', { title: 'Машина', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', year: 2019, mileage: 1000, gearbox: 'Автомат', engine: '1,6', power: 123.4, color: 'Белый', owners: '1' } });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const k = (await seller.get(`/api/listings/${r.data.id}`)).data.listing;
+  assert.equal(k.attrs.engine, 1.6, 'дробное — с шагом');
+  assert.equal(k.attrs.power, 123, 'целое — округляется');
+  assert.ok(k.specs.some((x) => x.label === 'Владельцев по ПТС' && x.value === '1'));
+  r = await seller.post('/api/listings', { title: 'Машина', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', year: 2019, mileage: 1000, gearbox: 'Автомат', color: 'Хамелеон' } });
+  assert.equal(r.status, 400, 'цвет — только из списка');
   r = await seller.post('/api/listings', { title: 'Машина', category: 'transport', subcategory: 'phones', city: 'Москва', attrs: { brand: 'Apple' } });
   assert.equal(r.status, 200, 'подкатегория чужой категории просто не сохраняется');
   const l = (await seller.get(`/api/listings/${r.data.id}`)).data.listing;
@@ -99,8 +111,8 @@ test('сохранённый поиск с характеристиками: п�
   assert.equal(s.status, 200, JSON.stringify(s.data));
   assert.equal(s.data.search.title, 'Автомобили · год выпуска от 2015 · Автомат');
   assert.deepEqual(Object.keys(s.data.search.params), ['sub', 'a_gearbox', 'a_year_min']);
-  await publish(seller, admin, { title: 'Kia Rio механика', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { gearbox: 'Механика', year: 2019 } });
-  await publish(seller, admin, { title: 'Kia Rio автомат', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { gearbox: 'Автомат', year: 2019 } });
+  await publish(seller, admin, { title: 'Kia Rio механика', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', mileage: 40000, gearbox: 'Механика', year: 2019 } });
+  await publish(seller, admin, { title: 'Kia Rio автомат', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', mileage: 40000, gearbox: 'Автомат', year: 2019 } });
   const list = (await buyer.get('/api/saved-searches')).data.items;
   const mine = list.find((x) => x.id === s.data.search.id);
   assert.equal(mine.fresh, 1);
