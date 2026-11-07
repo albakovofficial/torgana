@@ -89,6 +89,11 @@ test('до проверки отзыв не виден; модератор пу�
   const cardIt = (await client(srv.base).get('/api/listings?q=Велосипед')).data.items.find((x) => x.id === id);
   assert.deepEqual(cardIt.seller, { id: anna.user.id, name: 'Анна', avatar: null, rating: 3, reviews: 2 });
   assert.equal((await client(srv.base).get(`/api/users/${anna.user.id}`)).data.items.find((x) => x.id === id).seller, null);
+  // 1.27: в чате — оценка собеседника и город объявления (колонка справа)
+  const chat = (await boris.get(`/api/conversations/${conv}`)).data;
+  assert.equal(chat.other.rating.count, 2);
+  assert.equal(chat.other.rating.avg, 3);
+  assert.equal(chat.listing.city, 'Казань');
   assert.equal((await anna.get('/api/me')).data.user.rating.count, 2);
   assert.equal((await client(srv.base).get(`/api/users/${anna.user.id}/reviews?stars=4`)).data.items.length, 1);
 });

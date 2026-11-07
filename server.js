@@ -925,8 +925,9 @@ route('GET', '/api/conversations/:id', (ctx) => {
   return {
     conversation: { id: c.id, role: c.buyer_id === u.id ? 'buyer' : 'seller' },
     review: reviews.chatState(u.id, c),
-    listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, bargain: !!l.bargain, photo: photoUrl(photo && photo.file) },
-    other: { id: other.id, name: other.name, avatar: photoUrl(other.avatar), createdAt: other.created_at },
+    listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, bargain: !!l.bargain, city: l.city, metro: l.metro || '', photo: photoUrl(photo && photo.file) },
+    // 1.27: оценка собеседника — для колонки «Объявление и продавец» справа от чата
+    other: { id: other.id, name: other.name, avatar: photoUrl(other.avatar), createdAt: other.created_at, rating: reviews.ratingOf(other.id) },
     offers: deals.offersOf(c.id), // состояния всех предложений — обновляются при каждом опросе
     messages
   };

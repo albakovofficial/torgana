@@ -83,6 +83,7 @@
     left: '<path d="M15 6l-6 6 6 6"/>',
     right: '<path d="M9 6l6 6-6 6"/>',
     down: '<path d="M6 9l6 6 6-6"/>',
+    pushpin: '<path d="M9 4h6l-1 6 3 3H7l3-3z"/><path d="M12 16v4"/>',
     shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
     truck: '<rect x="2" y="7" width="13" height="10" rx="1.5"/><path d="M15 10h4l3 3v4h-7"/><circle cx="7" cy="18" r="1.8"/><circle cx="18" cy="18" r="1.8"/>',
     share: '<path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 13v6h14v-6"/>',
@@ -625,7 +626,7 @@
   // и началом описания, рамка — изумрудная обводка, tags — метки на фото. Подпись «Продвигается» — всегда.
   const boostImg = (src, cls = '', extra = '') => html`<span class="xl-ph ${cls}${src ? ' ph' : ''}"${src ? raw(` style="--ph:url('${esc(src)}')"`) : ''}>${src ? html`<img src="${src}" alt="" loading="lazy">` : svg(P.image, 28, 1.2)}${extra}</span>`;
   // 1.26 (вариант 7 «С продавцом»): под описанием карточки — фото и имя продавца, ★ оценка, если есть отзывы.
-  const cardSeller = (s) => html`<span class="card-seller">${ava(s, 'xs')}<span class="cs-name">${s.name}</span>${s.reviews ? html`<span class="cs-rate" title="${NF.format(s.reviews)} ${plural(s.reviews, 'отзыв', 'отзыва', 'отзывов')}">${ic('star', 12, 0)}${String(s.rating.toFixed(1)).replace('.', ',')}</span>` : ''}</span>`;
+  const cardSeller = (s) => html`<span class="card-seller">${ava(s, 'xs')}<span class="cs-name">${s.name}</span>${s.reviews ? html`<span class="cs-rate" title="${NF.format(s.reviews)} ${plural(s.reviews, 'отзыв', 'отзыва', 'отзывов')}">${starSvg(true, 12)}${fmtAvg({ avg: s.rating })}</span>` : ''}</span>`;
   function card(it) {
     const meta = [it.metro ? `м. ${it.metro}` : it.city, shortWhen(it.createdAt)].filter(Boolean).join(' · ');
     const ad = it.ad;
@@ -2419,7 +2420,7 @@
         <label class="icon-btn chat-attach" title="Отправить фото"><input type="file" accept="image/jpeg,image/png,image/webp" data-photo hidden>${ic('camera', 20)}<span class="sr">Отправить фото</span></label>
         <label class="sr" for="chat-body">Сообщение</label>
         <textarea id="chat-body" rows="1" maxlength="4000" placeholder="${placeholder}"></textarea>
-        <button class="btn btn-dark" type="submit" aria-label="Отправить" style="height:48px">${ic('right', 20, 2.2)}</button>
+        <button class="btn chat-send" type="submit" aria-label="Отправить">${ic('right', 20, 2.2)}<span class="chat-send-t">Отправить</span></button>
       </form>`);
     const msgs = $('[data-msgs]', box);
     const ta = $('#chat-body', box);
@@ -2587,6 +2588,21 @@
       Никогда не сообщайте пароль и коды из СМС — мы их не спрашиваем.
       <span class="chat-quick">${SUPPORT_TOPICS.map((t) => html`<button type="button" class="chip" data-topic="${t}">${t}</button>`)}</span></div>`;
 
+  // 1.27 (вариант 3): справа от чата — объявление и собеседник с оценкой, напоминание о безопасности.
+  // Только на широком экране (CSS); на телефоне и планшете объявление — в шапке чата.
+  const chatSide = (l, o, role) => {
+    const r = o.rating || { count: 0, avg: 0 };
+    const since = o.createdAt ? `на Торгане с ${new Date(o.createdAt).getFullYear()}` : '';
+    return html`<aside class="chat-side" aria-label="Объявление и ${role === 'buyer' ? 'продавец' : 'покупатель'}">
+      <a href="/l/${l.id}" class="chs-photo${l.photo ? ' ph' : ''}"${l.photo ? raw(` style="--ph:url('${esc(l.photo)}')"`) : ''} tabindex="-1" aria-hidden="true">${l.photo ? html`<img src="${l.photo}" alt="" loading="lazy">` : svg(P.image, 32, 1.3)}</a>
+      <div class="chs-item"><b class="chs-price">${price(l.price, l.priceUnit)}</b><a href="/l/${l.id}" class="chs-title">${l.title}</a><span class="chs-place">${l.metro ? `м. ${l.metro}` : l.city}${l.status === 'sold' ? ' · продано' : ''}</span></div>
+      <a href="/l/${l.id}" class="btn btn-line btn-block btn-sm">Открыть объявление</a>
+      <hr>
+      <a href="/u/${o.id}" class="chs-person">${ava(o, 'sm')}<span><b>${o.name}</b><span class="chs-meta">${r.count ? html`<span class="chs-star">${starSvg(true, 13)}</span><b>${fmtAvg(r)}</b> · ${r.count} ${reviewsWord(r.count)}` : 'Пока нет отзывов'}${since ? ` · ${since}` : ''}</span></span></a>
+      <p class="chs-safe">${ic('shield', 18)}<span>${role === 'buyer' ? 'Не переходите в мессенджеры и не вносите предоплату — общайтесь здесь.' : 'Не называйте коды из СМС и не переходите по ссылкам «для получения оплаты».'}</span></p>
+    </aside>`;
+  };
+
   async function viewMessages(cid) {
     if (!requireAuth()) return;
     setTitle('Сообщения');
@@ -2596,29 +2612,26 @@
       <div class="inbox-list"><h1>Сообщения</h1>
         <div id="nudge" class="inbox-nudge"></div>
         <a href="/messages/support" class="conv support ${isSupport ? 'on' : ''}" id="support-row">
-          ${supportAva()}
-          <span class="conv-body"><span class="conv-top"><span class="support-name">${SUPPORT_NAME}</span><span class="pin" title="Закреплено">${ic('pin', 14)}</span></span>
-            <span class="conv-last" style="display:block" id="support-last">Поможем с объявлениями, сделками и аккаунтом</span></span>
+          ${supportAva(44)}
+          <span class="conv-body"><span class="support-name">${SUPPORT_NAME}</span><span class="conv-sub">Отвечают люди, а не боты</span></span>
           <span class="badge hidden" id="support-badge"></span>
+          <span class="pin" title="Закреплено">${ic('pushpin', 16)}<span class="sr">Закреплено</span></span>
         </a>
+        <div class="inbox-label">Переписки</div>
         <div id="convs"><div class="loader"></div></div></div>
       <section class="chat" id="chat">${cid ? html`<div class="loader" style="flex:1"></div>` : html`<div class="chat-empty"><div>${svg(P.chat, 40, 1.4)}<p>Выберите диалог слева.<br>Чтобы написать продавцу, откройте объявление.</p></div></div>`}</section>
     </div></div>`);
 
     pushNudge($('#nudge'), 'Узнаете о новых сообщениях сразу, даже когда сайт закрыт.');
     const loadList = async () => {
-      const [{ items }, sup] = await Promise.all([api('GET', '/api/conversations'), isSupport ? null : api('GET', '/api/support')]);
+      const { items } = await api('GET', '/api/conversations');
       const box = $('#convs');
       if (!box) return;
-      if (sup) {
-        const last = sup.messages[sup.messages.length - 1];
-        if (last) $('#support-last').textContent = `${last.mine ? 'Вы: ' : ''}${last.body || (last.photo ? '📷 Фото' : '')}`;
-      }
       box.innerHTML = items.length ? String(html`${items.map((c) => html`<a href="/messages/${c.id}" class="conv ${c.id === convId ? 'on' : ''}">
           <span class="conv-img">${c.photo ? html`<img src="${c.photo}" alt="" loading="lazy">` : svg(P.image, 22, 1.4)}${ava(c.other, 'xs conv-ava')}</span>
           <span class="conv-body">
-            <span class="conv-top"><span>${c.other.name}${c.role === 'seller' ? ' · покупатель' : ''}</span><span>${shortWhen(c.updatedAt)}</span></span>
-            <span class="conv-title" style="display:block">${c.title}</span>
+            <span class="conv-top"><span class="conv-name">${c.other.name}${c.role === 'seller' ? html` <span class="conv-role">· покупатель</span>` : ''}</span><span class="conv-when">${shortWhen(c.updatedAt)}</span></span>
+            <span class="conv-title" style="display:block">${c.title} · ${price(c.price, c.priceUnit)}</span>
             <span class="conv-last" style="display:block">${c.lastBody || 'Нет сообщений'}</span>
           </span>
           ${c.unread ? html`<span class="badge">${c.unread}</span>` : ''}
@@ -2686,6 +2699,7 @@
       empty: html`<div class="chat-day">Напишите первое сообщение — например, уточните состояние или договоритесь о встрече.${canOffer && l.price ? ' Или предложите свою цену кнопкой ₽.' : ''}</div>`,
       onActivity: () => refreshMe()
     });
+    $('.inbox').insertAdjacentHTML('beforeend', String(chatSide(l, other, role)));
     const chatEl = $('#chat');
     chatEl.addEventListener('click', async (e) => {
       const a = e.target.closest('[data-offer-act]');
