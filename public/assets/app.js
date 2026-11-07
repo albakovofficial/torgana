@@ -83,6 +83,7 @@
     left: '<path d="M15 6l-6 6 6 6"/>',
     right: '<path d="M9 6l6 6-6 6"/>',
     down: '<path d="M6 9l6 6 6-6"/>',
+    pushpin: '<path d="M9 4h6l-1 6 3 3H7l3-3z"/><path d="M12 16v4"/>',
     shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
     truck: '<rect x="2" y="7" width="13" height="10" rx="1.5"/><path d="M15 10h4l3 3v4h-7"/><circle cx="7" cy="18" r="1.8"/><circle cx="18" cy="18" r="1.8"/>',
     share: '<path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 13v6h14v-6"/>',
@@ -501,12 +502,12 @@
         <button class="btn btn-accent btn-sm" type="submit">Найти</button>
       </form>
       <nav class="header-nav" aria-label="Основное">
-        <a href="/favorites" class="icon-btn hd-ic hide-m" aria-label="Избранное" title="Избранное">${ic('heart', 21, 1.9)}</a>
-        <a href="/messages" class="icon-btn hd-ic hide-m" aria-label="Сообщения" title="Сообщения">${ic('chat', 21, 1.9)}<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span></a>
-        ${S.user ? html`<button type="button" class="icon-btn hd-ic bell-btn" data-bell aria-label="Уведомления" title="Уведомления" aria-haspopup="dialog">${ic('bell', 21, 1.9)}<span class="badge ${S.notices ? '' : 'hidden'}" data-notices>${S.notices || 0}</span></button>` : ''}
+        <a href="/favorites" class="icon-btn hd-ic hide-m" aria-label="Избранное" title="Избранное">${ic('heart', 22, 1.8)}</a>
+        <a href="/messages" class="icon-btn hd-ic hide-m" aria-label="Сообщения" title="Сообщения">${ic('chat', 22, 1.8)}<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span></a>
+        ${S.user ? html`<button type="button" class="icon-btn hd-ic bell-btn" data-bell aria-label="Уведомления" title="Уведомления" aria-haspopup="dialog">${ic('bell', 22, 1.8)}<span class="badge ${S.notices ? '' : 'hidden'}" data-notices>${S.notices || 0}</span></button>` : ''}
         <a href="/new" class="btn btn-dark btn-sm hide-m hd-new">${ic('plus', 17, 2.4)}Разместить</a>
         ${S.user ? '' : html`<a href="/login" class="nav-link hide-m">Войти</a>`}
-        <button type="button" class="icon-btn menu-btn" data-menu aria-label="Меню" aria-haspopup="dialog">${ic('menu', 22, 2)}</button>
+        <button type="button" class="menu-btn menu-pill" data-menu aria-label="${S.user ? 'Меню профиля' : 'Меню'}" aria-haspopup="dialog">${ic('menu', 18, 2)}${S.user ? ava(S.user, 'mp-ava') : html`<span class="mp-ava mp-guest">${ic('user', 17, 1.9)}</span>`}</button>
       </nav>
     </div>`);
     $('[data-menu]', $('#header')).onclick = openMenu;
@@ -558,12 +559,14 @@
   function renderBottomNav() {
     const p = location.pathname;
     const on = (cond) => (cond ? 'on' : '');
+    // 1.28 (вариант 4): открытый раздел — прозрачная изумрудная «таблетка» с названием, остальные — иконки.
+    const item = (href, icon, label, cond, extra = '') => html`<a href="${href}" class="${on(cond)}" aria-label="${label}"${cond ? raw(' aria-current="page"') : ''}><span class="bn-i">${ic(icon, 23, cond ? 2 : 1.8)}${extra}</span><span class="bn-t" aria-hidden="true">${label}</span></a>`;
     $('#bottom-nav').innerHTML = String(html`
-      <a href="/" class="${on(p === '/' || p === '/search')}" aria-label="Главная">${ic('home', 23)}</a>
-      <a href="/favorites" class="${on(p === '/favorites')}" aria-label="Избранное">${ic('heart', 23)}</a>
-      <a href="/new" class="plus" aria-label="Разместить объявление">${ic('plus', 24, 2.2)}</a>
-      <a href="/messages" class="${on(p.startsWith('/messages'))}" aria-label="Сообщения">${ic('chat', 23)}<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span></a>
-      <a href="${S.user ? '/profile' : '/login'}" class="${on(p.startsWith('/profile') || p === '/login')}" aria-label="Профиль">${ic('user', 23)}</a>`);
+      ${item('/', 'home', 'Главная', p === '/' || p === '/search')}
+      ${item('/favorites', 'heart', 'Избранное', p === '/favorites')}
+      <a href="/new" class="plus" aria-label="Разместить объявление">${ic('plus', 22, 2.4)}</a>
+      ${item('/messages', 'chat', 'Сообщения', p.startsWith('/messages'), html`<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span>`)}
+      ${item(S.user ? '/profile' : '/login', 'user', 'Профиль', p.startsWith('/profile') || p === '/login')}`);
   }
 
   // Подвал: знак и кнопка поддержки, разделы (на телефоне раскрываются), контакты, © с реквизитами оператора, документы. Последняя колонка FOOTER_COLS — документы (их же показывает меню ≡).
@@ -579,22 +582,20 @@
     const mail = S.config.supportEmail;
     const cols = FOOTER_COLS.slice(0, -1);
     const docs = FOOTER_COLS[FOOTER_COLS.length - 1][1];
-    const contact = (icon, body) => html`<li><span class="f-ic">${ic(icon, 16)}</span>${body}</li>`;
     const footer = $('#footer');
+    // 1.30 (вариант 2): светло-серая плита; слева знак и разделы, справа белая карточка «Нужна помощь?».
     footer.innerHTML = String(html`<div class="wrap">
-      <div class="f-hero">
-        <div class="f-brand">${logo()}<p class="f-tag">Честная площадка объявлений по всей России</p></div>
-        <div class="f-cta">
-          <a class="f-support" href="/messages/support"><span class="f-support-ic">${ic('headset', 20)}</span>Написать в поддержку</a>
-          <small>Отвечают модераторы, а не бот</small>
+      <div class="f-main">
+        <div class="f-grid">
+          <div class="f-brand">${logo()}<p class="f-tag">Честная площадка объявлений по всей России</p></div>
+          ${cols.map(([t, ls]) => html`<details class="fcol" open><summary><h4>${t}</h4>${ic('down', 18, 2)}</summary><ul>${ls.map(([href, label]) => html`<li><a href="${href}">${label}</a></li>`)}</ul></details>`)}
         </div>
-      </div>
-      <div class="f-grid">
-        ${cols.map(([t, ls]) => html`<details class="fcol" open><summary><h4>${t}</h4>${ic('down', 18, 2)}</summary><ul>${ls.map(([href, label]) => html`<li><a href="${href}">${label}</a></li>`)}</ul></details>`)}
-        <div class="fcol fcol-contacts"><h4>Контакты</h4><ul class="f-contacts">
-          ${mail ? contact('mail', html`<a href="mailto:${mail}">${mail}</a>`) : ''}
-          ${contact('shield', html`<span>Каждое объявление проверяет модератор</span>`)}
-        </ul></div>
+        <div class="f-help">
+          <div class="f-help-h"><span class="f-help-ic">${ic('headset', 20)}</span><b>Нужна помощь?</b></div>
+          <p>Отвечают модераторы, а не бот.${mail ? ' Можно и на почту.' : ''}</p>
+          <a class="btn btn-accent btn-block" href="/messages/support">Написать в поддержку</a>
+          ${mail ? html`<a class="f-mail" href="mailto:${mail}">${mail}</a>` : ''}
+        </div>
       </div>
       <div class="f-bottom"><div class="f-copy"><b>© ${new Date().getFullYear()} Торгана</b>${op ? html`<span>${op.name}, ИНН ${op.inn}, ОГРНИП ${op.ogrnip}</span>` : ''}</div>
         <nav class="f-docs" aria-label="Документы">${docs.map(([href, label]) => html`<a href="${href}">${label}</a>`)}${Number(S.config.metrika) ? html`<a href="#" data-cookie-settings>Настройки cookie</a>` : ''}</nav></div>
@@ -624,6 +625,8 @@
   // it.boost — продвижение в ленте (lib/boost.js): XL — на две ячейки (на телефоне — во всю ширину) с ещё двумя фото
   // и началом описания, рамка — изумрудная обводка, tags — метки на фото. Подпись «Продвигается» — всегда.
   const boostImg = (src, cls = '', extra = '') => html`<span class="xl-ph ${cls}${src ? ' ph' : ''}"${src ? raw(` style="--ph:url('${esc(src)}')"`) : ''}>${src ? html`<img src="${src}" alt="" loading="lazy">` : svg(P.image, 28, 1.2)}${extra}</span>`;
+  // 1.26 (вариант 7 «С продавцом»): под описанием карточки — фото и имя продавца, ★ оценка, если есть отзывы.
+  const cardSeller = (s) => html`<span class="card-seller">${ava(s, 'xs')}<span class="cs-name">${s.name}</span>${s.shop ? html`<span class="cs-shop" title="Магазин на Торгане">${ic('store', 12, 2.2)}<span class="sr">Магазин</span></span>` : ''}${s.reviews ? html`<span class="cs-rate" title="${NF.format(s.reviews)} ${plural(s.reviews, 'отзыв', 'отзыва', 'отзывов')}">${starSvg(true, 12)}${fmtAvg({ avg: s.rating })}</span>` : ''}</span>`;
   function card(it) {
     const meta = [it.metro ? `м. ${it.metro}` : it.city, shortWhen(it.createdAt)].filter(Boolean).join(' · ');
     const ad = it.ad;
@@ -638,13 +641,15 @@
           ${xl ? html`<span class="xl-side">${boostImg(side[0])}${boostImg(side[1], '', bo.more ? html`<em>+${bo.more} фото</em>` : '')}</span>` : ''}
           ${tags ? html`<span class="b-tags">${tags.map((t, i) => html`<span class="b-tag${i ? ' alt' : ''}">${t}</span>`)}</span>`
     : ad ? '' : it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : it.fresh ? html`<span class="tag drop-badge">Новое</span>` : it.priceWas ? html`<span class="tag drop-badge" title="Было ${price(it.priceWas, it.priceUnit)}">${ic('down', 13, 2.4)}Цена снижена</span>` : ''}
-          <span class="price-pill">${price(it.price, it.priceUnit)}</span>
+          ${xl ? html`<span class="price-pill">${price(it.price, it.priceUnit)}</span>` : ''}
           ${it.hasVideo ? html`<span class="vid-badge" title="Есть видео">${ic('play', 14, 0)}<span class="sr">Есть видео</span></span>` : ''}
         </div>
         <div class="card-body">
+          ${xl ? '' : html`<span class="card-price">${price(it.price, it.priceUnit)}</span>`}
           <span class="card-title">${it.title}</span>
           ${xl && (bo.desc || it.summary) ? html`<span class="card-desc">${[it.summary, bo.desc].filter(Boolean).join('. ')}</span>` : it.summary ? html`<span class="card-sum">${it.summary}</span>` : ''}
           <span class="card-meta">${meta}${it.delivery ? html` · <span class="ok">Доставка</span>` : ''}${it.exchange ? html` · <span class="ok">Обмен</span>` : ''}${bo ? html` · <span class="b-mark">Продвигается</span>` : ''}</span>
+          ${it.seller ? cardSeller(it.seller) : ''}
         </div>
       </a>
       <button type="button" class="fav-btn ${it.isFav ? 'on' : ''}" data-fav="${it.id}" aria-label="${it.isFav ? 'Убрать из избранного' : 'В избранное'}" aria-pressed="${it.isFav ? 'true' : 'false'}">${ic('heart', 20)}</button>
@@ -2415,7 +2420,7 @@
         <label class="icon-btn chat-attach" title="Отправить фото"><input type="file" accept="image/jpeg,image/png,image/webp" data-photo hidden>${ic('camera', 20)}<span class="sr">Отправить фото</span></label>
         <label class="sr" for="chat-body">Сообщение</label>
         <textarea id="chat-body" rows="1" maxlength="4000" placeholder="${placeholder}"></textarea>
-        <button class="btn btn-dark" type="submit" aria-label="Отправить" style="height:48px">${ic('right', 20, 2.2)}</button>
+        <button class="btn chat-send" type="submit" aria-label="Отправить">${ic('right', 20, 2.2)}<span class="chat-send-t">Отправить</span></button>
       </form>`);
     const msgs = $('[data-msgs]', box);
     const ta = $('#chat-body', box);
@@ -2535,6 +2540,7 @@
   }
 
   // ---------- быстрые ответы продавца ----------
+  let qrMax = 12; // сколько шаблонов можно (сервер: 12, с тарифом магазина — 30)
   function repliesModal(items, done) {
     let list = [...items];
     openModal(String(html`<h2>Быстрые ответы</h2><p class="muted" style="margin:0 0 14px">Появляются над полем сообщения — нажмите, чтобы вставить, поправьте и отправьте.</p>
@@ -2547,14 +2553,14 @@
         $$('[data-qr-rm]', m).forEach((b) => { b.onclick = () => { list.splice(Number(b.dataset.qrRm), 1); paint(); }; });
       };
       paint();
-      const add = () => { const v = $('#qr-new', m).value.trim(); if (!v) return; if (list.length >= 12) { toast('Не больше 12 ответов', true); return; } list.push(v); $('#qr-new', m).value = ''; paint(); };
+      const add = () => { const v = $('#qr-new', m).value.trim(); if (!v) return; if (list.length >= qrMax) { toast(`Не больше ${qrMax} ответов`, true); return; } list.push(v); $('#qr-new', m).value = ''; paint(); };
       $('[data-qr-add]', m).onclick = add;
       $('#qr-new', m).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
       $('[data-x]', m).onclick = close;
-      $('[data-qr-reset]', m).onclick = async () => { try { const r = await api('PUT', '/api/my/replies', { reset: true }); close(); done(r.items); toast('Вернули стандартные ответы'); } catch (e) { toast(e.message, true); } };
+      $('[data-qr-reset]', m).onclick = async () => { try { const r = await api('PUT', '/api/my/replies', { reset: true }); close(); done(r.items, r.max); toast('Вернули стандартные ответы'); } catch (e) { toast(e.message, true); } };
       $('[data-ok]', m).onclick = async () => {
         const pending = $('#qr-new', m).value.trim(); if (pending) list.push(pending);
-        try { const r = await api('PUT', '/api/my/replies', { items: list }); close(); done(r.items); toast('Ответы сохранены'); } catch (e) { toast(e.message, true); }
+        try { const r = await api('PUT', '/api/my/replies', { items: list }); close(); done(r.items, r.max); toast('Ответы сохранены'); } catch (e) { toast(e.message, true); }
       };
     });
   }
@@ -2583,6 +2589,21 @@
       Никогда не сообщайте пароль и коды из СМС — мы их не спрашиваем.
       <span class="chat-quick">${SUPPORT_TOPICS.map((t) => html`<button type="button" class="chip" data-topic="${t}">${t}</button>`)}</span></div>`;
 
+  // 1.27 (вариант 3): справа от чата — объявление и собеседник с оценкой, напоминание о безопасности.
+  // Только на широком экране (CSS); на телефоне и планшете объявление — в шапке чата.
+  const chatSide = (l, o, role) => {
+    const r = o.rating || { count: 0, avg: 0 };
+    const since = o.createdAt ? `на Торгане с ${new Date(o.createdAt).getFullYear()}` : '';
+    return html`<aside class="chat-side" aria-label="Объявление и ${role === 'buyer' ? 'продавец' : 'покупатель'}">
+      <a href="/l/${l.id}" class="chs-photo${l.photo ? ' ph' : ''}"${l.photo ? raw(` style="--ph:url('${esc(l.photo)}')"`) : ''} tabindex="-1" aria-hidden="true">${l.photo ? html`<img src="${l.photo}" alt="" loading="lazy">` : svg(P.image, 32, 1.3)}</a>
+      <div class="chs-item"><b class="chs-price">${price(l.price, l.priceUnit)}</b><a href="/l/${l.id}" class="chs-title">${l.title}</a><span class="chs-place">${l.metro ? `м. ${l.metro}` : l.city}${l.status === 'sold' ? ' · продано' : ''}</span></div>
+      <a href="/l/${l.id}" class="btn btn-line btn-block btn-sm">Открыть объявление</a>
+      <hr>
+      <a href="/u/${o.id}" class="chs-person">${ava(o, 'sm')}<span><b>${o.name}</b><span class="chs-meta">${r.count ? html`<span class="chs-star">${starSvg(true, 13)}</span><b>${fmtAvg(r)}</b> · ${r.count} ${reviewsWord(r.count)}` : 'Пока нет отзывов'}${since ? ` · ${since}` : ''}</span></span></a>
+      <p class="chs-safe">${ic('shield', 18)}<span>${role === 'buyer' ? 'Не переходите в мессенджеры и не вносите предоплату — общайтесь здесь.' : 'Не называйте коды из СМС и не переходите по ссылкам «для получения оплаты».'}</span></p>
+    </aside>`;
+  };
+
   async function viewMessages(cid) {
     if (!requireAuth()) return;
     setTitle('Сообщения');
@@ -2592,29 +2613,26 @@
       <div class="inbox-list"><h1>Сообщения</h1>
         <div id="nudge" class="inbox-nudge"></div>
         <a href="/messages/support" class="conv support ${isSupport ? 'on' : ''}" id="support-row">
-          ${supportAva()}
-          <span class="conv-body"><span class="conv-top"><span class="support-name">${SUPPORT_NAME}</span><span class="pin" title="Закреплено">${ic('pin', 14)}</span></span>
-            <span class="conv-last" style="display:block" id="support-last">Поможем с объявлениями, сделками и аккаунтом</span></span>
+          ${supportAva(44)}
+          <span class="conv-body"><span class="support-name">${SUPPORT_NAME}</span><span class="conv-sub">Отвечают люди, а не боты</span></span>
           <span class="badge hidden" id="support-badge"></span>
+          <span class="pin" title="Закреплено">${ic('pushpin', 16)}<span class="sr">Закреплено</span></span>
         </a>
+        <div class="inbox-label">Переписки</div>
         <div id="convs"><div class="loader"></div></div></div>
       <section class="chat" id="chat">${cid ? html`<div class="loader" style="flex:1"></div>` : html`<div class="chat-empty"><div>${svg(P.chat, 40, 1.4)}<p>Выберите диалог слева.<br>Чтобы написать продавцу, откройте объявление.</p></div></div>`}</section>
     </div></div>`);
 
     pushNudge($('#nudge'), 'Узнаете о новых сообщениях сразу, даже когда сайт закрыт.');
     const loadList = async () => {
-      const [{ items }, sup] = await Promise.all([api('GET', '/api/conversations'), isSupport ? null : api('GET', '/api/support')]);
+      const { items } = await api('GET', '/api/conversations');
       const box = $('#convs');
       if (!box) return;
-      if (sup) {
-        const last = sup.messages[sup.messages.length - 1];
-        if (last) $('#support-last').textContent = `${last.mine ? 'Вы: ' : ''}${last.body || (last.photo ? '📷 Фото' : '')}`;
-      }
       box.innerHTML = items.length ? String(html`${items.map((c) => html`<a href="/messages/${c.id}" class="conv ${c.id === convId ? 'on' : ''}">
           <span class="conv-img">${c.photo ? html`<img src="${c.photo}" alt="" loading="lazy">` : svg(P.image, 22, 1.4)}${ava(c.other, 'xs conv-ava')}</span>
           <span class="conv-body">
-            <span class="conv-top"><span>${c.other.name}${c.role === 'seller' ? ' · покупатель' : ''}</span><span>${shortWhen(c.updatedAt)}</span></span>
-            <span class="conv-title" style="display:block">${c.title}</span>
+            <span class="conv-top"><span class="conv-name">${c.other.name}${c.role === 'seller' ? html` <span class="conv-role">· покупатель</span>` : ''}</span><span class="conv-when">${shortWhen(c.updatedAt)}</span></span>
+            <span class="conv-title" style="display:block">${c.title} · ${price(c.price, c.priceUnit)}</span>
             <span class="conv-last" style="display:block">${c.lastBody || 'Нет сообщений'}</span>
           </span>
           ${c.unread ? html`<span class="badge">${c.unread}</span>` : ''}
@@ -2682,6 +2700,7 @@
       empty: html`<div class="chat-day">Напишите первое сообщение — например, уточните состояние или договоритесь о встрече.${canOffer && l.price ? ' Или предложите свою цену кнопкой ₽.' : ''}</div>`,
       onActivity: () => refreshMe()
     });
+    $('.inbox').insertAdjacentHTML('beforeend', String(chatSide(l, other, role)));
     const chatEl = $('#chat');
     chatEl.addEventListener('click', async (e) => {
       const a = e.target.closest('[data-offer-act]');
@@ -2701,8 +2720,8 @@
       if (e.target.closest('[data-qr-edit]')) repliesModal(qrItems, paintReplies);
     });
     let qrItems = [];
-    const paintReplies = (items) => { qrItems = items; const row = $('[data-replies]', chatEl); if (row) row.innerHTML = String(repliesRow(items)); };
-    if (role === 'seller') api('GET', '/api/my/replies').then((r) => paintReplies(r.items)).catch(() => {});
+    const paintReplies = (items, max) => { qrItems = items; if (max) qrMax = max; const row = $('[data-replies]', chatEl); if (row) row.innerHTML = String(repliesRow(items)); };
+    if (role === 'seller') api('GET', '/api/my/replies').then((r) => paintReplies(r.items, r.max)).catch(() => {});
   }
 
   // ================= отзывы: общие части =================
@@ -3459,10 +3478,11 @@
   const dateShort = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   const daysLeft = (ts) => Math.max(0, Math.ceil((ts - Date.now()) / 86400000));
   const isBiz = () => !!(S.user && S.user.business && S.user.business.status === 'verified');
+  // Что даёт каждый тариф — ровно то, что работает в коде (lib/business.js, lib/deals.js, lib/support.js, lib/feed.js, lib/promo.js).
   const planFeatures = (key, pr) => ({
-    free: ['Объявления без лимитов', 'Чат с покупателями и поддержка', 'Статистика каждого объявления', 'Значок «ИП проверен» после проверки'],
-    shop: ['Витрина: обложка, описание, часы, адрес и сайт', 'Значок «Магазин» в объявлениях и профиле', 'Статистика по всем объявлениям сразу', 'Выгрузка статистики в Excel'],
-    pro: ['Всё из тарифа «Магазин»', 'Автозагрузка объявлений из фида Авито', 'Фид обновляется каждые 6 часов', pr.proDiscount ? `Скидка ${pr.proDiscount}% на продвижение` : 'Продвижение по обычной цене']
+    free: ['Объявления без лимитов, 30 дней показа', 'Чат, предложения цены и до 12 быстрых ответов', 'Статистика каждого объявления', 'Значок «ИП проверен» или «Компания проверена» после проверки'],
+    shop: ['Витрина: обложка, описание, часы, адрес и сайт', 'Значок «Магазин» в профиле, объявлениях и карточках ленты', 'Статистика по всем объявлениям за 7, 30 или 90 дней', 'Выгрузка статистики для Excel', 'До 30 быстрых ответов в чате'],
+    pro: ['Всё из тарифа «Магазин», значок «Магазин Про»', 'Автозагрузка из XML-фида в формате Авито — до 1000 объявлений, каждые 6 часов', pr.proDiscount ? `Скидка ${pr.proDiscount}% на «Рекламу над поиском»` : '«Реклама над поиском» по обычной цене', 'Обращения в поддержку — первыми в очереди']
   })[key];
 
   // Подтверждение покупки → страница оплаты ЮKassa.
@@ -3483,13 +3503,14 @@
 
   // /business — тарифы, продвижение, вопросы. Цены — с сервера (их задаёт владелец).
   const BIZ_FAQ = [
-    ['Нужно ли платить, чтобы продавать?', 'Нет. Размещение объявлений бесплатно и без лимитов для всех — и для частных лиц, и для магазинов. Тариф добавляет инструменты: витрину, общую статистику, автозагрузку.'],
-    ['Кто может подключить тариф или продвижение?', 'ИП и компании, подтвердившие данные в «Настройки → Для бизнеса»: название, ИНН и ОГРН(ИП). Модератор сверяет их с ЕГРЮЛ/ЕГРИП, обычно в течение дня. Данные нужны и для маркировки рекламы.'],
+    ['Нужно ли платить, чтобы продавать?', 'Нет. Размещение бесплатно и без лимитов для всех — и для частных лиц, и для магазинов. Тариф не открывает размещение, а добавляет инструменты: витрину, общую статистику, автозагрузку.'],
+    ['Кто может подключить тариф?', 'ИП и компании, подтвердившие данные в «Настройки → Для бизнеса»: название, ИНН и ОГРН(ИП). Модератор сверяет их с ЕГРЮЛ/ЕГРИП вручную. Подтверждение бесплатное, значок «ИП проверен» или «Компания проверена» появляется и без тарифа.'],
     ['Как оплатить?', 'На странице ЮKassa — банковской картой, через СБП и другими способами, доступными в ЮKassa. Чек придёт на почту. Автоплатежей нет: тариф продлеваете сами, когда нужно.'],
+    ['Что будет, когда тариф закончится?', 'За 3 дня придёт письмо. После окончания витрина и значок «Магазин» скрываются, а объявления остаются на месте и продолжают показываться. Продлить можно в любой момент.'],
     ['Можно ли сменить тариф?', 'Да, в любой момент. Оставшиеся дни пересчитаем по цене месяца: например, 10 дней «Магазина» превратятся в 3 дня «Магазина Про», и к ним добавится оплаченный срок.'],
-    ['Как работает продвижение?', 'Объявление показывается в блоке «Реклама» над выдачей и лентой — тем, кто ищет похожее в вашем городе. Объявления в блоке чередуются, аукциона ставок нет. Обычная выдача не меняется. Реклама маркируется по закону: пометка «Реклама», рекламодатель и токен erid.'],
-    ['Можно ли вернуть деньги?', 'Да. Напишите в поддержку — вернём стоимость неиспользованных полных дней тарифа или продвижения тем же способом, которым вы платили. Если модератор остановил продвижение из-за нарушения правил, неиспользованные дни тоже возвращаются по запросу.'],
-    ['Что такое автозагрузка?', 'В тарифе «Магазин Про» объявления загружаются из XML-файла в формате автозагрузки Авито — по ссылке, той же, что вы указываете в Авито. Новые и изменённые объявления проходят проверку модератора, пропавшие из файла — снимаются с публикации.']
+    ['Чем продвижение в ленте отличается от рекламы над поиском?', 'Продвижение в ленте доступно всем продавцам: XL-карточка, рамка или метки на фото на 7 дней, порядок выдачи не меняется. «Реклама над поиском» — для ИП и компаний: объявление показывается в отдельном блоке «Реклама» над выдачей и лентой тем, кто ищет похожее в вашем городе; аукциона ставок нет, блок маркируется по закону (пометка «Реклама», рекламодатель, erid).'],
+    ['Можно ли вернуть деньги?', 'Да. Напишите в поддержку — вернём стоимость неиспользованных полных дней тарифа или рекламы тем же способом, которым вы платили. Продвижение в ленте возвращается автоматически, если объявление не опубликовали за 7 дней после оплаты; отклонённые метки — их долей.'],
+    ['Что такое автозагрузка?', 'В тарифе «Магазин Про» объявления загружаются из XML-файла в формате автозагрузки Авито — по ссылке, той же, что вы указываете в Авито. Файл проверяется каждые 6 часов и по кнопке. Новые и изменённые объявления проходят проверку модератора, пропавшие из файла — снимаются с публикации.']
   ];
   async function viewBusiness(_, q) {
     setTitle('Для бизнеса');
@@ -3499,32 +3520,109 @@
     const plan = me && me.plan;
     const biz = !!(me && me.biz && me.biz.status === 'verified');
     let months = ['1', '3', '12'].includes(q.get('m')) ? Number(q.get('m')) : 1;
-    app.innerHTML = String(html`<div class="wrap biz">
-      <section class="biz-hero">
-        <div class="biz-hero-txt"><span class="biz-kicker">${ic('store', 16, 2)}Торгана для бизнеса</span>
-          <h1>Продавайте больше — по честным правилам</h1>
-          <p>Размещение бесплатно и без лимитов для всех. Магазинам и компаниям — витрина, общая статистика, автозагрузка из фида и продвижение по фиксированной цене, без аукционов ставок.</p>
-          <div class="biz-facts">${[['card', 'Карта и СБП через ЮKassa'], ['refresh', 'Без автоплатежей'], ['shield', 'Только проверенный бизнес']].map(([i, t]) => html`<span>${ic(i, 16, 2)}${t}</span>`)}</div>
+    const bp = pr.boost || {};
+    const feat = (icon, tone, t, d) => html`<div class="bz-feat"><span class="bz-ic ${tone}">${ic(icon, 20, 1.9)}</span><b>${t}</b><span>${d}</span></div>`;
+    const step = (n, t, d) => html`<li><span class="bz-n">${n}</span><b>${t}</b><span>${d}</span></li>`;
+    app.innerHTML = String(html`<div class="wrap biz bz">
+      <section class="bz-hero">
+        <div class="bz-hero-txt">
+          <span class="bz-kicker">${ic('store', 15, 2)}Торгана для бизнеса</span>
+          <h1>Магазин на Торгане — по честным правилам</h1>
+          <p>Размещать объявления можно бесплатно и без лимитов — и частным лицам, и компаниям. Тариф не открывает размещение, а добавляет инструменты магазина: витрину, общую статистику и автозагрузку.</p>
+          <div class="bz-cta"><a class="btn btn-accent" href="#plans">Смотреть тарифы</a>${biz ? html`<a class="btn btn-line" href="/profile/business">Мой бизнес</a>` : html`<a class="btn btn-line" href="${S.user ? '/profile/settings#s-biz' : '/login?next=/profile/settings%23s-biz'}">Подтвердить бизнес</a>`}</div>
+          <div class="bz-facts">${[['card', 'blue', 'Оплата через ЮKassa'], ['refresh', 'amber', 'Без автоплатежей'], ['shield', 'green', 'Для ИП и компаний после проверки']].map(([i, t, x]) => html`<span><span class="bz-dot ${t}">${ic(i, 14, 2.2)}</span>${x}</span>`)}</div>
+        </div>
+        <div class="bz-mini" aria-hidden="true">
+          <div class="bzm-cover"></div>
+          <div class="bzm-head"><span class="bzm-ava">${ic('store', 22, 2)}</span><span><b>Ваш магазин</b><span class="bzm-badges"><i class="g">${ic('store', 11, 2.4)}Магазин</i><i>${ic('check', 11, 3)}ИП проверен</i></span></span></div>
+          <div class="bzm-grid">${['#DCE3DF', '#E9E6E0', '#DDE4EC'].map((c) => html`<span class="bzm-card"><span style="background:${c}"></span><i></i><i class="s"></i></span>`)}</div>
+          <span class="bzm-tag">Пример</span>
         </div>
       </section>
-      ${S.user && !biz ? html`<div class="banner warn biz-banner">${ic('shield', 20, 2)}<span><strong>Тарифы и продвижение — для ИП и компаний.</strong> Отправьте название, ИНН и ОГРН(ИП) на проверку — обычно это занимает до одного дня. <a href="/profile/settings#s-biz" style="text-decoration:underline">Подтвердить бизнес</a></span></div>` : ''}
-      ${!ready ? html`<div class="banner soft biz-banner">${ic('clock', 20, 2)}<span><strong>Приём оплаты подключается.</strong> Цены уже действуют — напишите в <a href="/messages/support" style="text-decoration:underline">поддержку</a>, если хотите подключиться первыми.</span></div>` : ''}
+      ${S.user && !biz ? html`<div class="banner warn biz-banner">${ic('shield', 20, 2)}<span><strong>Тарифы и «Реклама над поиском» — для ИП и компаний.</strong> Отправьте название, ИНН и ОГРН(ИП) на проверку — это бесплатно. <a href="/profile/settings#s-biz" style="text-decoration:underline">Подтвердить бизнес</a></span></div>` : ''}
+      ${!ready ? html`<div class="banner soft biz-banner">${ic('clock', 20, 2)}<span><strong>Приём оплаты подключается.</strong> Цены на этой странице действуют, но оплатить пока нельзя — напишите в <a href="/messages/support" style="text-decoration:underline">поддержку</a>, если хотите подключиться первыми.</span></div>` : ''}
       ${plan ? html`<div class="banner ok biz-banner">${ic('check', 20, 2.2)}<span>Сейчас у вас тариф <strong>«${plan.name}»</strong> до ${dateLong(plan.until)}. <a href="/profile/business" style="text-decoration:underline">Открыть «Для бизнеса»</a></span></div>` : ''}
+
+      <section class="biz-sec">
+        <div class="biz-sec-head"><div><span class="bz-label">Бесплатно для всех</span><h2>Всё для продаж — без тарифа</h2>
+          <p class="biz-lead">Это есть у каждого продавца, и у магазинов тоже. Ничего из этого не исчезнет, если тариф закончится.</p></div></div>
+        <div class="bz-feats">
+          ${feat('tag', 'green', 'Объявления без лимитов', 'Сколько угодно объявлений. Показ — 30 дней, опубликовать снова можно бесплатно.')}
+          ${feat('shield', 'blue', 'Проверка модератором', 'Каждое объявление и каждую правку смотрит человек до публикации.')}
+          ${feat('chat', 'violet', 'Чат с покупателями', 'Фото в чате, быстрые ответы и предупреждение о мошенниках.')}
+          ${feat('trend', 'amber', 'Торг в один клик', 'Покупатель предлагает цену — вы принимаете или отклоняете одной кнопкой.')}
+          ${feat('chart', 'blue', 'Статистика объявления', 'Показы, переходы, избранное и откуда приходят покупатели.')}
+          ${feat('star', 'amber', 'Отзывы покупателей', 'Только после переписки по объявлению. На отзыв можно ответить.')}
+          ${feat('bell', 'violet', 'Подписчики', 'Те, кто подписался на вас, узнают о новых объявлениях.')}
+          ${feat('check', 'green', 'Значок проверенного бизнеса', '«ИП проверен» или «Компания проверена» после проверки ИНН и ОГРН(ИП).')}
+        </div>
+      </section>
+
+      <section class="biz-sec">
+        <div class="biz-sec-head"><div><span class="bz-label">С тарифом</span><h2>Как будет выглядеть ваш магазин</h2>
+          <p class="biz-lead">Витрина появляется вверху вашей страницы продавца, над всеми объявлениями. Здесь — пример; содержание вы заполняете сами.</p></div></div>
+        <div class="bz-shop">
+          <div class="bz-frame" aria-hidden="true">
+            <div class="bzf-cover"><span>Обложка 1600 × 530</span></div>
+            <div class="bzf-body">
+              <div class="bzf-top"><span class="bzf-ava">${ic('store', 28, 1.9)}</span>
+                <span class="bzf-name"><span class="bzf-badges"><i class="dark">${ic('store', 12, 2.2)}Магазин Про</i><i class="ok">${ic('check', 12, 3)}Компания проверена</i></span><b>Название вашего магазина</b>
+                  <span class="bzf-rate"><span class="st">${starSvg(true, 14)}</span>оценка из отзывов · подписчики</span></span>
+                <span class="bzf-btn">${ic('bell', 15, 2.2)}Подписаться</span></div>
+              <p class="bzf-about">Описание магазина — до 1500 символов: что продаёте, условия, гарантия, доставка.</p>
+              <div class="bzf-facts"><span>${ic('clock', 15)}Часы работы</span><span>${ic('pin', 15)}Адрес</span><span>${ic('link', 15)}ваш-сайт.ru</span></div>
+              <div class="bzf-grid">${['#DCE3DF', '#E9E6E0', '#DDE4EC', '#EEE3D6'].map((c) => html`<span class="bzf-card"><span class="bzf-img" style="background:${c}"></span><b></b><i></i><span class="bzf-seller"><span></span>${ic('store', 10, 2.4)}</span></span>`)}</div>
+            </div>
+          </div>
+          <ol class="bz-notes">
+            <li><span class="bz-ic green">${ic('image', 18, 1.9)}</span><span><b>Обложка и описание</b>Обложка, рассказ о магазине, часы работы, адрес и ссылка на сайт.</span></li>
+            <li><span class="bz-ic blue">${ic('store', 18, 1.9)}</span><span><b>Значок «Магазин»</b>В профиле, на странице объявления и в строке продавца на карточках ленты.</span></li>
+            <li><span class="bz-ic amber">${ic('chart', 18, 1.9)}</span><span><b>Статистика магазина</b>Показы, переходы и избранное по всем объявлениям, по дням и источникам, с выгрузкой для Excel.</span></li>
+            <li><span class="bz-ic violet">${ic('refresh', 18, 1.9)}</span><span><b>Автозагрузка в «Про»</b>Объявления подтягиваются из вашего фида — тот же XML, что для Авито.</span></li>
+          </ol>
+        </div>
+      </section>
+
       <section class="biz-sec" id="plans">
-        <div class="biz-sec-head"><h2>Тарифы</h2>
+        <div class="biz-sec-head"><div><span class="bz-label">Тарифы</span><h2>Платите только за инструменты</h2></div>
           <div class="seg" role="tablist" aria-label="Срок">${[[1, '1 месяц'], [3, '3 месяца'], [12, '12 месяцев']].map(([m, t]) => html`<button type="button" role="tab" data-m="${m}">${t}</button>`)}</div></div>
         <div class="plans" id="plan-cards"></div>
-        <p class="muted biz-small">Месяц тарифа — 30 дней. Сменить тариф можно в любой момент: оставшиеся дни пересчитаем по цене месяца.</p>
+        <p class="muted biz-small">Месяц тарифа — 30 дней. Сменить тариф можно в любой момент: оставшиеся дни пересчитаем по цене месяца. Автоплатежей нет.</p>
       </section>
+
       <section class="biz-sec">
-        <div class="biz-sec-head"><div><span class="biz-kicker dark">${ic('trend', 16, 2)}Продвижение</span><h2>Ваше объявление — первым рядом</h2>
-          <p class="biz-lead">Показываем в блоке «Реклама» над выдачей и лентой тем, кто ищет похожее в вашем городе. Обычная выдача не меняется: частные объявления не опускаются.</p></div></div>
-        <div class="promo-wrap">
-          <div class="promo-demo" aria-hidden="true">${[0, 1, 2].map((i) => html`<div class="pd-card ${i === 1 ? 'on' : ''}"><div class="pd-img"><span class="ad-mark static">Реклама</span></div><i></i><i class="s"></i></div>`)}</div>
-          <div class="promo-opts">${[3, 7, 30].map((d) => html`<div class="promo-opt"><b>${d} ${plural(d, 'день', 'дня', 'дней')}</b><span class="promo-price">${rub(pr.promo[d])}</span><small>≈ ${rub(Math.round(pr.promo[d] / d))} в день${pr.proDiscount ? html`<br>в «Магазин Про» — ${rub(Math.max(1, Math.round(pr.promo[d] * (100 - pr.proDiscount) / 100)))}` : ''}</small></div>`)}</div>
+        <div class="biz-sec-head"><div><span class="bz-label">Продвижение</span><h2>Чтобы заметили быстрее</h2>
+          <p class="biz-lead">Два вида платного продвижения. Оба — по фиксированной цене, без аукционов ставок.</p></div></div>
+        <div class="bz-promo">
+          <div class="bz-pcard">
+            <span class="bz-ic violet">${ic('xl', 20, 1.9)}</span>
+            <b class="bz-ph">Продвижение в ленте</b><span class="bz-for">Для всех продавцов · 7 дней</span>
+            <ul class="bz-prices">
+              <li><span>XL-карточка — две ячейки, больше фото</span><b>${rub(bp.xl)}</b></li>
+              <li><span>Яркая рамка</span><b>${rub(bp.frame)}</b></li>
+              <li><span>Метки на фото — после проверки модератором</span><b>${rub(bp.tags)}</b></li>
+              <li class="all"><span>Всё в одном</span><b>${rub(bp.all)}</b></li></ul>
+            <p>Порядок выдачи не меняется — карточка подписана «Продвигается». Не опубликовали объявление за 7 дней после оплаты — деньги вернутся автоматически.</p>
+          </div>
+          <div class="bz-pcard">
+            <span class="bz-ic blue">${ic('megaphone', 20, 1.9)}</span>
+            <b class="bz-ph">Реклама над поиском</b><span class="bz-for">Для ИП и компаний</span>
+            <ul class="bz-prices">${[3, 7, 30].map((d) => html`<li><span>${d} ${plural(d, 'день', 'дня', 'дней')}${pr.proDiscount ? html` · в «Про» ${rub(Math.max(1, Math.round(pr.promo[d] * (100 - pr.proDiscount) / 100)))}` : ''}</span><b>${rub(pr.promo[d])}</b></li>`)}</ul>
+            <p>Отдельный блок «Реклама» над выдачей и лентой — для тех, кто ищет похожее в вашем городе. Обычная выдача не меняется. Маркируем по закону: пометка «Реклама», рекламодатель и erid; показ начинается после регистрации в ОРД, срок идёт с запуска.</p>
+          </div>
         </div>
-        <ol class="biz-steps">${[['tag', 'Опубликуйте объявление', 'Оно проходит обычную проверку модератора'], ['trend', 'Нажмите «Продвигать»', 'В объявлении или в «Моих объявлениях» → ⋯'], ['shield', 'Мы промаркируем рекламу', 'Получим токен erid в ОРД и запустим показ'], ['chart', 'Смотрите результат', 'Показы и переходы из блока — в статистике']].map(([i, t, d], n) => html`<li><span class="bs-n">${n + 1}</span><span class="bs-ic">${ic(i, 20)}</span><b>${t}</b><small>${d}</small></li>`)}</ol>
       </section>
+
+      <section class="biz-sec">
+        <div class="biz-sec-head"><div><span class="bz-label">Подключение</span><h2>Четыре шага</h2></div></div>
+        <ol class="bz-steps">
+          ${step(1, 'Подтвердите бизнес', '«Настройки → Для бизнеса»: название, ИНН и ОГРН(ИП). Модератор сверит их с ЕГРЮЛ/ЕГРИП.')}
+          ${step(2, 'Выберите тариф', 'На 1, 3 или 12 месяцев. Оплата — на странице ЮKassa, чек придёт на почту.')}
+          ${step(3, 'Оформите витрину', 'Обложка, описание, часы, адрес и сайт — в разделе «Для бизнеса» профиля.')}
+          ${step(4, 'Подключите фид', 'В «Магазин Про» вставьте ссылку на XML — объявления загрузятся и пройдут проверку.')}
+        </ol>
+      </section>
+
       <section class="biz-sec"><div class="biz-sec-head"><h2>Вопросы и ответы</h2></div>
         <div class="faq">${BIZ_FAQ.map(([t, a]) => html`<details><summary>${t}${ic('down', 18, 2)}</summary><p>${a}</p></details>`)}</div>
         <p class="muted biz-small">Условия платных услуг — в <a href="/page/terms#paid" style="text-decoration:underline">разделе 7 Пользовательского соглашения</a>, правила рекламы — в <a href="/page/rules#ads" style="text-decoration:underline">Правилах</a>. Исполнитель — ${S.config.operator ? `${S.config.operator.name}, ИНН ${S.config.operator.inn}` : 'оператор Торганы'}.</p>
@@ -3541,13 +3639,13 @@
         return html`<button type="button" class="btn ${cls} btn-block" data-buy="${key}">${plan && plan.id === key ? `Продлить на ${months} мес.` : plan ? `Перейти на «${PLAN_NAME[key]}»` : 'Подключить'}</button>`;
       };
       $('#plan-cards').innerHTML = String(html`
-        <div class="plan free"><div class="plan-top"><h3>Частным лицам</h3><div class="plan-price"><b>0 ₽</b><span>всегда</span></div><p>Всё для продажи вещей и услуг — без ограничений.</p></div>
+        <div class="plan free"><div class="plan-top"><h3>Бесплатно</h3><div class="plan-price"><b>0 ₽</b><span>всегда</span></div><p>Для всех — частных лиц и компаний.</p></div>
           <ul>${planFeatures('free', pr).map((f) => html`<li>${ic('check', 16, 2.4)}${f}</li>`)}</ul>
           <a class="btn btn-soft btn-block" href="/new">Разместить объявление</a></div>
         ${['shop', 'pro'].map((key) => html`<div class="plan ${key} ${plan && plan.id === key ? 'current' : ''}">
           <div class="plan-top"><h3>${PLAN_NAME[key]}${plan && plan.id === key ? html`<span class="plan-cur">ваш тариф</span>` : ''}</h3>
             <div class="plan-price"><b>${rub(Math.round(pr[key][months] / months))}</b><span>в месяц</span></div>
-            <p>${months > 1 ? html`${rub(pr[key][months])} за ${months} мес.${save(key) ? html` · <span class="plan-save">выгода ${save(key)}%</span>` : ''}` : key === 'shop' ? 'Витрина и статистика для магазина.' : 'Для тех, у кого много товаров.'}</p></div>
+            <p>${months > 1 ? html`${rub(pr[key][months])} за ${months} мес.${save(key) ? html` · <span class="plan-save">выгода ${save(key)}%</span>` : ''}` : key === 'shop' ? 'Витрина и статистика для магазина.' : 'Для тех, у кого много товаров.'}</p>${key === 'pro' ? html`<span class="plan-pick">Больше всего возможностей</span>` : ''}</div>
           <ul>${planFeatures(key, pr).map((f) => html`<li>${ic('check', 16, 2.4)}${f}</li>`)}</ul>
           ${cta(key)}</div>`)}`);
       $$('[data-buy]').forEach((b) => {
@@ -4690,7 +4788,7 @@
       <div class="inbox-list">${items.length ? items.map((t) => html`<a href="/admin?status=support&t=${t.id}" class="conv ${t.id === id ? 'on' : ''}">
           ${ava(t.user)}
           <span class="conv-body"><span class="conv-top"><span>${t.user.name}</span><span>${shortWhen(t.updatedAt)}</span></span>
-            <span class="conv-title" style="display:block">${t.waiting ? 'Ждёт ответа' : 'Отвечено'}</span>
+            <span class="conv-title" style="display:block">${t.waiting ? 'Ждёт ответа' : 'Отвечено'}${t.pro ? html` · <span class="pro-mark">Магазин Про</span>` : ''}</span>
             <span class="conv-last" style="display:block">${t.lastBody}</span></span>
           ${t.unread ? html`<span class="badge">${t.unread}</span>` : ''}</a>`) : html`<div style="padding:22px" class="muted">Обращений пока нет. Пользователи пишут в закреплённый диалог «Поддержка Торганы».</div>`}</div>
       <section class="chat" id="support-chat">${id ? html`<div class="loader" style="flex:1"></div>` : html`<div class="chat-empty"><div>${supportAva(56)}<p>Выберите обращение слева.</p></div></div>`}</section>
@@ -4825,30 +4923,74 @@
     }
     const email = S.config.supportEmail;
     const contact = email ? html`<a href="mailto:${email}" style="text-decoration:underline">${email}</a>` : html`через форму на сайте (адрес поддержки появится здесь)`;
+    const q = (t) => html`<li class="help-q">${ic('search', 17)}<a href="/search?q=${encodeURIComponent(t)}">${t}</a></li>`;
+    // 1.31 (вариант A): у страниц помощи слева общее меню, справа статья. Тексты описывают ровно то, что умеет сайт.
     const PAGES = {
-      safety: ['Безопасность', html`
-        <p>Большинство мошеннических схем строится на одном: увести вас из чата площадки и получить деньги или данные карты.</p>
-        <h2>Чего никогда не делать</h2><ul><li>Не переходите в мессенджеры по просьбе собеседника.</li><li>Не называйте коды из СМС, CVV/CVC и данные карты.</li><li>Не переходите по ссылкам «для получения оплаты» или «оформления доставки».</li><li>Не вносите предоплату незнакомым продавцам.</li></ul>
-        <h2>Как покупать спокойно</h2><ul><li>Общайтесь в чате Торганы — переписка сохраняется.</li><li>Проверяйте товар при встрече до оплаты.</li><li>Смотрите, сколько продавец на площадке и сколько у него объявлений.</li></ul>
-        <p>Если чат заподозрит обман, мы покажем предупреждение. О подозрительном объявлении сообщите в поддержку: ${contact}.</p>`],
       help: ['Как искать', html`
-        <p>Пишите в поиск так, как сказали бы человеку. Торгана поймёт цену, доставку и город.</p>
-        <h2>Примеры</h2><ul><li>«коляска до 15 000 с доставкой»</li><li>«iPhone от 40 тыс в Казани»</li><li>«диван до 20к в Москве»</li></ul>
-        <p>Уточнить результаты можно фильтрами: категория, город, цена и доставка. Нажмите на сердечко, чтобы сохранить объявление в избранное.</p>`],
+        <p class="help-lead">Пишите в поиск так, как сказали бы человеку. Торгана сама поймёт цену, доставку и город.</p>
+        <section class="help-box"><h2>Примеры запросов</h2><ul class="help-qs">
+          ${q('коляска до 15 000 с доставкой')}${q('iPhone от 40 тыс в Казани')}${q('диван до 20к в Москве')}${q('ноутбук от 30к до 60к')}</ul>
+          <p class="help-note">Нажмите на пример — откроется выдача.</p></section>
+        <h2>Что понимает поиск</h2>
+        <ul><li><b>Цену</b> со словами «до» и «от»: числом, с «тыс», «к» или «млн» — например, «до 20к» или «от 2 млн».</li>
+          <li><b>Доставку</b> — слова «с доставкой» оставят только объявления, где продавец её предлагает.</li>
+          <li><b>Город</b> — если назвать крупный город («в Казани»), поиск покажет объявления оттуда. Город также можно выбрать кнопкой в строке поиска.</li>
+          <li>Слова вроде «купить», «продам» или «б/у» поиск пропускает — они не сужают выдачу.</li></ul>
+        <h2>Как уточнить выдачу</h2>
+        <p>В выдаче есть фильтры: категория и раздел, характеристики раздела (например, марка, год или размер), город и метро, цена, доставка, «Торг уместен» и «Возможен обмен». Сортировка — сначала новые, дешевле или дороже.</p>
+        <h2>Как не пропустить нужное</h2>
+        <ul><li><b>Избранное.</b> Нажмите на сердечко — объявление сохранится в «Избранном». Если продавец снизит цену, придёт уведомление.</li>
+          <li><b>Сохранённый поиск.</b> Кнопка «Сохранить поиск» в выдаче — новые объявления по запросу отметим в разделе «Поиски», пришлём push (если они включены) и подборку за день на почту. Всё это выключается в настройках.</li>
+          <li><b>Подписка на продавца.</b> Кнопка «Подписаться» в профиле продавца — узнаете о его новых объявлениях.</li></ul>
+        <h2>Честная выдача</h2>
+        <p>Платное продвижение не меняет порядок объявлений: такие карточки подписаны «Продвигается». Реклама показывается отдельным блоком с пометкой «Реклама».</p>`],
+      safety: ['Безопасность', html`
+        <p class="help-lead">Большинство мошеннических схем строится на одном: увести вас из чата площадки и получить деньги или данные карты.</p>
+        <section class="help-box bad"><h2>Чего никогда не делать</h2><ul>
+          <li>Не переходите в мессенджеры по просьбе собеседника.</li>
+          <li>Не называйте коды из СМС, CVV/CVC и данные карты — для получения денег они не нужны.</li>
+          <li>Не переходите по ссылкам «для получения оплаты» или «оформления доставки».</li>
+          <li>Не вносите предоплату незнакомым продавцам.</li></ul></section>
+        <section class="help-box ok"><h2>Как покупать спокойно</h2><ul>
+          <li>Общайтесь в чате Торганы — переписка сохраняется.</li>
+          <li>Встречайтесь в людных местах и проверяйте товар до оплаты.</li>
+          <li>Смотрите, сколько продавец на площадке, сколько у него объявлений и что пишут в отзывах.</li>
+          <li>Цена намного ниже, чем у похожих объявлений, и спешка («только сегодня», «уже едут другие») — повод насторожиться.</li></ul></section>
+        <h2>Что делает Торгана</h2>
+        <ul><li>Модератор проверяет каждое объявление и каждую правку до публикации.</li>
+          <li>Если собеседник в чате предлагает уйти в мессенджер или заплатить вне Торганы, мы показываем предупреждение.</li>
+          <li>Отзывы о продавце оставляет только покупатель после переписки по объявлению. Изменить отзыв нельзя, а скрыть его может только модератор — после жалобы и проверки.</li>
+          <li>Значки «Телефон подтверждён», «ИП проверен» и «Компания проверена» появляются только после подтверждения.</li>
+          <li>Сотрудники Торганы никогда не спрашивают пароль и коды из СМС.</li></ul>
+        <p>Торгана не участвует в расчётах между покупателем и продавцом: оплату и передачу товара вы согласуете между собой.</p>
+        <h2>Если что-то пошло не так</h2>
+        <ul><li>О подозрительном объявлении сообщите кнопкой «Пожаловаться» на его странице.</li>
+          <li>Напишите в <a href="/messages/support">поддержку</a> или на почту: ${contact}.</li>
+          <li>Если вы перевели деньги или назвали данные карты — сразу позвоните в свой банк, а затем обратитесь в полицию.</li></ul>`],
       support: ['Поддержка', html`
-        <p>Мы отвечаем людьми, а не шаблонами.</p>
-        <h2>Как связаться</h2><p>Быстрее всего — в чате «Поддержка Торганы»: он всегда закреплён первым в разделе «Сообщения».</p>
-        <p><a class="btn btn-accent" href="/messages/support" style="text-decoration:none;color:#fff">${ic('chat', 18)}Написать в поддержку</a></p>
-        <p>Или на почту: ${contact}. Укажите ссылку на объявление или диалог, если вопрос о них. Реквизиты — на странице <a href="/page/contacts" style="text-decoration:underline">«Реквизиты и контакты»</a>.</p>
+        <p class="help-lead">Мы отвечаем людьми, а не шаблонами.</p>
+        <section class="help-contact">${supportAva(52)}
+          <div><b>Быстрее всего — в чате</b><span>«Поддержка Торганы» всегда закреплена первой в «Сообщениях». В чат можно отправить фото или скриншот.</span></div>
+          <a class="btn btn-accent" href="/messages/support">Написать в поддержку</a></section>
+        <p>Или на почту: ${contact}. Укажите ссылку на объявление или диалог, если вопрос о них. На сообщение в чате ответим там же, а если включены уведомления — дадим знать push или письмом. Реквизиты — на странице <a href="/page/contacts">«Реквизиты и контакты»</a>.</p>
         <h2>Частые вопросы</h2>
-        <p><strong>Почему отклонили объявление?</strong> Причина указана в профиле в разделе «На исправлении». Исправьте объявление или подайте апелляцию.</p>
-        <p><strong>Сколько стоит размещение?</strong> Для частных лиц — бесплатно и без лимитов.</p>
-        <p><strong>Как удалить аккаунт?</strong> Напишите в поддержку с email, на который зарегистрирован аккаунт.</p>`]
+        <div class="help-faq">
+          <div><b>Почему объявление появилось не сразу?</b><p>Каждое объявление и каждую правку проверяет модератор, а потом оно публикуется. Статус виден в профиле, в «Моих объявлениях».</p></div>
+          <div><b>Почему отклонили объявление?</b><p>Если модератор указал причину, она видна в профиле в разделе «На исправлении». Исправьте объявление или подайте апелляцию — её рассмотрит человек.</p></div>
+          <div><b>Сколько стоит размещение?</b><p>Для частных лиц — бесплатно и без лимитов. Платными могут быть только дополнительные услуги: продвижение объявления и тарифы для бизнеса.</p></div>
+          <div><b>Сколько висит объявление?</b><p>30 дней. Потом оно снимается с показа, и его можно бесплатно опубликовать снова.</p></div>
+          <div><b>Не приходит письмо от Торганы</b><p>Проверьте папку «Спам». Если письма нет и там, напишите в поддержку.</p></div>
+          <div><b>Как удалить аккаунт?</b><p>Напишите в поддержку с почты, на которую зарегистрирован аккаунт, — удалим профиль, объявления и переписку.</p></div>
+        </div>`]
     };
     const p = PAGES[slug];
     if (!p) { viewNotFound(); return; }
     setTitle(p[0]);
-    app.innerHTML = String(html`<div class="wrap"><article class="page"><h1>${p[0]}</h1>${p[1]}</article></div>`);
+    const NAV = [['help', 'Как искать'], ['safety', 'Безопасность'], ['support', 'Поддержка'], ['rules', 'Правила площадки'], ['contacts', 'Реквизиты и контакты']];
+    app.innerHTML = String(html`<div class="wrap"><div class="help">
+      <nav class="help-nav" aria-label="Помощь"><span class="help-nav-h">Помощь</span>${NAV.map(([k, t]) => html`<a href="/page/${k}" class="${k === slug ? 'on' : ''}"${k === slug ? raw(' aria-current="page"') : ''}>${t}</a>`)}</nav>
+      <article class="page help-art"><div class="help-crumbs">Помощь › ${p[0]}</div><h1>${p[0]}</h1>${p[1]}</article>
+    </div></div>`);
   }
 
   // ================= «потянуть вниз — обновить» =================

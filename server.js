@@ -143,8 +143,19 @@ function cardFromRow(r) {
     createdAt: r.created_at,
     isFav: !!r.is_fav,
     priceWas: priceWasOf(r),
-    boost: boostApi ? boostApi.cardExtra(r) : null // XL, рамка, метки (lib/boost.js)
+    boost: boostApi ? boostApi.cardExtra(r) : null, // XL, рамка, метки (lib/boost.js)
+    seller: sellerOfCard(r) // 1.26: продавец в карточке — имя, фото, оценка
   };
+}
+
+// Продавец в карточке: имя (у проверенного бизнеса — название), фото и средняя оценка по опубликованным отзывам.
+// seller_rating из CARD_SELECT — строка «среднее:число отзывов».
+function sellerOfCard(r) {
+  if (!r.seller_id) return null;
+  const [avg, n] = String(r.seller_rating || '').split(':').map(Number);
+  const name = r.seller_biz_status === 'verified' && r.seller_biz_name ? r.seller_biz_name : r.seller_name;
+  const shop = !!(r.seller_plan && r.seller_plan_until > now()); // 1.32: тариф «Магазин»/«Про» — значок магазина в карточке
+  return { id: r.seller_id, name: name || 'Продавец', avatar: photoUrl(r.seller_avatar), rating: n ? avg : 0, reviews: n || 0, shop };
 }
 
 const CARD_SELECT = `
@@ -153,7 +164,9 @@ const CARD_SELECT = `
     (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
     EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id = l.id AND f.user_id = ?) AS is_fav,
     (SELECT json_object('xl', MAX(b.xl), 'frame', MAX(b.frame)) FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active') AS boost,
-    (SELECT b.tags FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active' AND b.tags_state = 'on' ORDER BY b.id DESC LIMIT 1) AS boost_tags
+    (SELECT b.tags FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active' AND b.tags_state = 'on' ORDER BY b.id DESC LIMIT 1) AS boost_tags,
+    u.id AS seller_id, u.name AS seller_name, u.avatar AS seller_avatar, u.biz_status AS seller_biz_status, u.biz_name AS seller_biz_name, u.plan AS seller_plan, u.plan_until AS seller_plan_until,
+    (SELECT ROUND(AVG(rv.rating), 1) || ':' || COUNT(*) FROM reviews rv WHERE rv.seller_id = u.id AND rv.status = 'published') AS seller_rating
   FROM listings l JOIN users u ON u.id = l.user_id`;
 
 // Текст для поиска: название, описание, подкатегория и характеристики из списков («Toyota», «Автомат»).
@@ -913,8 +926,9 @@ route('GET', '/api/conversations/:id', (ctx) => {
   return {
     conversation: { id: c.id, role: c.buyer_id === u.id ? 'buyer' : 'seller' },
     review: reviews.chatState(u.id, c),
-    listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, bargain: !!l.bargain, photo: photoUrl(photo && photo.file) },
-    other: { id: other.id, name: other.name, avatar: photoUrl(other.avatar), createdAt: other.created_at },
+    listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, bargain: !!l.bargain, city: l.city, metro: l.metro || '', photo: photoUrl(photo && photo.file) },
+    // 1.27: оценка собеседника — для колонки «Объявление и продавец» справа от чата
+    other: { id: other.id, name: other.name, avatar: photoUrl(other.avatar), createdAt: other.created_at, rating: reviews.ratingOf(other.id) },
     offers: deals.offersOf(c.id), // состояния всех предложений — обновляются при каждом опросе
     messages
   };
@@ -941,7 +955,8 @@ route('GET', '/api/users/:id', (ctx) => {
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   if (!u || u.is_blocked) throw new HttpError(404, 'Пользователь не найден');
   const uid = ctx.user ? ctx.user.id : 0;
-  const items = db.prepare(`${CARD_SELECT} WHERE l.user_id = ? AND l.status = 'active' ORDER BY l.created_at DESC LIMIT 60`).all(uid, id).map(cardFromRow);
+  const items = db.prepare(`${CARD_SELECT} WHERE l.user_id = ? AND l.status = 'active' ORDER BY l.created_at DESC LIMIT 60`).all(uid, id)
+    .map((r) => ({ ...cardFromRow(r), seller: null })); // в профиле продавца все объявления его — строка продавца не нужна
   const sold = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ? AND status = \'sold\'').get(id).n;
   return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rating: reviews.ratingOf(u.id), badges: badgesOf(u), shop: business.shopOf(u),
     followers: deals.followers(u.id), following: deals.isFollowing(uid, u.id) }, items };
