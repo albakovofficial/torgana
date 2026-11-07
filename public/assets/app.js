@@ -3849,21 +3849,40 @@
     });
   }
 
-  // Модерация с нового устройства: код из письма (lib/ops.js).
+  // Модерация с нового устройства: код из письма (lib/ops.js). Ниже кода — что стало с письмом:
+  // принято почтовым сервисом (тогда искать в «Спаме») или не ушло (с текстом ошибки).
   async function viewDevice() {
     setTitle('Вход в модерацию');
     const st = await api('GET', '/api/admin/device').catch(() => ({}));
+    if (st.trusted) { render(); return; }
     authPage('Вход в модерацию', `Это устройство мы видим впервые. Чтобы модерацию не открыл никто, кроме вас, — даже зная пароль, — пришлём код на ${st.email || 'вашу почту'}. Устройство запомним на 30 дней.`,
-      html`<div id="dev-code"><button type="button" class="btn btn-dark btn-lg btn-block" data-dev-send>${ic('mail', 18, 2)}Отправить код</button></div>`,
+      html`<div id="dev-code"><button type="button" class="btn btn-dark btn-lg btn-block" data-dev-send>${ic('mail', 18, 2)}Отправить код</button></div><div id="dev-mail" class="dev-mail" aria-live="polite"></div>`,
       html`<p class="alt"><a href="/">На главную</a></p>`);
+    let timer = null;
+    const paint = (x) => {
+      const box = $('#dev-mail');
+      if (!box || !x) return;
+      const L = x.letter;
+      if (x.trusted) { clearTimeout(timer); toast('Почта сейчас не работает — модерация открыта без кода. Почините её в разделе «Почта»', true); render(); return; }
+      box.innerHTML = String(!L ? '' : L.status === 'sent'
+        ? html`<div class="bk-state ok">${ic('check', 20, 2.4)}<div><b>Письмо отправлено в ${hm(L.sentAt)}</b><span>Почтовый сервис его принял. Если письма нет пару минут — посмотрите «Спам» и «Рассылки», найдите «код для входа в модерацию».</span></div></div>`
+        : L.error
+          ? html`<div class="bk-state bad">${ic('warn', 20, 2)}<div><b>${L.status === 'failed' ? 'Письмо не отправлено' : `Письмо пока не ушло — пробуем ещё раз (попытка ${L.attempts})`}</b><span>Ответ почтового сервиса: ${L.error}</span></div></div>`
+          : html`<div class="bk-state run"><span class="bk-dot"></span><div><b>Отправляем письмо…</b><span>Обычно это несколько секунд.</span></div></div>`);
+      clearTimeout(timer);
+      if (L && L.status === 'pending' && box.isConnected) timer = setTimeout(async () => paint(await api('GET', '/api/admin/device').catch(() => null)), 2500);
+    };
+    cleanup = () => clearTimeout(timer);
+    const watch = async () => paint(await api('GET', '/api/admin/device').catch(() => null));
     const startCode = (r) => codeForm($('#dev-code'), {
       email: r.email || st.email, wait: r.wait || 60,
-      send: async () => { const x = await api('POST', '/api/admin/device/send'); return x; },
+      send: async () => { const x = await api('POST', '/api/admin/device/send'); setTimeout(watch, 800); return x; },
       check: async (code) => { await api('POST', '/api/admin/device/verify', { code }); toast('Устройство подтверждено на 30 дней'); render(); }
     });
+    if (st.letter && st.letter.createdAt > Date.now() - 15 * 60 * 1000) { startCode({ email: st.email, wait: Math.max(0, 60 - Math.round((Date.now() - st.letter.createdAt) / 1000)) }); paint(st); return; }
     $('[data-dev-send]').onclick = async (e) => {
       e.currentTarget.disabled = true;
-      try { const r = await api('POST', '/api/admin/device/send'); startCode(r); } catch (ex) { toast(ex.message, true); e.currentTarget.disabled = false; }
+      try { const r = await api('POST', '/api/admin/device/send'); startCode(r); setTimeout(watch, 800); } catch (ex) { toast(ex.message, true); e.currentTarget.disabled = false; }
     };
   }
 

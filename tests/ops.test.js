@@ -151,3 +151,25 @@ test('вход в модерацию с нового устройства — п
     assert.equal((await a.get('/api/me')).status, 200);
   } finally { await s2.stop(); await smtp2.close(); }
 });
+
+test('почта сломана — владелец входит в модерацию без кода, чтобы её починить; письмо видно с ошибкой', async () => {
+  const s2 = await startServer({ ADMIN_DEVICE_CHECK: '1', MAIL_TICK_MS: '150' });
+  try {
+    const a = await registerUser(s2.base, { name: 'Владелец', email: 'admin@test.local' });
+    const helper = await registerUser(s2.base, { name: 'Модератор 2', email: 'mod2@test.local' });
+    // почтовый сервер «не отвечает»: порт, на котором никого нет
+    await a.put('/api/admin/mail', { host: '127.0.0.1', port: 1, security: 'none', user: 'u', pass: 'p', from: 'no-reply@torgana.test' });
+    assert.equal((await a.get('/api/admin/backup')).status, 403);
+    await a.post('/api/admin/device/send');
+    let d;
+    for (let i = 0; i < 40; i++) { d = (await a.get('/api/admin/device')).data; if (d.letter && d.letter.error) break; await new Promise((r) => setTimeout(r, 100)); }
+    assert.ok(d.letter.error, 'ошибка отправки видна на странице кода');
+    assert.equal(d.mail.broken, false, 'одной ошибки мало');
+    // ещё два письма тоже не ушли (например, коды подтверждения почты)
+    await client(s2.base).post('/api/auth/forgot', { email: 'admin@test.local' });
+    await client(s2.base).post('/api/auth/forgot', { email: 'mod2@test.local' });
+    for (let i = 0; i < 40; i++) { d = (await a.get('/api/admin/device')).data; if (d.mail.broken) break; await new Promise((r) => setTimeout(r, 100)); }
+    assert.equal(d.mail.broken, true);
+    assert.equal((await a.get('/api/admin/backup')).status, 200, 'владелец вошёл, чтобы починить почту');
+  } finally { await s2.stop(); }
+});
