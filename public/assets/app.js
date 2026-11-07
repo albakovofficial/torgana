@@ -909,7 +909,9 @@
   }
 
   // ================= статистика объявлений =================
-  // Переход: откуда открыли объявление. Показ: карточка в поиске или ленте видна наполовину не меньше секунды.
+  // Переход: откуда открыли объявление. Показ: карточка в поиске, ленте или категории видна наполовину не меньше секунды.
+  // Показы и «переходы из выдачи» считаются на одних и тех же страницах (главная, поиск, категории, блок «Реклама»),
+  // поэтому доля «из показа в переход» честная и не бывает больше 100%.
   // Сервер сам решает, засчитывать ли (раз в сутки на человека, без продавца, роботов и сверх лимитов).
   function statSource() {
     if (S.adClick && S.adClick === location.pathname) { S.adClick = null; return 'ad'; }
@@ -918,6 +920,7 @@
     const u = new URL(S.from, location.origin);
     if (u.pathname === '/') return 'home';
     if (u.pathname === '/search') return u.searchParams.get('q') ? 'search' : 'category';
+    if (u.pathname.startsWith('/c/')) return 'category';
     return 'other';
   }
   const imp = { queue: new Set(), ads: new Set(), sent: new Set(), timers: new Map(), io: null, mo: null };
@@ -926,7 +929,7 @@
     if (imp.mo) { imp.mo.disconnect(); imp.mo = null; }
     imp.timers.forEach((t) => clearTimeout(t)); imp.timers.clear();
     const p = location.pathname;
-    if ((p !== '/' && p !== '/search') || !('IntersectionObserver' in window)) return;
+    if ((p !== '/' && p !== '/search' && !p.startsWith('/c/')) || !('IntersectionObserver' in window)) return;
     imp.io = new IntersectionObserver((entries) => {
       for (const e of entries) {
         const lid = e.target.dataset.lid;
@@ -3209,6 +3212,10 @@
       ${items.length ? html`<div class="pf-status" role="tablist">${Object.keys(MY_STATUS).filter((k) => k !== 'scheduled' || groups.scheduled.length || status === k).map((k) => html`<a class="chip ${k === status ? 'active' : ''} ${groups[k].length ? '' : 'zero'}" href="/profile?status=${k}">${MY_STATUS[k]}<span class="cnt">${groups[k].length}</span></a>`)}</div>` : ''}
       ${list.length ? html`<div class="ml-list">${list.map((i) => {
         const [tone, label] = isExpired(i) ? ['off', 'Срок истёк'] : MY_TAG[i.status] || MY_TAG.archived;
+        // Продвижение — прямо под объявлением, пока есть что докупить (XL, рамка, метки).
+        const busy = boostBusy(i.boost);
+        const free = BOOST.filter(([k]) => !busy[k]);
+        const canBoost = boostOn() && ['active', 'pending', 'scheduled'].includes(i.status) && !isExpired(i) && free.length;
         return html`<article class="ml-card">
           <a href="/l/${i.id}" class="ml-img" tabindex="-1" aria-hidden="true">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 26, 1.3)}</a>
           <div class="ml-info">
@@ -3225,6 +3232,7 @@
             ${['active', 'sold', 'archived'].includes(i.status) ? html`<a class="icon-btn ml-more" href="/profile/stats/${i.id}" aria-label="Статистика объявления" title="Статистика">${ic('chart', 20, 2)}</a>` : ''}
             <button type="button" class="icon-btn ml-more" data-more="${i.id}" aria-label="Действия с объявлением">${svg(P.more, 20, 2.2)}</button>
           </div>
+          ${canBoost ? html`<button type="button" class="ml-boost" data-boost="${i.id}"><span class="ml-boost-ic">${ic('bolt', 17, 2.2)}</span><b>${free.length < 3 ? 'Добавить продвижение' : 'Продвинуть'}</b><small>${free.map(([k]) => ({ xl: 'XL', frame: 'рамка', tags: 'метки' })[k]).join(', ')} · от ${rub(Math.min(...free.map(([k]) => boostPrices()[k])))}</small>${ic('right', 17, 2)}</button>` : ''}
           ${i.status === 'scheduled' ? html`<div class="ml-note ok">${ic('clock', 15, 2)} Проверено — опубликуем ${atTime(i.publishAt)} (мск). Видно только вам.</div>` : ''}
           ${isExpired(i) ? html`<div class="ml-note soft">Прошло 30 дней, объявление снято. Если ещё актуально — опубликуйте снова: бесплатно, окажется среди свежих.</div>` : ''}
           ${i.status === 'pending' ? html`<div class="ml-note warn">${i.flags ? `Проверяем внимательнее: похоже на «${i.flags}». ` : ''}Модератор проверит объявление — обычно это несколько часов.</div>` : ''}
@@ -3242,6 +3250,7 @@
     const byId = Object.fromEntries(items.map((i) => [String(i.id), i]));
     const setStatus = async (i, st, msg) => { try { await api('PATCH', `/api/listings/${i.id}`, { status: st }); toast(msg); reload(); } catch (e) { toast(e.message, true); } };
     $$('[data-repost]').forEach((b) => { b.onclick = () => setStatus(byId[b.dataset.repost], 'active', 'Снова опубликовано — на 30 дней'); });
+    $$('[data-boost]').forEach((b) => { b.onclick = () => { const i = byId[b.dataset.boost]; boostModal(i.id, i.title, i.promo); }; });
     $$('[data-more]').forEach((b) => {
       b.onclick = () => {
         const i = byId[b.dataset.more];
@@ -3279,12 +3288,31 @@
   // Статистика объявления: цифры, переходы по дням, путь покупателя, источники, подсказка.
   const SHORT_M = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
   const dayLabel = (d) => `${Number(d.slice(8, 10))} ${SHORT_M[Number(d.slice(5, 7)) - 1]}`;
-  const STAT_SRC = [['search', 'search', 'Поиск'], ['home', 'home', 'Главная лента'], ['category', 'tag', 'Категории'], ['external', 'share', 'Прямые заходы и ссылки извне'], ['other', 'right', 'Другие страницы Торганы']];
+  const STAT_SRC = [['search', 'search', 'Поиск'], ['home', 'home', 'Главная лента'], ['category', 'tag', 'Категории'], ['ad', 'megaphone', 'Блок «Реклама»'], ['external', 'share', 'Прямые заходы и ссылки извне'], ['other', 'right', 'Другие страницы Торганы']];
+  // Переходы из выдачи — только с тех страниц, где считаются показы. Прямые ссылки, чаты и профиль показов не дают.
+  const listViews = (s) => (s.search || 0) + (s.home || 0) + (s.category || 0) + (s.ad || 0);
+  const ctrOf = (imp, s) => (imp ? Math.min(100, (listViews(s) / imp) * 100) : null);
+  const pct1 = (x) => (Math.round(x * 10) / 10).toLocaleString('ru-RU');
+  // Доли в процентах, которые в сумме дают ровно 100 (метод наибольшего остатка).
+  function shares(vals) {
+    const total = vals.reduce((a, b) => a + b, 0);
+    if (!total) return vals.map(() => 0);
+    const raw = vals.map((v) => (v * 100) / total);
+    const out = raw.map(Math.floor);
+    let rest = 100 - out.reduce((a, b) => a + b, 0);
+    raw.map((r, i) => [r - out[i], i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (rest > 0 && vals[i]) { out[i] += 1; rest -= 1; } });
+    return out;
+  }
+  const srcRows = (sources, keep) => {
+    const rows = STAT_SRC.filter(([k]) => sources[k] || keep(k));
+    const p = shares(rows.map(([k]) => sources[k] || 0));
+    return rows.map(([, icn, label], i) => html`<div class="st-src"><span class="st-src-ic">${ic(icn, 17)}</span><div><div class="st-step-h"><span>${label}</span><b>${p[i]}%</b></div><div class="st-track dark"><i style="width:${p[i]}%"></i></div></div></div>`);
+  };
   async function renderStats(id, days) {
     const d = await api('GET', `/api/my/listings/${id}/stats?days=${days}`);
     const { totals: t, prev: pv, listing: l } = d;
-    const pct1 = (x) => (Math.round(x * 10) / 10).toLocaleString('ru-RU');
-    const ctr = t.impressions ? (t.views / t.impressions) * 100 : 0;
+    const ctr = ctrOf(t.impressions, d.sources);
+    const fromList = listViews(d.sources);
     const delta = (a, b) => {
       if (!pv) return '';
       if (!b) return ''; // сравнивать не с чем
@@ -3296,7 +3324,7 @@
     const n = d.daily.length;
     const labels = n > 1 ? [0, Math.floor((n - 1) / 2), n - 1] : [0];
     const srcTotal = Object.values(d.sources).reduce((a, b) => a + b, 0);
-    const bar = (w) => Math.max(w > 0 ? 3 : 0, Math.round(w));
+    const bar = (w) => Math.min(100, Math.max(w > 0 ? 3 : 0, Math.round(w)));
     $('#box').innerHTML = String(html`<div class="st">
       <div class="st-item">
         <a class="st-img" href="/l/${l.id}" tabindex="-1" aria-hidden="true">${l.photo ? html`<img src="${l.photo}" alt="" loading="lazy">` : svg(P.image, 24, 1.4)}</a>
@@ -3305,9 +3333,9 @@
         <div class="st-item-act"><a class="btn btn-soft btn-sm" href="/edit/${l.id}">Изменить</a><a class="btn btn-dark btn-sm" href="/l/${l.id}">Открыть</a></div>
       </div>
       <div class="st-kpis">
-        ${kpi(NF.format(t.impressions), 'Показы', 'в поиске и ленте', delta(t.impressions, pv && pv.impressions))}
+        ${kpi(NF.format(t.impressions), 'Показы', 'в поиске, ленте и категориях', delta(t.impressions, pv && pv.impressions))}
         ${kpi(NF.format(t.views), 'Переходы', `сегодня ${NF.format(d.today.views)}`, delta(t.views, pv && pv.views), true)}
-        ${kpi(`${pct1(ctr)}%`, 'Из показа в переход', 'доля открывших объявление', '')}
+        ${kpi(ctr === null ? '—' : `${pct1(ctr)}%`, 'Из показа в переход', ctr === null ? 'появится после первых показов' : 'доля открывших карточку', '')}
         ${kpi(NF.format(t.favs), 'В избранное', `сейчас в избранном у ${NF.format(d.favNow)}`, delta(t.favs, pv && pv.favs))}
       </div>
       <section class="st-card">
@@ -3322,18 +3350,15 @@
       </section>
       <div class="st-row">
         <section class="st-card"><h2>Путь покупателя</h2>
-          ${[['Показы в поиске и ленте', t.impressions, t.impressions ? 100 : 0, ''], ['Переходы в объявление', t.views, t.impressions ? (t.views / t.impressions) * 100 : (t.views ? 100 : 0), t.impressions ? `${pct1(ctr)}% от показов` : ''], ['Добавили в избранное', t.favs, t.impressions ? (t.favs / t.impressions) * 100 : 0, t.views ? `${pct1((t.favs / t.views) * 100)}% от переходов` : '']]
+          ${[['Показы в поиске, ленте и категориях', t.impressions, t.impressions ? 100 : 0, ''], ['Открыли карточку из выдачи', fromList, ctr || 0, ctr === null ? '' : `${pct1(ctr)}% от показов`], ['Добавили в избранное', t.favs, t.impressions ? (t.favs / t.impressions) * 100 : 0, t.views ? `${pct1(Math.min(100, (t.favs / t.views) * 100))}% от переходов` : '']]
     .map(([k, v, w, sub]) => html`<div class="st-step"><div class="st-step-h"><span>${k}</span><span><b>${NF.format(v)}</b>${sub ? html` <small>· ${sub}</small>` : ''}</span></div><div class="st-track"><i style="width:${bar(w)}%"></i></div></div>`)}
         </section>
         <section class="st-card"><h2>Откуда переходили</h2>
-          ${srcTotal ? STAT_SRC.filter(([k]) => d.sources[k] || k !== 'other').map(([k, icn, label]) => {
-    const p = Math.round((d.sources[k] / srcTotal) * 100);
-    return html`<div class="st-src"><span class="st-src-ic">${ic(icn, 17)}</span><div><div class="st-step-h"><span>${label}</span><b>${p}%</b></div><div class="st-track dark"><i style="width:${p}%"></i></div></div></div>`;
-  }) : html`<p class="muted" style="margin:0">Появится после первых переходов.</p>`}
+          ${srcTotal ? srcRows(d.sources, (k) => !['other', 'ad'].includes(k)) : html`<p class="muted" style="margin:0">Появится после первых переходов.</p>`}
         </section>
       </div>
       ${d.tip ? html`<div class="st-tip"><span>${ic('sparkle', 20)}</span><div><strong>Подсказка.</strong> ${d.tip}</div></div>` : ''}
-      <p class="st-note">Показ — карточку увидели в поиске или ленте не меньше секунды. Переход — объявление открыли. Каждый считается один раз в сутки на человека; ваши собственные просмотры, модераторы и роботы не учитываются. Статистику видите только вы. Всего просмотров с публикации — ${NF.format(l.viewsAll)}.</p>
+      <p class="st-note">Показ — карточку увидели в поиске, ленте или категории не меньше секунды. Переход — объявление открыли откуда угодно, в том числе по прямой ссылке; в долю «из показа в переход» идут только переходы из выдачи. Каждый считается один раз в сутки на человека; ваши собственные просмотры, модераторы и роботы не учитываются. Статистику видите только вы. Всего просмотров с публикации — ${NF.format(l.viewsAll)}.</p>
     </div>`);
   }
 
@@ -3941,11 +3966,10 @@
     };
   }
 
-  const SHOP_SRC = [...STAT_SRC.slice(0, 4), ['ad', 'megaphone', 'Блок «Реклама»'], STAT_SRC[4]];
   async function renderShopStats(box, days) {
     const d = await api('GET', `/api/my/shop/stats?days=${days}`);
     const t = d.totals; const pv = d.prev;
-    const pct1 = (x) => (Math.round(x * 10) / 10).toLocaleString('ru-RU');
+    const ctr = ctrOf(t.impressions, d.sources);
     const delta = (a, b) => (b ? `${a >= b ? '+' : ''}${Math.round(((a - b) / b) * 100)}% к прошлым ${d.period} дням` : '');
     const kpi = (n, label, sub, note, accent) => html`<div class="st-kpi ${accent ? 'accent' : ''}"><span class="k">${label}</span><b>${n}</b>${note ? html`<span class="d">${note}</span>` : ''}<span class="s">${sub}</span></div>`;
     const mx = Math.max(1, ...d.daily.map((x) => x.views));
@@ -3954,9 +3978,9 @@
     const srcTotal = Object.values(d.sources).reduce((a, b) => a + b, 0);
     box.innerHTML = String(html`<div class="st">
       <div class="st-kpis">
-        ${kpi(NF.format(t.impressions), 'Показы', 'в поиске, ленте и рекламе', delta(t.impressions, pv.impressions))}
+        ${kpi(NF.format(t.impressions), 'Показы', 'в поиске, ленте, категориях и рекламе', delta(t.impressions, pv.impressions))}
         ${kpi(NF.format(t.views), 'Переходы', `${d.active} ${plural(d.active, 'активное объявление', 'активных объявления', 'активных объявлений')}`, delta(t.views, pv.views), true)}
-        ${kpi(`${pct1(t.impressions ? (t.views / t.impressions) * 100 : 0)}%`, 'Из показа в переход', 'доля открывших', '')}
+        ${kpi(ctr === null ? '—' : `${pct1(ctr)}%`, 'Из показа в переход', ctr === null ? 'появится после первых показов' : 'доля открывших карточку', '')}
         ${kpi(NF.format(t.favs), 'В избранное', `сейчас в избранном у ${NF.format(d.favNow)}`, delta(t.favs, pv.favs))}
       </div>
       <section class="st-card"><div class="st-card-head"><h2>Переходы по дням</h2><a class="btn btn-soft btn-sm" href="/api/my/shop/stats.csv?days=${days}" download>${ic('download', 16, 2)}Выгрузить в Excel</a></div>
@@ -3965,15 +3989,15 @@
       </section>
       <div class="st-row">
         <section class="st-card"><h2>Откуда переходили</h2>
-          ${srcTotal ? SHOP_SRC.filter(([k]) => d.sources[k]).map(([k, icn, label]) => { const p = Math.round((d.sources[k] / srcTotal) * 100); return html`<div class="st-src"><span class="st-src-ic">${ic(icn, 17)}</span><div><div class="st-step-h"><span>${label}</span><b>${p}%</b></div><div class="st-track dark"><i style="width:${p}%"></i></div></div></div>`; }) : html`<p class="muted" style="margin:0">Появится после первых переходов.</p>`}
+          ${srcTotal ? srcRows(d.sources, () => false) : html`<p class="muted" style="margin:0">Появится после первых переходов.</p>`}
         </section>
         <section class="st-card"><h2>Объявления</h2>
-          ${d.listings.length ? html`<div class="sst">${d.listings.slice(0, 12).map((l) => html`<a class="sst-row" href="/profile/stats/${l.id}"><span class="sst-img">${l.photo ? html`<img src="${l.photo}" alt="" loading="lazy">` : svg(P.image, 18, 1.4)}</span>
-              <span class="sst-t">${l.title}</span><span class="sst-n" title="Показы">${ic('eye', 14)}${NF.format(l.impressions)}</span><span class="sst-n" title="Переходы"><b>${NF.format(l.views)}</b></span></a>`)}</div>
+          ${d.listings.length ? html`<div class="sst"><div class="sst-row sst-h" aria-hidden="true"><span></span><span></span><span class="sst-n">показы</span><span class="sst-n">переходы</span></div>${d.listings.slice(0, 12).map((l) => html`<a class="sst-row" href="/profile/stats/${l.id}"><span class="sst-img">${l.photo ? html`<img src="${l.photo}" alt="" loading="lazy">` : svg(P.image, 18, 1.4)}</span>
+              <span class="sst-t">${l.title}</span><span class="sst-n" aria-label="Показы: ${NF.format(l.impressions)}">${NF.format(l.impressions)}</span><span class="sst-n" aria-label="Переходы: ${NF.format(l.views)}"><b>${NF.format(l.views)}</b></span></a>`)}</div>
             ${d.listings.length > 12 ? html`<p class="muted" style="margin:0;font-size:13px">Все ${d.listings.length} — в выгрузке Excel.</p>` : ''}` : html`<p class="muted" style="margin:0">Опубликованных объявлений пока нет.</p>`}
         </section>
       </div>
-      <p class="st-note">Считаем так же, как в статистике объявления: показ и переход — один раз в сутки на человека, без ваших собственных просмотров, модераторов и роботов. «Блок «Реклама»» — переходы из продвижения.</p>
+      <p class="st-note">Считаем так же, как в статистике объявления: показ и переход — один раз в сутки на человека, без ваших собственных просмотров, модераторов и роботов. В долю «из показа в переход» идут только переходы из выдачи. «Блок «Реклама»» — переходы из продвижения.</p>
     </div>`);
   }
 
@@ -4205,7 +4229,7 @@
   async function renderDashboard(box, st) {
     const d = await api('GET', '/api/admin/dashboard');
     const tile = (href, n, k, sub = '') => html`<a class="dash-tile" href="${href}"><b>${n}</b><span>${k}</span>${sub ? html`<small>${sub}</small>` : ''}</a>`;
-    const CHARTS = [['listings', 'Объявления'], ['users', 'Пользователи'], ['approved', 'Опубликовано'], ['rejected', 'Отклонено']];
+    const CHARTS = [['listings', 'Подано'], ['users', 'Пользователи'], ['approved', 'Одобрено'], ['rejected', 'Отклонено']];
     box.innerHTML = String(html`<div class="adm-head"><h1>Сводка</h1><span class="muted">${new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', weekday: 'long' })}</span></div>
       <div class="dash-top">
         <div class="dash-queue">
@@ -4216,9 +4240,9 @@
         </div>
         <div class="dash-tiles">
           ${tile('/admin?status=log', fmtDur(d.speed.median), 'время проверки', d.speed.count ? `медиана за 7 дней · среднее ${fmtDur(d.speed.avg)}` : 'за 7 дней решений не было')}
-          ${tile('/admin?status=reports', NF.format(st.reports), 'жалоб ждут решения', `новых за сутки: ${d.today.reports}`)}
+          ${tile('/admin?status=reports', NF.format(st.reports), plural(st.reports, 'объявление с жалобами', 'объявления с жалобами', 'объявлений с жалобами'), `новых жалоб за сутки: ${d.today.reports}`)}
           ${tile('/admin?status=support', NF.format(st.support), 'ждут ответа поддержки')}
-          ${tile('/admin?status=active', NF.format(d.totals.active), 'опубликовано', `новых за сутки: ${d.today.listings}`)}
+          ${tile('/admin?status=active', NF.format(d.totals.active), 'опубликовано сейчас', `подано за сутки: ${d.today.listings} · одобрено: ${d.today.approved}`)}
           ${tile('/admin?status=users', NF.format(d.totals.users), 'пользователей', `новых за сутки: ${d.today.users}${d.totals.blocked ? ` · заблокировано: ${d.totals.blocked}` : ''}`)}
           ${tile('/admin?status=appeals', NF.format(st.appeals), 'апелляций', `отзывов на проверке: ${st.reviews}`)}
           ${st.ads ? tile('/admin?status=ads', NF.format(st.ads), 'реклама ждёт erid', 'оплачено — запустите после маркировки') : ''}
@@ -4228,7 +4252,7 @@
         <section class="panel dash-chart">
           <div class="dash-chart-head"><h2 class="h2">За 30 дней</h2>
             <div class="seg" role="tablist">${CHARTS.map(([k, t], i) => html`<a role="tab" href="#" data-chart="${k}" class="${i ? '' : 'on'}" aria-selected="${i ? 'false' : 'true'}">${t}</a>`)}</div></div>
-          <div id="chart">${barChart(d.days, 'listings', 'Новые объявления')}</div>
+          <div id="chart">${barChart(d.days, 'listings', 'Подано')}</div>
         </section>
         <section class="panel dash-mods"><h2 class="h2">Модераторы за 7 дней</h2>
           ${d.moderators.map((m) => html`<a class="dash-mod" href="/admin?status=log&admin=${m.id}">${ava(m, 'sm')}<span>${m.name}${m.me ? html` <small class="muted">(вы)</small>` : ''}</span><b>${NF.format(m.actions)}</b></a>`)}
