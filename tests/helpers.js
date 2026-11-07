@@ -6,6 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const net = require('node:net');
+const http = require('node:http');
+const crypto = require('node:crypto');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -39,6 +41,7 @@ async function startServer(extraEnv = {}) {
     TRUST_PROXY: '0',
     ANTHROPIC_API_KEY: '',
     METRO_SOURCE: path.join(ROOT, 'tests', 'fixtures', 'metro.json'), // справочник метро без сети
+    ADMIN_DEVICE_CHECK: '0', // код для входа в модерацию проверяется в tests/ops.test.js
     ...extraEnv
   };
   // cwd — временная папка, чтобы не подхватить .env боевого сайта.
@@ -182,4 +185,49 @@ async function publish(seller, admin, body) {
   return r.data.id;
 }
 
-module.exports = { ROOT, PNG_1PX, JPEG_HEAD, startServer, startSmtp, client, registerUser, publish, codeOf };
+// Поддельное хранилище S3: проверяет подпись AWS V4 так же, как настоящее, хранит файлы в памяти.
+function fakeS3({ access = 'AKTEST', secret = 'secret-key', bucket = 'torgana-backup', region = 'ru-1' } = {}) {
+  const store = new Map();
+  const st = { fail: false, requests: 0 };
+  const hmac = (k, d) => crypto.createHmac('sha256', k).update(d).digest();
+  const enc = (x) => encodeURIComponent(x).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  const err = (res, status, code) => { res.writeHead(status, { 'content-type': 'application/xml' }); res.end(`<Error><Code>${code}</Code></Error>`); };
+  const srv = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c)).on('end', () => {
+      st.requests += 1;
+      const body = Buffer.concat(chunks);
+      const u = new URL(req.url, 'http://x');
+      const auth = /^AWS4-HMAC-SHA256 Credential=([^/]+)\/(\d{8})\/([^/]+)\/s3\/aws4_request, SignedHeaders=([^,]+), Signature=([a-f0-9]{64})$/.exec(req.headers.authorization || '');
+      if (!auth || auth[1] !== access) return err(res, 403, 'InvalidAccessKeyId');
+      const signed = auth[4].split(';');
+      const payload = req.headers['x-amz-content-sha256'];
+      if (payload !== crypto.createHash('sha256').update(body).digest('hex')) return err(res, 400, 'XAmzContentSHA256Mismatch');
+      const qs = [...u.searchParams.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => `${enc(k)}=${enc(v)}`).join('&');
+      const canonical = [req.method, u.pathname, qs, signed.map((h) => `${h}:${String(req.headers[h]).trim()}\n`).join(''), signed.join(';'), payload].join('\n');
+      const scope = `${auth[2]}/${auth[3]}/s3/aws4_request`;
+      const toSign = ['AWS4-HMAC-SHA256', req.headers['x-amz-date'], scope, crypto.createHash('sha256').update(canonical).digest('hex')].join('\n');
+      const key = hmac(hmac(hmac(hmac(`AWS4${secret}`, auth[2]), auth[3]), 's3'), 'aws4_request');
+      if (crypto.createHmac('sha256', key).update(toSign).digest('hex') !== auth[5] || auth[3] !== region) return err(res, 403, 'SignatureDoesNotMatch');
+      if (st.fail) return err(res, 503, 'ServiceUnavailable');
+      const parts = u.pathname.split('/').slice(1).map(decodeURIComponent);
+      if (parts[0] !== bucket) return err(res, 404, 'NoSuchBucket');
+      const k = parts.slice(1).join('/');
+      if (req.method === 'PUT') { store.set(k, { body, at: new Date() }); res.writeHead(200, { etag: '"x"' }); return res.end(); }
+      if (req.method === 'DELETE') { store.delete(k); res.writeHead(204); return res.end(); }
+      if (req.method === 'GET' && !k) {
+        const prefix = u.searchParams.get('prefix') || '';
+        const items = [...store.entries()].filter(([x]) => x.startsWith(prefix));
+        res.writeHead(200, { 'content-type': 'application/xml' });
+        return res.end(`<ListBucketResult><IsTruncated>false</IsTruncated>${items.map(([x, v]) => `<Contents><Key>${x}</Key><Size>${v.body.length}</Size><LastModified>${v.at.toISOString()}</LastModified></Contents>`).join('')}</ListBucketResult>`);
+      }
+      const o = store.get(k);
+      if (!o) return err(res, 404, 'NoSuchKey');
+      res.writeHead(200, { 'content-length': o.body.length });
+      return res.end(req.method === 'HEAD' ? undefined : o.body);
+    });
+  });
+  return new Promise((r) => srv.listen(0, '127.0.0.1', () => r({ srv, store, st, endpoint: `http://127.0.0.1:${srv.address().port}`, access, secret, bucket })));
+}
+
+module.exports = { ROOT, PNG_1PX, JPEG_HEAD, startServer, startSmtp, client, registerUser, publish, codeOf, fakeS3 };

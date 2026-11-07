@@ -75,7 +75,10 @@ function requireUser(ctx) {
   return ctx.user;
 }
 
+// Модерация: с 1.18 — ещё и подтверждённое устройство (lib/ops.js: код из письма, помним 30 дней).
+let opsApi = null;
 function requireAdmin(ctx) {
+  if (opsApi) return opsApi.requireAdmin(ctx);
   const u = requireUser(ctx);
   if (!u.is_admin) throw new HttpError(403, 'Нет доступа');
   return u;
@@ -275,6 +278,10 @@ const business = require('./lib/business')({ route, db, h: helpers, billing, mai
 const promo = require('./lib/promo')({ route, db, h: helpers, billing, business, stats, mailer, searchSpec, specSql, categoryIds: CATEGORY_IDS });
 const feed = require('./lib/feed')({ route, db, h: helpers, business });
 const deals = require('./lib/deals')({ route, db, h: helpers, alerts }); // предложение цены, быстрые ответы, подписки
+// Копия в облако (Selectel S3), письма владельцу о сбоях, вход в модерацию по коду с нового устройства.
+const ops = require('./lib/ops')({ route, db, h: helpers, mailer, root: ROOT, dataDir: DATA_DIR, uploadDir: UPLOAD_DIR, ownerEmail: OWNER_EMAIL, publicUrl: PUBLIC_URL, secureCookies: SECURE_COOKIES,
+  deviceCheck: process.env.ADMIN_DEVICE_CHECK !== '0' });
+opsApi = ops;
 helpers.business = business;
 
 // Поисковики и Метрика: коды подтверждения Вебмастера и Search Console, номер счётчика — «Модерация → Поиск и статистика».
@@ -1053,8 +1060,8 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 200, result, headers);
   } catch (e) {
     const status = e.status || 500;
-    if (status === 500) console.error(e);
-    sendJson(res, status, { error: status === 500 ? 'Что-то пошло не так. Попробуйте ещё раз.' : e.message }, headers);
+    if (status === 500) { console.error(e); ops.onError(e); }
+    sendJson(res, status, { error: status === 500 ? 'Что-то пошло не так. Попробуйте ещё раз.' : e.message, ...(e.extra || {}) }, headers);
   }
 });
 
@@ -1071,6 +1078,7 @@ setInterval(() => {
   video.cleanup();
 }, 60 * 60 * 1000).unref();
 metro.start();
+ops.start(Number(process.env.OPS_TICK_MS) || undefined);
 
 mailer.start();
 // 1.14: вход только с подтверждённой почтой. Один раз завершаем старые сессии с неподтверждённой почтой —

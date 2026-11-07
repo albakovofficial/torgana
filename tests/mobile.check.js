@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const { chromium } = require('playwright');
-const { startServer, registerUser, client } = require('./helpers');
+const { startServer, registerUser, client, fakeS3 } = require('./helpers');
 
 const SHOTS = path.join(__dirname, 'screenshots');
 const VIEWPORTS = {
@@ -83,6 +83,12 @@ async function seed(base, browser) {
   await seller.post(`/api/offers/${of1.data.message.offerId}/decline`);
   await buyer.post(`/api/conversations/${conv.data.id}/offer`, { price: 31500 });
   await buyer.post(`/api/users/${seller.user.id}/follow`, { follow: true });
+  // 1.18: копия в поддельное хранилище S3 и её проверка — для страницы «Копии и безопасность».
+  const s3 = await fakeS3();
+  await admin.put('/api/admin/backup', { endpoint: s3.endpoint, region: 'ru-1', bucket: s3.bucket, accessKey: s3.access, secretKey: s3.secret, prefix: 'torgana' });
+  await admin.post('/api/admin/backup/run');
+  for (let i = 0; i < 50 && !((await admin.get('/api/admin/backup')).data.last); i++) await new Promise((r) => setTimeout(r, 100));
+  await admin.post('/api/admin/backup/verify');
   // статистика: несколько разных «гостей» видели и открыли объявление
   const ua = (i) => `Mozilla/5.0 (Linux; Android 14; Pixel ${i}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36`;
   for (let i = 0; i < 6; i++) {
@@ -265,7 +271,9 @@ function pages(d) {
     ['user-follow', `/u/${d.seller.user.id}`, d.buyer],
     ['profile-following', '/profile/following', d.buyer],
     ['profile-following-empty', '/profile/following', d.seller],
-    ['unsubscribe-follow', `/unsubscribe?t=${'0'.repeat(32)}&k=follow-1`, null]
+    ['unsubscribe-follow', `/unsubscribe?t=${'0'.repeat(32)}&k=follow-1`, null],
+    // 1.18: копии и безопасность
+    ['admin-backup', '/admin?status=backup', d.admin]
   ];
 }
 

@@ -33,6 +33,7 @@
     if (!r.ok) {
       const e = new Error(data.error || 'Нет связи с сервером. Проверьте интернет.');
       e.status = r.status;
+      e.data = data;
       throw e;
     }
     return data;
@@ -511,6 +512,7 @@
       metrikaHit();
     } catch (err) {
       if (err.status === 404) viewNotFound(err.message);
+      else if (err.status === 403 && err.data && err.data.device) viewDevice();
       else app.innerHTML = String(html`<div class="wrap"><div class="empty" style="margin-top:40px"><h3>Не получилось загрузить страницу</h3><p>${err.message}</p><a href="${location.pathname + location.search}" class="btn btn-dark">Обновить</a></div></div>`);
     }
   }
@@ -3254,7 +3256,7 @@
     ['Объявления', [['active', 'tag', 'Опубликованные'], ['rejected', 'close', 'Отклонённые'], ['sold', 'check', 'Проданные'], ['archived', 'pause', 'Снятые']]],
     ['Люди', [['users', 'users', 'Пользователи'], ['log', 'list', 'Журнал действий']]],
     ['Деньги', [['payments', 'card', 'Платежи'], ['ads', 'megaphone', 'Реклама', 'ads'], ['billing', 'tag', 'Оплата и цены']]],
-    ['Настройки', [['notify', 'bell', 'Мои уведомления'], ['mail', 'mail', 'Почта'], ['oauth', 'lock', 'Вход через сервисы'], ['seo', 'search', 'Поиск и статистика'], ['site', 'refresh', 'Версия сайта']]]
+    ['Настройки', [['notify', 'bell', 'Мои уведомления'], ['mail', 'mail', 'Почта'], ['oauth', 'lock', 'Вход через сервисы'], ['seo', 'search', 'Поиск и статистика'], ['backup', 'shield', 'Копии и безопасность'], ['site', 'refresh', 'Версия сайта']]]
   ];
   const LISTING_TABS = ['pending', 'reports', 'appeals', 'active', 'rejected', 'sold', 'archived'];
   function adminShell(active, stats, body) {
@@ -3299,6 +3301,7 @@
       biz: () => renderUsersAdmin(box, new URLSearchParams({ f: 'biz' }), 'Проверка бизнеса'),
       oauth: () => renderOauthAdmin(box),
       seo: () => renderSeoAdmin(box),
+      backup: () => renderBackupAdmin(box),
       payments: () => renderPaymentsAdmin(box, q),
       ads: () => renderAdsAdmin(box, ['marking', 'active', 'ended'].includes(q.get('tab')) ? q.get('tab') : 'marking'),
       billing: () => renderBillingAdmin(box),
@@ -3747,6 +3750,120 @@
     $('#seo-f', box).onsubmit = async (e) => {
       e.preventDefault();
       try { await api('PUT', '/api/admin/seo', Object.fromEntries(new FormData(e.target).entries())); S.config = await api('GET', '/api/config'); toast('Сохранено'); render(); } catch (ex) { toast(ex.message, true); }
+    };
+  }
+
+  // ---------- копии в облако, состояние сервера, устройства модератора ----------
+  const fmtBytes = (b) => (b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(1).replace('.', ',')} ГБ` : b >= 1024 ** 2 ? `${Math.round(b / 1024 ** 2)} МБ` : `${Math.max(1, Math.round(b / 1024))} КБ`);
+  async function renderBackupAdmin(box) {
+    const [d, dev] = await Promise.all([api('GET', '/api/admin/backup'), api('GET', '/api/admin/devices')]);
+    const c = d.config;
+    const sv = d.server;
+    const owner = S.user.isOwner || !sv.owner;
+    const L = d.last;
+    const lastLine = d.running ? html`<div class="bk-state run"><span class="bk-dot"></span><div><b>Делаем копию…</b><span>${d.running.step || 'база'} · начали ${hm(d.running.at)}</span></div></div>`
+      : L ? (L.ok ? html`<div class="bk-state ok">${ic('check', 20, 2.4)}<div><b>Последняя копия — ${when(L.at)}</b><span>база ${fmtBytes(L.dbSize)} · ${L.files ? `новых фото и видео: ${NF.format(L.files)} (${fmtBytes(L.bytes)})` : 'новых фото не было'} · ${L.seconds} с</span></div></div>`
+        : html`<div class="bk-state bad">${ic('warn', 20, 2)}<div><b>Копия не сделана — ${when(L.at)}</b><span>${L.error}</span></div></div>`)
+        : html`<div class="bk-state">${ic('clock', 20, 2)}<div><b>Копий в облаке ещё не было</b><span>${d.ready ? 'Первая — сегодня ночью или по кнопке «Сделать копию сейчас»' : 'Укажите хранилище слева'}</span></div></div>`;
+    const V = d.verify;
+    const verifyLine = V ? html`<div class="bk-state ${V.ok ? 'ok' : 'bad'}">${ic(V.ok ? 'shield' : 'warn', 20, 2)}<div><b>${V.ok ? 'Копия проверена' : 'Проверка нашла расхождения'} — ${when(V.at)}</b>
+        <span>копия от ${when(V.made)} (${fmtBytes(V.size)}), всего копий базы: ${V.copies}. В копии: ${NF.format(V.copy.users)} польз., ${NF.format(V.copy.listings)} объявл., ${NF.format(V.copy.messages)} сообщ.; на сайте сейчас: ${NF.format(V.live.users)}, ${NF.format(V.live.listings)}, ${NF.format(V.live.messages)}. Фото: проверено ${V.photos.ok} из ${V.photos.checked}, в облаке ${NF.format(V.photos.total)}.</span></div></div>` : '';
+    const disk = sv.disk ? Math.round((1 - sv.disk.free / sv.disk.total) * 100) : null;
+    box.innerHTML = String(html`<div class="adm-head"><h1>Копии и безопасность</h1></div>
+      <div class="mail-grid">
+        <form class="panel settings" id="bk-f" style="max-width:none">
+          <div><h2 class="h2" style="margin:0">Копия в облако Selectel</h2>
+            <p class="muted" style="margin:6px 0 0;font-size:14px">Каждую ночь с 3:00 до 6:00 по Москве база (сжатая, хранится 30 дней) и новые фото и видео уходят в объектное хранилище. Даже если сервер сломается целиком, всё восстановится из облака.</p></div>
+          <div class="field"><label for="bk-e">Адрес хранилища (S3)</label><input id="bk-e" name="endpoint" class="input" value="${c.endpoint}" placeholder="s3.ru-1.storage.selcloud.ru" autocomplete="off" ${owner ? '' : raw('disabled')}></div>
+          <div class="row2"><div class="field"><label for="bk-b">Контейнер</label><input id="bk-b" name="bucket" class="input" value="${c.bucket}" placeholder="torgana-backup" autocomplete="off" ${owner ? '' : raw('disabled')}></div>
+            <div class="field"><label for="bk-r">Регион</label><input id="bk-r" name="region" class="input" value="${c.region}" placeholder="ru-1" autocomplete="off" ${owner ? '' : raw('disabled')}></div></div>
+          <div class="field"><label for="bk-a">Access key</label><input id="bk-a" name="accessKey" class="input" value="${c.accessKey}" autocomplete="off" spellcheck="false" ${owner ? '' : raw('disabled')}></div>
+          <div class="field"><label for="bk-s">Secret key</label><input id="bk-s" name="secretKey" class="input" type="password" autocomplete="new-password" placeholder="${c.hasSecret ? 'сохранён — оставьте пустым, чтобы не менять' : ''}" ${owner ? '' : raw('disabled')}></div>
+          <div class="field"><label for="bk-p">Папка в контейнере</label><input id="bk-p" name="prefix" class="input" value="${c.prefix}" placeholder="torgana" autocomplete="off" ${owner ? '' : raw('disabled')}><span class="help">При сохранении проверим доступ: запишем и удалим маленький файл.</span></div>
+          ${owner ? html`<div class="set-btns"><button class="btn btn-dark" type="submit">Сохранить и проверить</button>${d.ready ? html`<button type="button" class="btn btn-line" data-bk-clear>Отключить</button>` : ''}</div>` : html`<p class="muted" style="margin:0;font-size:13px">Ключи хранилища меняет только владелец сайта.</p>`}
+        </form>
+        <section class="panel settings" style="max-width:none">
+          <h2 class="h2" style="margin:0">Состояние копий</h2>
+          ${lastLine}
+          ${verifyLine}
+          <div class="set-btns"><button type="button" class="btn btn-accent" data-bk-run ${d.ready && !d.running ? '' : raw('disabled')}>${ic('refresh', 18, 2)}Сделать копию сейчас</button>
+            <button type="button" class="btn btn-soft" data-bk-verify ${d.ready && d.lastOk ? '' : raw('disabled')}>${ic('shield', 18, 2)}Проверить копию</button></div>
+          <p class="muted" style="margin:0;font-size:13px">«Проверить копию» скачивает последнюю копию базы из облака, проверяет её целостность, сравнивает с сайтом и сверяет несколько фото. В облаке уже ${NF.format(d.uploaded.n)} фото и видео (${fmtBytes(d.uploaded.b)}).</p>
+          <details class="bk-how"><summary>Как получить ключи в Selectel</summary><ol>
+            <li>Панель Selectel → «Объектное хранилище» → создайте <b>приватный</b> контейнер, например <code>torgana-backup</code>.</li>
+            <li>«Управление доступом» → «Сервисные пользователи» → добавьте пользователя с ролью «Пользователь объектного хранилища» для этого проекта.</li>
+            <li>У пользователя → «S3-ключи» → «Добавить ключ»: Access key и Secret key — сюда.</li>
+            <li>Адрес и регион — в настройках контейнера (например, <code>s3.ru-1.storage.selcloud.ru</code>, регион <code>ru-1</code>).</li></ol></details>
+        </section>
+      </div>
+      <div class="mail-grid" style="margin-top:20px">
+        <section class="panel settings" style="max-width:none">
+          <h2 class="h2" style="margin:0">Сервер</h2>
+          <div class="kv">
+            <span>Свободно на диске</span><b class="${disk !== null && disk > 90 ? 'danger-t' : ''}">${sv.disk ? `${fmtBytes(sv.disk.free)} из ${fmtBytes(sv.disk.total)} (занято ${disk}%)` : '—'}</b>
+            <span>Копия на самом сервере</span><b>${sv.localBackup ? when(sv.localBackup) : 'нет данных'}</b>
+            <span>Ошибок за час / сутки</span><b class="${sv.errorsHour >= 5 ? 'warn-t' : ''}">${sv.errorsHour} / ${sv.errorsDay}</b>
+            <span>Письма о сбоях</span><b>${sv.mail ? sv.owner || 'первому модератору' : 'почта не подключена'}</b>
+          </div>
+          ${sv.lastErrors.length ? html`<ul class="bk-errs">${sv.lastErrors.map((e) => html`<li><span>${hm(e.at)}</span>${e.msg}</li>`)}</ul>` : ''}
+          <p class="muted" style="margin:0;font-size:13px">Сервер пишет владельцу, если копия не сделана, на диске меньше 2 ГБ, копия на сервере старше суток или за 10 минут больше 10 ошибок. Доступность сайта снаружи каждые 5 минут проверяет GitHub — при падении придёт письмо от GitHub.</p>
+        </section>
+        <section class="panel settings" style="max-width:none">
+          <h2 class="h2" style="margin:0">Мои устройства</h2>
+          <p class="muted" style="margin:0;font-size:14px">Модерация открывается только на подтверждённых устройствах: на новом — код из письма. Устройство помним 30 дней.</p>
+          ${dev.items.length ? html`<div class="bk-devs">${dev.items.map((x) => html`<div class="bk-dev"><span class="bk-dev-ic">${ic(/iPhone|Android/.test(x.label) ? 'chat' : 'eye', 18, 2)}</span>
+              <span class="bk-dev-t"><b>${x.label}${x.current ? html` <span class="tag accent">это устройство</span>` : ''}</b><span>${x.ip ? `IP ${x.ip} · ` : ''}заходили ${when(x.lastAt)} · до ${dateShort(x.until)}</span></span>
+              <button type="button" class="btn btn-line btn-sm" data-dev-rm="${x.id}">${x.current ? 'Выйти' : 'Забыть'}</button></div>`)}</div>`
+    : html`<div class="qr-empty">${S.config.mail ? 'Подтверждённых устройств нет.' : 'Почта не подключена — коды не отправить, поэтому модерация пока открывается без кода.'}</div>`}
+        </section>
+      </div>`);
+    const f = $('#bk-f', box);
+    if (owner) {
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const b = $('button[type=submit]', f); b.disabled = true; b.textContent = 'Проверяем доступ…';
+        try { await api('PUT', '/api/admin/backup', Object.fromEntries(new FormData(f).entries())); toast('Хранилище подключено — доступ проверен'); renderBackupAdmin(box); } catch (ex) { toast(ex.message, true); b.disabled = false; b.textContent = 'Сохранить и проверить'; }
+      };
+      const cl = $('[data-bk-clear]', box);
+      if (cl) cl.onclick = async () => { if (!(await confirmModal('Отключить копию в облако?', 'Новые копии перестанут уходить в хранилище. Уже сделанные останутся в Selectel.', 'Отключить', true))) return; try { await api('PUT', '/api/admin/backup', { clear: true }); toast('Отключено'); renderBackupAdmin(box); } catch (ex) { toast(ex.message, true); } };
+    }
+    const run = $('[data-bk-run]', box);
+    run.onclick = async () => {
+      run.disabled = true;
+      try {
+        await api('POST', '/api/admin/backup/run');
+        toast('Копия началась — это займёт от минуты до нескольких');
+        const poll = async () => { if (!box.isConnected) return; const x = await api('GET', '/api/admin/backup'); if (x.running) setTimeout(poll, 3000); else { renderBackupAdmin(box); toast(x.last && x.last.ok ? 'Копия готова' : 'Копия не сделана — подробности на странице', !(x.last && x.last.ok)); } };
+        setTimeout(poll, 1500);
+        renderBackupAdmin(box);
+      } catch (ex) { toast(ex.message, true); run.disabled = false; }
+    };
+    if (d.running) setTimeout(async () => { if (box.isConnected && $('[data-bk-run]', box)) renderBackupAdmin(box); }, 4000);
+    const ver = $('[data-bk-verify]', box);
+    ver.onclick = async () => {
+      ver.disabled = true; ver.textContent = 'Скачиваем и проверяем…';
+      try { const r = await api('POST', '/api/admin/backup/verify'); toast(r.verify.ok ? 'Копия в порядке' : 'Проверка нашла расхождения', !r.verify.ok); renderBackupAdmin(box); } catch (ex) { toast(ex.message, true); renderBackupAdmin(box); }
+    };
+    $$('[data-dev-rm]', box).forEach((b) => {
+      b.onclick = async () => { try { await api('DELETE', `/api/admin/devices/${b.dataset.devRm}`); toast('Устройство забыто'); render(); } catch (ex) { toast(ex.message, true); } };
+    });
+  }
+
+  // Модерация с нового устройства: код из письма (lib/ops.js).
+  async function viewDevice() {
+    setTitle('Вход в модерацию');
+    const st = await api('GET', '/api/admin/device').catch(() => ({}));
+    authPage('Вход в модерацию', `Это устройство мы видим впервые. Чтобы модерацию не открыл никто, кроме вас, — даже зная пароль, — пришлём код на ${st.email || 'вашу почту'}. Устройство запомним на 30 дней.`,
+      html`<div id="dev-code"><button type="button" class="btn btn-dark btn-lg btn-block" data-dev-send>${ic('mail', 18, 2)}Отправить код</button></div>`,
+      html`<p class="alt"><a href="/">На главную</a></p>`);
+    const startCode = (r) => codeForm($('#dev-code'), {
+      email: r.email || st.email, wait: r.wait || 60,
+      send: async () => { const x = await api('POST', '/api/admin/device/send'); return x; },
+      check: async (code) => { await api('POST', '/api/admin/device/verify', { code }); toast('Устройство подтверждено на 30 дней'); render(); }
+    });
+    $('[data-dev-send]').onclick = async (e) => {
+      e.currentTarget.disabled = true;
+      try { const r = await api('POST', '/api/admin/device/send'); startCode(r); } catch (ex) { toast(ex.message, true); e.currentTarget.disabled = false; }
     };
   }
 
