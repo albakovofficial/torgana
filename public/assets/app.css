@@ -1297,7 +1297,9 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
 .promo-now svg { flex: none; margin-top: 1px; }
 .promo-now b { display: block; color: var(--text); }
 .promo-now span { font-size: 13.5px; color: var(--text-2); }
-.ml-promo { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; height: 24px; padding: 0 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; }
+.ml-promo { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; max-width: 100%; min-height: 24px; padding: 0 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ml-promo svg { flex: none; }
+.ml-promo + .ml-promo { margin-top: 2px; }
 .ml-promo.marking { background: var(--warn-soft); color: #8A5A00; }
 .nav-plan { margin-left: auto; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 11.5px; font-weight: 700; }
 @media (max-width: 600px) { .promo-pick { grid-template-columns: 1fr; } .promo-pick-opt span { flex-direction: row; justify-content: space-between; align-items: center; } }
@@ -2929,3 +2931,20 @@ body.pv-open { overflow: hidden; }
 .bst-bar { display: block; height: 4px; margin-top: 7px; border-radius: 4px; background: rgba(31, 94, 74, .14); overflow: hidden; }
 .bst-bar i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
 .bst-end { font-size: 12.5px; color: var(--muted); }
+
+/* 1.38.2: текст для поисковиков (lib/seo.js) не мелькает при загрузке — интерфейс рисует страницу сам.
+   Без JavaScript он виден (index.html, <noscript>), поисковики читают его из HTML. */
+#app > .seo { display: none; }
+
+/* 1.38.2: «Продвигается» в «Моих объявлениях» — строка во всю ширину карточки */
+.ml-bst { grid-column: 1 / -1; position: relative; display: flex; align-items: center; gap: 8px; margin-top: 4px; padding: 7px 12px 9px 7px; border-radius: 16px; background: var(--accent-soft); overflow: hidden; font-size: 13px; }
+.ml-bst-ic { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 10px; background: var(--accent); color: #fff; }
+.ml-bst b { flex: none; color: var(--accent); font-size: 14px; }
+.ml-bst-kinds { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12.5px; }
+.ml-bst-left { flex: none; margin-left: auto; color: var(--accent); font-weight: 700; white-space: nowrap; }
+.ml-bst-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(31, 94, 74, .12); }
+.ml-bst-bar i { display: block; height: 100%; background: var(--accent); }
+.ml-bst.wait { background: var(--surface); }
+.ml-bst.wait .ml-bst-ic { background: #fff; color: var(--text-2); }
+.ml-bst.wait b { color: var(--text); }
+.ml-bst.wait .ml-bst-left { color: var(--text-2); font-weight: 500; }

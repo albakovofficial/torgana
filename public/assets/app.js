@@ -1821,6 +1821,17 @@
       <span class="bst-bar" role="progressbar" aria-label="Осталось срока" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></span>
       <span class="bst-end">до ${dateShort(p.endsAt)}</span></div></div>`;
   }
+  // «Мои объявления»: строка во всю ширину карточки — «Продвигается», сколько осталось, полоска срока.
+  function mlBoostRow(list) {
+    const on = (list || []).filter((b) => b.status === 'active').sort((a, b) => b.endsAt - a.endsAt);
+    if (!on.length) return (list || []).length ? html`<div class="ml-bst wait"><span class="ml-bst-ic">${ic('clock', 16, 2.2)}</span><b>Продвижение</b><span class="ml-bst-left">начнётся после проверки</span></div>` : '';
+    const b = on[0];
+    const left = Math.max(0, b.endsAt - Date.now());
+    const pct = Math.max(3, Math.min(100, Math.round((left / Math.max(1, b.endsAt - b.startsAt)) * 100)));
+    const kinds = [...new Set(on.flatMap((x) => x.kinds))].map((k) => ({ xl: 'XL', frame: 'рамка', tags: 'метки' })[k]).join(', ');
+    return html`<div class="ml-bst"><span class="ml-bst-ic">${ic('bolt', 16, 2.2)}</span><b>Продвигается</b><span class="ml-bst-kinds">${kinds}</span>
+      <span class="ml-bst-left">${left < 86400000 ? 'последний день' : `ещё ${dayWord(Math.max(1, daysLeft(b.endsAt)))}`}</span><i class="ml-bst-bar"><i style="width:${pct}%"></i></i></div>`;
+  }
   // 1.38.1: «Продвигается» у автора на странице объявления — что включено, сколько осталось, полоска срока.
   function boostCard(b) {
     const names = b.kinds.map((k) => BOOST.find((x) => x[0] === k)[2]).join(' · ');
@@ -3461,7 +3472,6 @@
             <a href="/l/${i.id}" class="ml-title">${i.title}</a>
             <div class="ml-price">${price(i.price, i.priceUnit)}</div>
             ${i.promo ? html`<span class="ml-promo ${i.promo.status}">${ic('megaphone', 13, 2)}${i.promo.status === 'active' ? `Реклама · ещё ${dayWord(Math.max(1, daysLeft(i.promo.endsAt)))}` : 'Реклама'}</span>` : ''}
-            ${(i.boost || []).map((b) => html`<span class="ml-promo ${b.status === 'active' ? 'active' : 'marking'}">${ic(b.status === 'active' ? 'bolt' : 'clock', 13, 2)}${b.status === 'active' ? `Продвигается · ещё ${dayWord(Math.max(1, daysLeft(b.endsAt)))}` : 'Продвижение — после проверки'}</span>`)}
             <div class="ml-meta"><span title="Просмотры">${svg(P.eye, 15, 1.8)} ${NF.format(i.views)}</span><span title="В избранном">${svg(P.heart, 15, 1.8)} ${i.favCount}</span><span>${i.city} · ${shortWhen(i.createdAt)}</span>${i.status === 'active' && i.expiresAt ? html`<span title="Объявление висит 30 дней, потом его можно бесплатно опубликовать снова">${ic('clock', 15, 1.8)} до ${dateShort(i.expiresAt)}</span>` : ''}</div>
           </div>
           <div class="ml-side">
@@ -3470,6 +3480,7 @@
             ${['active', 'sold', 'archived'].includes(i.status) ? html`<a class="icon-btn ml-more" href="/profile/stats/${i.id}" aria-label="Статистика объявления" title="Статистика">${ic('chart', 20, 2)}</a>` : ''}
             <button type="button" class="icon-btn ml-more" data-more="${i.id}" aria-label="Действия с объявлением">${svg(P.more, 20, 2.2)}</button>
           </div>
+          ${mlBoostRow(i.boost)}
           ${canBoost ? html`<button type="button" class="ml-boost" data-boost="${i.id}"><span class="ml-boost-ic">${ic('bolt', 17, 2.2)}</span><b>${free.length < 3 ? 'Добавить продвижение' : 'Продвинуть'}</b><small>${free.map(([k]) => ({ xl: 'XL', frame: 'рамка', tags: 'метки' })[k]).join(', ')} · от ${rub(Math.min(...free.map(([k]) => boostPrices()[k])))}</small>${ic('right', 17, 2)}</button>` : ''}
           ${i.status === 'scheduled' ? html`<div class="ml-note ok">${ic('clock', 15, 2)} Проверено — опубликуем ${atTime(i.publishAt)} (мск). Видно только вам.</div>` : ''}
           ${isExpired(i) ? html`<div class="ml-note soft">Прошло 30 дней, объявление снято. Если ещё актуально — опубликуйте снова: бесплатно, окажется среди свежих.</div>` : ''}
@@ -4407,7 +4418,7 @@
     ['Проверка', [['pending', 'inbox', 'На проверке', 'pending'], ['reports', 'flag', 'Жалобы', 'reports'], ['appeals', 'reply', 'Апелляции', 'appeals'], ['reviews', 'star', 'Отзывы', 'reviews'], ['tags', 'tag', 'Метки на фото', 'tags'], ['support', 'headset', 'Поддержка', 'support'], ['biz', 'shield', 'Бизнес', 'biz']]],
     ['Объявления', [['active', 'tag', 'Опубликованные'], ['rejected', 'close', 'Отклонённые'], ['sold', 'check', 'Проданные'], ['archived', 'pause', 'Снятые']]],
     ['Люди', [['users', 'users', 'Пользователи'], ['sources', 'chart', 'Откуда приходят'], ['log', 'list', 'Журнал действий']]],
-    ['Деньги', [['payments', 'card', 'Платежи'], ['ads', 'megaphone', 'Реклама', 'ads'], ['billing', 'tag', 'Оплата и цены']]],
+    ['Деньги', [['payments', 'card', 'Платежи'], ['billing', 'tag', 'Оплата и цены']]],
     ['Настройки', [['notify', 'bell', 'Мои уведомления'], ['mail', 'mail', 'Почта'], ['oauth', 'lock', 'Вход через сервисы'], ['ai', 'sparkle', 'ИИ по фото'], ['seo', 'search', 'Поиск и статистика'], ['backup', 'shield', 'Копии и безопасность'], ['site', 'refresh', 'Версия сайта']]]
   ];
   const LISTING_TABS = ['pending', 'reports', 'appeals', 'active', 'rejected', 'sold', 'archived'];
@@ -4459,7 +4470,6 @@
       backup: () => renderBackupAdmin(box),
       payments: () => renderPaymentsAdmin(box, q),
       tags: () => renderBoostTagsAdmin(box),
-      ads: () => renderAdsAdmin(box, ['active', 'ended'].includes(q.get('tab')) ? q.get('tab') : 'active'),
       billing: () => renderBillingAdmin(box),
       log: () => renderLogAdmin(box, q),
       notify: () => renderNotifyAdmin(box),
@@ -4868,36 +4878,7 @@
     });
   }
 
-  // ---------- реклама: маркировка erid, идущие, завершённые ----------
-  async function renderAdsAdmin(box, tab) {
-    const d = await api('GET', `/api/admin/ads?tab=${tab}`);
-    const TABS = [['active', 'Идут'], ['ended', 'Завершены']]; // 1.38.1: запуск сразу после оплаты, без ожидания erid
-    const copy = (v) => html`<button type="button" class="copy-v" data-copy="${v}" title="Скопировать">${v}</button>`;
-    box.innerHTML = String(html`<div class="adm-head"><h1>Реклама</h1><a class="btn btn-soft btn-sm" href="/api/admin/ads.csv" download>${ic('download', 16, 2)}Отчёт CSV</a></div>
-      <div class="seg adm-seg" role="tablist">${TABS.map(([k, t]) => html`<a role="tab" class="${k === tab ? 'on' : ''}" aria-selected="${k === tab ? 'true' : 'false'}" href="/admin?status=ads&tab=${k}">${t} · ${d.counts[k]}</a>`)}</div>
-      ${d.items.length ? html`<div class="adm-ads">${d.items.map((a) => html`<div class="adm-ad">
-          <a class="my-img" href="${a.listingId ? `/admin/l/${a.listingId}` : '#'}" tabindex="-1" aria-hidden="true">${a.photo ? html`<img src="${a.photo}" alt="" loading="lazy">` : svg(P.image, 24, 1.3)}</a>
-          <div class="adm-ad-body">
-            <div class="adm-ad-head"><span class="ml-tag ${PROMO_STATUS[a.status][0]}"><i></i>${PROMO_STATUS[a.status][1]}</span>${a.listingStatus !== 'active' && a.status === 'active' ? html`<span class="ml-tag off"><i></i>объявление не в поиске</span>` : ''}</div>
-            <a class="t" href="${a.listingId ? `/l/${a.listingId}` : '#'}" target="_blank">${a.title}</a>
-            <div class="adm-facts">
-              <div><span>Рекламодатель</span><b>${copy(a.advertiser)}</b></div><div><span>ИНН</span><b>${copy(a.inn || '—')}</b></div>
-              <div><span>Объект</span><b>${a.listingId ? copy(`${location.origin}/l/${a.listingId}`) : 'удалено'}</b></div>
-              <div><span>Срок и сумма</span><b>${a.days} ${plural(a.days, 'день', 'дня', 'дней')} · ${rub(a.price)}</b></div>
-              ${a.startsAt ? html`<div><span>Период</span><b>${dateShort(a.startsAt)} — ${dateShort(a.endsAt)}</b></div><div><span>Показы / переходы</span><b>${NF.format(a.shows)} / ${NF.format(a.clicks)}</b></div>` : ''}
-            </div>
-            ${a.note ? html`<div class="muted" style="font-size:14px">${a.note}</div>` : ''}
-            ${a.status === 'active' ? html`<div class="erid-form"><button type="button" class="btn btn-line btn-sm" data-stop="${a.id}">Остановить</button></div>` : ''}
-            <div class="muted adm-log-meta"><a href="/admin/u/${a.user.id}">${a.user.name}</a> · ${a.user.email} · оплачено ${when(a.createdAt)}</div>
-          </div></div>`)}</div>` : html`<div class="empty"><h3>${tab === 'marking' ? 'Маркировки никто не ждёт' : 'Здесь пусто'}</h3><p>${tab === 'marking' ? 'Оплаченное продвижение появится здесь, если для показа нужен токен erid.' : 'Нет продвижений в этом разделе.'}</p></div>`}`);
-    $$('[data-copy]', box).forEach((b) => { b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Скопировано'); } catch { toast(b.dataset.copy); } }; });
-    $$('[data-erid]', box).forEach((f) => {
-      f.onsubmit = async (e) => { e.preventDefault(); try { await api('POST', `/api/admin/ads/${f.dataset.erid}/erid`, { erid: f.erid.value }); toast(tab === 'marking' ? 'Запущено — продавцу отправлено письмо' : 'Токен сохранён'); render(); } catch (ex) { toast(ex.message, true); } };
-    });
-    $$('[data-stop]', box).forEach((b) => {
-      b.onclick = () => reasonModal({ title: 'Остановить продвижение', hint: 'Причину увидит продавец. Вернуть деньги за оставшиеся дни можно в «Платежах».', url: `/api/admin/ads/${b.dataset.stop}/stop`, okLabel: 'Остановить', reasons: ['Объявление нарушает правила', 'Рекламодатель попросил остановить', 'Нельзя рекламировать этот товар'], placeholder: 'Причина для продавца' });
-    });
-  }
+
 
   // ---------- метки на фото (продвижение в ленте) ----------
   // Метка должна быть правдой: «С чеком» — чек на фото, «Есть гарантия» — сказано в описании. Не одобрили — деньги за метки вернутся сами.

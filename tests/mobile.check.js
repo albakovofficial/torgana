@@ -291,8 +291,6 @@ function pages(d) {
     ['ad-info', `/search?q=${encodeURIComponent('самокат')}`, null, '[data-ad-info]'],
     ['my-listings-promo', '/profile', d.shop],
     ['admin-payments', '/admin?status=payments', d.admin],
-    ['admin-ads', '/admin?status=ads', d.admin],
-    ['admin-ads-ended', '/admin?status=ads&tab=ended', d.admin],
     ['admin-billing', '/admin?status=billing', d.admin],
     ['admin-user-shop', `/admin/u/${d.shop.user.id}`, d.admin],
     // 1.16: разделы, характеристики, метро, видео
