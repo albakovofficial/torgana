@@ -186,17 +186,14 @@ test('продвижение: скидка «Про», запуск сразу �
   assert.equal(ykSeen.filter((x) => x.url === '/payments').pop().body.amount.value, '140.00');
   await payAndNotify(r);
   const cur = (await shop.get(`/api/listings/${id}`)).data.promo;
-  assert.equal(cur.status, 'active', '1.38.1: без ожидания маркировки');
-  assert.equal((await admin.get('/api/admin/stats')).data.ads, 0, 'ничего не ждёт');
-  const ad = (await admin.get('/api/admin/ads')).data.items[0];
-  assert.equal(ad.inn, '500100732259');
-  assert.equal((await admin.post(`/api/admin/ads/${ad.id}/erid`, { erid: 'bad token!' })).status, 400);
-  assert.equal((await admin.post(`/api/admin/ads/${ad.id}/erid`, { erid: '2SDnjc7Jh3Q' })).status, 200, 'токен по желанию можно добавить к идущей');
+  assert.equal(cur.status, 'active', 'запускается сразу после оплаты');
+  assert.equal((await admin.get('/api/admin/ads')).status, 404, '1.40.0: очереди маркировки нет');
   assert.ok(cur.endsAt - Date.now() > 6.9 * 86400000);
 
   const hit = (await client(srv.base).get(`/api/ads?${new URLSearchParams({ q: 'коляска', city: 'Казань' })}`)).data.items;
   assert.equal(hit.length, 1);
-  assert.deepEqual(hit[0].ad, { id: ad.id, erid: '2SDnjc7Jh3Q', advertiser: 'ИП Смирнова А. А.', inn: '500100732259' });
+  const ad = hit[0].ad;
+  assert.deepEqual(ad, { id: cur.id, advertiser: 'ИП Смирнова А. А.', inn: '500100732259' });
   assert.equal((await client(srv.base).get(`/api/ads?${new URLSearchParams({ q: 'велосипед' })}`)).data.items.length, 0, 'не по запросу — не показываем');
   assert.equal((await client(srv.base).get(`/api/ads?${new URLSearchParams({ city: 'Москва' })}`)).data.items.length, 0, 'другой город');
   assert.equal((await client(srv.base).get('/api/listings?q=коляска')).data.items.length, 1, 'обычная выдача не меняется');
@@ -212,9 +209,6 @@ test('продвижение: скидка «Про», запуск сразу �
   const mine = (await shop.get('/api/my/business')).data.promotions[0];
   assert.equal(mine.shows, 1);
   assert.equal(mine.clicks, 1);
-  const csv = await admin.get('/api/admin/ads.csv');
-  assert.match(csv.headers.get('content-type'), /text\/csv/);
-  assert.match(csv.data, /2SDnjc7Jh3Q/);
 });
 
 test('статистика магазина и выгрузка CSV', async () => {

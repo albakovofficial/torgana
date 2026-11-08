@@ -165,7 +165,7 @@ const CARD_SELECT = `
     (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
     EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id = l.id AND f.user_id = ?) AS is_fav,
     (SELECT json_object('xl', MAX(b.xl), 'frame', MAX(b.frame)) FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active') AS boost,
-    (SELECT b.tags FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active' AND b.tags_state = 'on' ORDER BY b.id DESC LIMIT 1) AS boost_tags,
+    (SELECT b.tags FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active' AND b.tags != '[]' ORDER BY b.id DESC LIMIT 1) AS boost_tags,
     u.id AS seller_id, u.name AS seller_name, u.avatar AS seller_avatar, u.biz_status AS seller_biz_status, u.biz_name AS seller_biz_name, u.plan AS seller_plan, u.plan_until AS seller_plan_until,
     (SELECT ROUND(AVG(rv.rating), 1) || ':' || COUNT(*) FROM reviews rv WHERE rv.seller_id = u.id AND rv.status = 'published') AS seller_rating
   FROM listings l JOIN users u ON u.id = l.user_id`;
@@ -362,7 +362,6 @@ route('PUT', '/api/admin/seo', async (ctx) => {
   audit(admin, 'seo-settings', {}, next);
   return { seo: next };
 }); // тариф и витрина — в карточке пользователя в модерации
-helpers.statsExtra = () => ({ ads: promo.awaiting(), tags: boost.awaiting() }); // счётчики «Реклама» и «Метки на фото» в меню модерации
 
 // Раздел «Для бизнеса» в профиле: тариф, цены, витрина, автозагрузка, продвижения, платежи.
 route('GET', '/api/my/business', (ctx) => {
@@ -749,7 +748,7 @@ function listingTick() {
   }
   const expired = db.prepare(`SELECT id FROM listings WHERE status = 'active' AND expires_at <= ?
     AND id NOT IN (SELECT listing_id FROM feed_items WHERE gone = 0 AND listing_id IS NOT NULL)
-    AND id NOT IN (SELECT listing_id FROM promotions WHERE status IN ('active', 'marking') AND listing_id IS NOT NULL)
+    AND id NOT IN (SELECT listing_id FROM promotions WHERE status = 'active' AND listing_id IS NOT NULL)
     AND id NOT IN (SELECT listing_id FROM boosts WHERE status = 'active' AND listing_id IS NOT NULL)`).all(t);
   for (const { id } of expired) {
     db.prepare('UPDATE listings SET status = \'archived\', updated_at = ? WHERE id = ?').run(t, id);

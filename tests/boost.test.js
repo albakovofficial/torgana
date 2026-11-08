@@ -105,34 +105,16 @@ test('опубликованное: рамка и XL сразу в ленте, �
   assert.equal(my.boost.length, 1);
 });
 
-test('метки видны только после модератора; отклонил — деньги за метки вернулись', async () => {
+test('метки видны сразу после оплаты, без модератора; проверки меток больше нет', async () => {
   const id = await publish(anna, admin, { title: 'iPhone 13, 128 ГБ', category: 'electronics', city: 'Казань', price: 42000 });
   await pay(await anna.post(`/api/listings/${id}/boost`, { tags: ['Есть гарантия', 'С чеком'] }));
-  assert.equal((await feedCard(id)).boost, null, 'до проверки меток не видно');
-  assert.equal((await admin.get('/api/admin/stats')).data.tags, 1);
-  const q = (await admin.get('/api/admin/boost-tags')).data.items;
-  assert.equal(q.length, 1);
-  assert.deepEqual(q[0].tags, ['Есть гарантия', 'С чеком']);
-  assert.equal((await anna.post(`/api/admin/boosts/${q[0].id}/tags`, { ok: true })).status, 403);
-  assert.equal((await admin.post(`/api/admin/boosts/${q[0].id}/tags`, { ok: true })).status, 200);
   assert.deepEqual((await feedCard(id)).boost.tags, ['Есть гарантия', 'С чеком']);
-  assert.equal((await admin.post(`/api/admin/boosts/${q[0].id}/tags`, { ok: true })).status, 404, 'уже проверено');
-
-  const id2 = await publish(anna, admin, { title: 'Ноутбук', category: 'electronics', city: 'Казань', price: 30000 });
-  await pay(await anna.post(`/api/listings/${id2}/boost`, { xl: true, frame: true, tags: ['С чеком'] }));
-  const b2 = (await admin.get('/api/admin/boost-tags')).data.items[0];
-  assert.equal(b2.tagsPrice, Math.round((129 * 29) / 167), 'в пакете — доля меток');
-  assert.equal((await admin.post(`/api/admin/boosts/${b2.id}/tags`, { ok: false, reason: 'x' })).status, 400);
-  const before = refunds.length;
-  assert.equal((await admin.post(`/api/admin/boosts/${b2.id}/tags`, { ok: false, reason: 'Чека нет на фото' })).status, 200);
-  assert.equal(refunds.length, before + 1);
-  assert.equal(refunds.at(-1).amount.value, `${b2.tagsPrice}.00`);
-  const c = await feedCard(id2);
-  assert.equal(c.boost.xl, true, 'XL и рамка остаются');
-  assert.deepEqual(c.boost.tags, []);
-  const own = (await anna.get(`/api/listings/${id2}`)).data.boost[0];
-  assert.equal(own.tagsState, 'off');
-  assert.equal(own.tagsNote, 'Чека нет на фото');
+  const own = (await anna.get(`/api/listings/${id}`)).data.boost[0];
+  assert.deepEqual(own.kinds, ['tags']);
+  assert.equal(own.status, 'active');
+  assert.equal(own.tagsState, undefined);
+  assert.equal((await admin.get('/api/admin/boost-tags')).status, 404, 'раздела проверки меток нет');
+  assert.equal((await admin.get('/api/admin/stats')).data.tags, undefined);
 });
 
 test('оплачено при подаче — начинается с публикацией; не опубликовали или удалили — деньги вернулись сами', async () => {
