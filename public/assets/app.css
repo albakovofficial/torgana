@@ -2832,3 +2832,18 @@ body.pv-open { overflow: hidden; }
   .rv-nophoto { aspect-ratio: 16 / 9; }
   .rv-price { font-size: 24px; }
 }
+
+/* 1.36.2: без мелькания при обновлении — заглушки с задержкой, фото проявляется вместе с подложкой */
+.skel-grid { animation: skel-in .2s ease-out .35s both; }
+@keyframes skel-in { from { opacity: 0; } to { opacity: 1; } }
+.card-img.ph::before { opacity: 0; transition: opacity .25s ease-out; }
+.card-img.ph.ok::before { opacity: .55; }
+.card-img.ph > img { opacity: 0; transition: opacity .25s ease-out, transform .3s; }
+.card-img.ph.ok > img { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .skel-grid { animation: none; } .card-img.ph > img, .card-img.ph::before { transition: none; } }
+/* Черновик — компактная капсула в одну строку */
+.ed-draft { flex-wrap: nowrap; gap: 8px; max-width: 100%; height: 40px; padding: 0 4px 0 14px; font-size: 14px; }
+.ed-draft span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ed-draft svg { flex: none; }
+.ed-draft button { flex: none; height: 32px; padding: 0 14px; border: 0; border-radius: 999px; background: #fff; color: var(--text); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+.ed-draft button:hover { background: #f4f4f1; }
