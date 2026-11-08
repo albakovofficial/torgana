@@ -77,6 +77,9 @@ button { cursor: pointer; }
 /* ---------- шапка ---------- */
 .header { position: sticky; top: 0; z-index: 30; background: rgba(255,255,255,.92); backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px); }
 .header.scrolled { box-shadow: 0 1px 0 var(--line); }
+/* 1.41.2: место под шапку и страницу занято сразу — подвал и содержимое не прыгают, пока скрипт рисует страницу (CLS) */
+.header:empty { min-height: 76px; }
+#app { min-height: 100vh; }
 .header-in { display: flex; align-items: center; gap: 16px; height: 76px; }
 .logo { display: flex; align-items: center; gap: 10px; flex: none; color: var(--text); }
 .logo:hover { color: var(--text); }
@@ -539,6 +542,7 @@ mark { background: #FFE6A3; color: var(--text); border-radius: 4px; padding: 0 2
 @media (max-width: 900px) {
   .wrap { padding: 0 20px; }
   .header-in { height: 64px; gap: 10px; }
+  .header:empty { min-height: 64px; }
   .header-search, .header-nav .hide-m { display: none; }
   .home-top { padding-top: 6px; gap: 18px; }
   .home-search { height: 52px; padding: 0 5px 0 16px; gap: 10px; }
