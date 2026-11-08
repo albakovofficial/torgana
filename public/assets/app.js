@@ -770,7 +770,12 @@
     </div>`;
   }
   const grid = (items) => html`<div class="grid">${items.map(card)}</div>`;
-  const skeletonGrid = (n = 8) => html`<div class="grid">${Array.from({ length: n }, () => html`<div><div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="height:16px;margin-top:12px;border-radius:8px;width:80%"></div></div>`)}</div>`;
+  // Заглушки появляются, только если загрузка дольше трети секунды — иначе при обновлении они мелькают.
+  // Фото в карточке: размытая подложка и само фото проявляются вместе, когда фото загрузилось (без мелькания).
+  document.addEventListener('load', (e) => { const t = e.target; if (t.tagName === 'IMG' && t.parentElement && t.parentElement.classList.contains('card-img')) t.parentElement.classList.add('ok'); }, true);
+  document.addEventListener('error', (e) => { const t = e.target; if (t.tagName === 'IMG' && t.parentElement && t.parentElement.classList.contains('card-img')) t.parentElement.classList.add('ok'); }, true);
+  new MutationObserver(() => { for (const im of document.querySelectorAll('.card-img.ph:not(.ok) > img')) if (im.complete) im.parentElement.classList.add('ok'); }).observe(document.documentElement, { childList: true, subtree: true });
+  const skeletonGrid = (n = 8) => html`<div class="grid skel-grid">${Array.from({ length: n }, () => html`<div><div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="height:16px;margin-top:12px;border-radius:8px;width:80%"></div></div>`)}</div>`;
 
   document.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-fav]');
@@ -1867,7 +1872,7 @@
         <a class="pf-back always" href="${l ? `/l/${l.id}` : '/profile'}">${ic('left', 18, 2)}${l ? 'К объявлению' : 'Мои объявления'}</a>
         <h1>${l ? 'Редактирование' : 'Новое объявление'}</h1>
         <p>${l ? 'После сохранения объявление снова проверит модератор — обычно несколько часов. Пока идёт проверка, его не видно в поиске.' : 'Бесплатно и без лимитов. Каждое объявление проверяет модератор — обычно это несколько часов.'}</p>
-        ${draft ? html`<div class="ed-draft">${ic('refresh', 16, 2)}<span>Восстановили черновик от ${when(draft.at)}</span><button type="button" class="btn btn-soft btn-sm" id="draft-drop">Начать заново</button></div>` : ''}
+        ${draft ? html`<div class="ed-draft">${ic('refresh', 15, 2.2)}<span>Черновик от ${when(draft.at)}</span><button type="button" id="draft-drop">Сбросить</button></div>` : ''}
       </div>
       <nav class="ed-steps" aria-label="Шаги">${ED_STEPS.map(([sid, t], i) => html`<button type="button" data-step="${i}" aria-controls="${sid}" aria-label="Шаг ${i + 1}: ${t}"><i></i><span>${ic('check', 14, 2.6)}${t}</span></button>`)}</nav>
       <div class="ed-grid">
