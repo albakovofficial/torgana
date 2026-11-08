@@ -325,7 +325,9 @@ function pages(d) {
     ['notices', '/', d.seller, '[data-bell]'],
     ['notices-empty', '/', d.buyer, '[data-bell]'],
     // 1.23: фото на весь экран внутри Торганы
-    ['photo-viewer', `/l/${d.ids[0]}`, null, '#gimg'],
+    ['photo-viewer', `/l/${d.ids[0]}`, null, '.g-img'],
+    // 1.35.5: галерея листается свайпом — лента едет за пальцем
+    ['gallery-swipe', `/l/${d.ids[0]}`, null, 'swipe'],
     ['push-ask', '/', d.buyer, 'push-ask']
   ];
 }
@@ -457,12 +459,27 @@ async function main() {
           // Продвижение при подаче: XL и метки, одна метка выбрана — цена на кнопке, превью с XL.
           await page.click('[data-step="5"]');
           await page.waitForTimeout(300);
+          await page.click('#ed-boost summary'); // продвижение свёрнуто в одну строку
+          await page.waitForTimeout(150);
           await page.click('.bp-opt:has([data-bk="xl"])');
           await page.click('.bp-opt:has([data-bk="tags"])');
           await page.click('[data-tag="Как новый"]');
           await page.waitForTimeout(200);
           if (!(await page.$('#preview .card.is-xl .b-tag'))) errors.push('превью без XL и метки');
           if (!/128 ₽/.test(await page.textContent('[data-submit] >> visible=true'))) errors.push('на кнопке нет цены продвижения');
+        } else if (open === 'swipe') {
+          const n = await page.$$eval('.g-slide', (x) => x.length);
+          if (n > 1) {
+            await page.evaluate(async () => {
+              const g = document.querySelector('#gallery'); const r = g.getBoundingClientRect(); const y = r.top + r.height / 2;
+              const tp = (x) => new Touch({ identifier: 1, target: g, clientX: x, clientY: y });
+              g.dispatchEvent(new TouchEvent('touchstart', { touches: [tp(r.right - 40)], changedTouches: [tp(r.right - 40)], bubbles: true }));
+              for (let k = 1; k <= 6; k++) { g.dispatchEvent(new TouchEvent('touchmove', { touches: [tp(r.right - 40 - k * 30)], changedTouches: [tp(r.right - 40 - k * 30)], bubbles: true })); await new Promise((res) => setTimeout(res, 16)); }
+              g.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [tp(r.right - 220)], bubbles: true }));
+            });
+            await page.waitForTimeout(600);
+            if (!/^2 из/.test(await page.textContent('#gcount'))) errors.push('свайп не перелистнул фото');
+          }
         } else if (/^step:\d$/.test(open || '')) {
           await page.click(`[data-step="${open.slice(5)}"]`);
           await page.waitForTimeout(400);

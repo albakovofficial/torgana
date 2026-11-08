@@ -429,11 +429,32 @@
       const mx = Math.max(0, (w - r.width) / 2); const my = Math.max(0, (h - r.height) / 2);
       x = Math.min(mx, Math.max(-mx, x)); y = Math.min(my, Math.max(-my, y));
     };
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let busy = false;
+    // Листание с анимацией: текущее фото уезжает, следующее приезжает с другой стороны.
+    const slide = async (k, dir) => {
+      if (!many) return;
+      if (reduce || busy) { if (!busy) show(k); return; }
+      busy = true;
+      const W = stage.clientWidth * 0.55;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      img.style.transition = 'transform .18s cubic-bezier(.4,0,1,1), opacity .18s';
+      img.style.transform = `translateX(${-dir * W}px)`; img.style.opacity = '0';
+      await wait(170);
+      show(k);
+      img.style.transition = 'none'; img.style.transform = `translateX(${dir * W}px)`; img.style.opacity = '0';
+      try { await img.decode(); } catch { /* покажем как есть */ }
+      void img.offsetWidth;
+      img.style.transition = 'transform .32s cubic-bezier(.22,.8,.24,1), opacity .24s';
+      img.style.transform = 'translate(0px, 0px) scale(1)'; img.style.opacity = '1';
+      await wait(320);
+      img.style.transition = ''; busy = false;
+    };
     const show = (k) => {
       i = (k + srcs.length) % srcs.length; z = 1; x = 0; y = 0; apply(false);
       img.src = srcs[i];
       $('.pv-count', v).textContent = many ? `${i + 1} из ${srcs.length}` : '';
-      $$('[data-pv-to]', v).forEach((b, n) => { b.classList.toggle('on', n === i); if (n === i) b.scrollIntoView({ block: 'nearest', inline: 'center' }); });
+      $$('[data-pv-to]', v).forEach((b, n) => { b.classList.toggle('on', n === i); if (n === i) b.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' }); });
       if (many) [srcs[(i + 1) % srcs.length], srcs[(i - 1 + srcs.length) % srcs.length]].forEach((u) => { const p = new Image(); p.src = u; });
     };
     const zoomAt = (nz, cx, cy) => {
@@ -447,14 +468,14 @@
     const close = () => { v.remove(); document.body.classList.remove('pv-open'); document.removeEventListener('keydown', onKey, true); if (prevFocus && prevFocus.focus) prevFocus.focus({ preventScroll: true }); };
     const onKey = (e) => {
       if (e.key === 'Escape') { e.stopPropagation(); close(); }
-      else if (e.key === 'ArrowRight' && many) show(i + 1);
-      else if (e.key === 'ArrowLeft' && many) show(i - 1);
+      else if (e.key === 'ArrowRight' && many) slide(i + 1, 1);
+      else if (e.key === 'ArrowLeft' && many) slide(i - 1, -1);
     };
     document.addEventListener('keydown', onKey, true);
     v.addEventListener('click', (e) => {
       if (e.target.closest('[data-pv-close]')) { close(); return; }
-      const nb = e.target.closest('[data-pv]'); if (nb) { show(i + Number(nb.dataset.pv)); return; }
-      const tb = e.target.closest('[data-pv-to]'); if (tb) { show(Number(tb.dataset.pvTo)); return; }
+      const nb = e.target.closest('[data-pv]'); if (nb) { slide(i + Number(nb.dataset.pv), Number(nb.dataset.pv)); return; }
+      const tb = e.target.closest('[data-pv-to]'); if (tb) { const k = Number(tb.dataset.pvTo); if (k !== i) slide(k, k > i ? 1 : -1); return; }
       if (e.target === stage && z === 1 && !moved) close(); // нажатие на фон вокруг фото
     });
     stage.addEventListener('dblclick', (e) => { e.preventDefault(); zoomAt(z > 1 ? 1 : 2.5, e.clientX, e.clientY); });
@@ -490,7 +511,8 @@
       v.style.backgroundColor = '';
       if (z === 1 && moved) {
         if (dy > 110 && Math.abs(dy) > Math.abs(dx)) { close(); return; }
-        if (many && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) { show(i + (dx < 0 ? 1 : -1)); start0 = null; return; }
+        const fast = Math.abs(dx) / Math.max(1, Date.now() - start0.t) > 0.35;
+        if (many && (Math.abs(dx) > 60 || (fast && Math.abs(dx) > 24)) && Math.abs(dx) > Math.abs(dy)) { start0 = null; slide(i + (dx < 0 ? 1 : -1), dx < 0 ? 1 : -1); return; }
         apply();
       }
       // Двойное касание на телефоне — увеличить или вернуть.
@@ -1350,7 +1372,7 @@
     const vIdx = l.video ? media.length - 1 : -1;
     const mediaEl = (m) => (m.video
       ? html`<video class="g-video" src="${m.src}#t=0.1" controls playsinline preload="metadata"></video>`
-      : html`<span class="g-ph" style="--ph:url('${m.src}')" aria-hidden="true"></span><img id="gimg" src="${m.src}" alt="${l.title}">`);
+      : html`<span class="g-ph" style="--ph:url('${m.src}')" aria-hidden="true"></span><img class="g-img" src="${m.src}" alt="${l.title}" draggable="false">`);
     const station = l.metro ? html`<span class="metro"><i style="--mline:${l.metro.color || '#C9C9C4'}"></i>${l.metro.name}</span>` : '';
     const marketChip = market ? ({
       below: html`<span class="tag accent">Ниже рынка</span>`,
@@ -1430,7 +1452,7 @@
         <div class="item-main">
           <div>
             <div class="gallery-main" id="gallery">
-              <div class="g-media" id="gmedia">${media.length ? mediaEl(media[0]) : svg(P.image, 56, 1.1)}</div>
+              <div class="g-media" id="gmedia">${media.length ? html`<div class="g-track" id="gtrack">${media.map((m, k) => html`<div class="g-slide" ${k ? raw('aria-hidden="true"') : ''}>${mediaEl(m)}</div>`)}</div>` : svg(P.image, 56, 1.1)}</div>
               ${media.length > 1 ? html`
                 <button class="icon-btn white gallery-nav prev" data-g="-1" aria-label="Назад">${ic('left', 20)}</button>
                 <button class="icon-btn white gallery-nav next" data-g="1" aria-label="Вперёд">${ic('right', 20)}</button>
@@ -1488,11 +1510,22 @@
 
     if (l.status === 'active') api('POST', '/api/stats/view', { id: l.id, src: statSource() }).catch(() => {});
 
-    // галерея
+    // галерея: лента слайдов — едет за пальцем, листается плавно, на краях пружинит
+    const track = $('#gtrack');
+    const EASE = 'transform .42s cubic-bezier(.22,.8,.24,1)';
+    const place = (px = 0, anim = true) => {
+      if (!track) return;
+      track.style.transition = anim && !matchMedia('(prefers-reduced-motion: reduce)').matches ? EASE : 'none';
+      track.style.transform = px ? `translate3d(calc(${-idx * 100}% + ${px}px), 0, 0)` : `translate3d(${-idx * 100}%, 0, 0)`;
+    };
     const show = (i) => {
       if (media.length < 2) return;
+      const prev = idx;
       idx = (i + media.length) % media.length;
-      $('#gmedia').innerHTML = String(mediaEl(media[idx]));
+      place();
+      if (prev !== idx) { const pv = $$('.g-slide video')[0]; if (pv && !pv.paused) pv.pause(); }
+      $$('.g-slide').forEach((sl, j) => { if (j === idx) sl.removeAttribute('aria-hidden'); else sl.setAttribute('aria-hidden', 'true'); });
+      const th = $$('.thumb')[idx]; if (th) th.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
       const c = $('#gcount'); if (c) c.textContent = `${idx + 1} из ${media.length}`;
       const vb = $('#gvbtn'); if (vb) vb.hidden = idx === vIdx;
       $('#gallery').classList.toggle('is-video', idx === vIdx);
@@ -1501,16 +1534,43 @@
     if (vIdx === 0) $('#gallery').classList.add('is-video');
     // Нажатие на фото — просмотр на весь экран внутри Торганы (видео играет на месте).
     const photoList = media.filter((m) => !m.video).map((m) => m.src);
+    let dragged = false;
     $('#gmedia').addEventListener('click', (e) => {
-      if (!e.target.closest('#gimg')) return;
+      if (dragged || !e.target.closest('.g-img')) return;
       photoViewer(photoList, photoList.indexOf(media[idx] && media[idx].src), l.title);
     });
     $$('[data-g]').forEach((b) => { b.onclick = () => show(idx + Number(b.dataset.g)); });
     $$('[data-t]').forEach((b) => { b.onclick = () => show(Number(b.dataset.t)); });
-    let tx = null;
+    // Свайп: слайд следует за пальцем; отпустили — доезжает до соседнего или возвращается.
     const g = $('#gallery');
-    g.addEventListener('touchstart', (e) => { tx = e.touches[0].clientX; }, { passive: true });
-    g.addEventListener('touchend', (e) => { if (tx === null || idx === vIdx) { tx = null; return; } const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 40) show(idx + (dx < 0 ? 1 : -1)); tx = null; });
+    let sw = null;
+    g.addEventListener('touchstart', (e) => {
+      if (media.length < 2 || e.touches.length > 1 || e.target.closest('video, .gallery-nav, .g-video-btn')) { sw = null; return; }
+      const t = e.touches[0]; sw = { x: t.clientX, y: t.clientY, t: Date.now(), dx: 0, axis: '' }; dragged = false;
+    }, { passive: true });
+    g.addEventListener('touchmove', (e) => {
+      if (!sw) return;
+      const t = e.touches[0]; const dx = t.clientX - sw.x; const dy = t.clientY - sw.y;
+      if (!sw.axis && Math.abs(dx) + Math.abs(dy) > 8) sw.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+      if (sw.axis !== 'x') return;
+      dragged = true;
+      const edge = (idx === 0 && dx > 0) || (idx === media.length - 1 && dx < 0);
+      sw.dx = edge ? dx * 0.3 : dx; // на краях — пружина
+      place(sw.dx, false);
+    }, { passive: true });
+    const swEnd = () => {
+      if (!sw) return;
+      const { dx, t, axis } = sw; sw = null;
+      if (axis !== 'x') return;
+      const v = Math.abs(dx) / Math.max(1, Date.now() - t);
+      const far = Math.abs(dx) > g.clientWidth * 0.18 || (v > 0.35 && Math.abs(dx) > 24);
+      const next = idx + (dx < 0 ? 1 : -1);
+      if (far && next >= 0 && next < media.length) show(next); else place();
+      setTimeout(() => { dragged = false; }, 60);
+    };
+    g.addEventListener('touchend', swEnd);
+    g.addEventListener('touchcancel', swEnd);
+    window.addEventListener('resize', () => place(0, false), { passive: true });
 
     $('[data-share]').onclick = async () => {
       const url = location.href;
@@ -1821,23 +1881,21 @@
           ${step(5, 's-desc', 'Описание', 'Честное описание экономит время и вам, и покупателю.', html`
             <div class="ed-tips" aria-label="Что написать">${DESC_TIPS.map((t) => html`<button type="button" class="chip" data-tip="${t}">${ic('plus', 14, 2.2)}${t}</button>`)}</div>
             <div class="ed-input"><label for="desc" class="sr">Описание</label><textarea id="desc" name="description" class="textarea" maxlength="4000" placeholder="Состояние, комплектация, причина продажи, особенности">${src.description || ''}</textarea><span class="ed-count" id="desc-count"></span></div>`)}
-          ${step(6, 's-publish', 'Публикация', 'Объявление в любом случае сначала проверит модератор', html`
-            <div class="ed-note">${ic('clock', 20)}<span>${l && l.status === 'active' && l.expiresAt ? html`Опубликовано до <b>${dateShort(l.expiresAt)}</b>. Правка срок не меняет: после проверки объявление вернётся в поиск.` : html`Объявление висит <b>30 дней бесплатно</b>. Потом — «Опубликовать снова» в один клик, тоже бесплатно.`}</span></div>
-            ${canSchedule ? html`<fieldset class="ed-when"><legend class="label">Когда опубликовать</legend>
-              <div class="ed-opts">
-                <label class="ed-opt row"><input type="radio" name="pub-when" value="now" ${at0 ? '' : raw('checked')}><span><b>Сразу после проверки</b><small>Обычно это несколько часов</small></span></label>
-                <label class="ed-opt row"><input type="radio" name="pub-when" value="later" ${at0 ? raw('checked') : ''}><span><b>В выбранное время</b><small>Например, утром в выходной — когда больше покупателей</small></span></label>
+          ${step(6, 's-publish', 'Публикация', l && l.status === 'active' && l.expiresAt ? `Опубликовано до ${dateShort(l.expiresAt)} · после проверки вернётся в поиск` : '30 дней бесплатно · сначала проверит модератор', html`
+            ${canSchedule ? html`<fieldset class="ed-when"><legend class="sr">Когда опубликовать</legend>
+              <div class="ed-seg">
+                <label><input type="radio" name="pub-when" value="now" ${at0 ? '' : raw('checked')}><span>${ic('bolt', 16, 2)}Сразу</span></label>
+                <label><input type="radio" name="pub-when" value="later" ${at0 ? raw('checked') : ''}><span>${ic('clock', 16, 2)}Позже</span></label>
               </div>
               <div class="ed-when-at ${at0 ? '' : 'hidden'}" id="when-at">
                 <div class="field"><label for="w-day">День</label><select id="w-day" class="select">${days.map((d) => html`<option value="${d}" ${d === atDay ? raw('selected') : ''}>${dayLabelLong(d)}</option>`)}</select></div>
-                <div class="field"><label for="w-time">Время</label><select id="w-time" class="select">${times.map((t) => html`<option value="${t}" ${t === atClock ? raw('selected') : ''}>${t}</option>`)}</select></div>
-                <small>По московскому времени. До публикации объявление видно только вам — в «Моих объявлениях» с меткой «Запланировано».</small>
+                <div class="field"><label for="w-time">Время, МСК</label><select id="w-time" class="select">${times.map((t) => html`<option value="${t}" ${t === atClock ? raw('selected') : ''}>${t}</option>`)}</select></div>
               </div>
             </fieldset>` : ''}
-            ${canBoost ? html`<div class="ed-boost"><div class="ed-boost-h"><span class="label">Продвижение</span><small>по желанию · 7 дней с публикации</small></div>
+            ${canBoost ? html`<details class="ed-boost" id="ed-boost"><summary><span class="eb-ic">${ic('bolt', 18, 2.2)}</span><span class="eb-t"><b>Продвинуть</b><small>по желанию · 7 дней</small></span>${(() => { const from = `от ${rub(Math.min(...BOOST.filter(([k]) => !busyBoost[k]).map(([k]) => boostPrices()[k])))}`; return html`<em id="eb-sum" data-from="${from}">${from}</em>`; })()}${ic('down', 18, 2)}</summary>
               ${boostPicker(busyBoost)}
-              <p class="ed-boost-note">${ic('lock', 14, 2)}Оплата при отправке. Не опубликуем за 7 дней — вернём деньги.</p></div>` : ''}
-            <p class="ed-rules muted">Нажимая «${sendLabel}», вы соглашаетесь с <a href="/page/rules" style="text-decoration:underline">правилами площадки</a><span id="paid-terms" class="hidden"> и <a href="/page/terms#paid" style="text-decoration:underline">условиями платных услуг</a></span>.</p>`)}
+              <p class="ed-boost-note">${ic('lock', 13, 2)}Не опубликуем за 7 дней — вернём деньги</p></details>` : ''}
+            <p class="ed-rules muted">Отправляя, вы принимаете <a href="/page/rules">правила</a><span id="paid-terms" class="hidden"> и <a href="/page/terms#paid">условия платных услуг</a></span></p>`)}
         </form>
         <aside class="ed-side">
           <div class="ed-panel">
@@ -2186,6 +2244,8 @@
       const q = boostQuote(pb);
       $$('[data-submit]').forEach((x) => { const t = x.id === 'dock-send' ? (l ? 'Сохранить' : 'На проверку') : sendLabel; x.textContent = q.any ? `${t} · ${rub(q.amount)}` : t; });
       const pt = $('#paid-terms'); if (pt) pt.classList.toggle('hidden', !q.any);
+      const eb = $('#ed-boost');
+      if (eb) { if (q.any) eb.open = true; eb.classList.toggle('on', q.any); const es = $('#eb-sum'); es.textContent = q.any ? rub(q.amount) : es.dataset.from; }
       if (st.tried) for (const sid of Object.keys(ERR)) showErr(sid, ERR[sid](b));
       const has = b.title || b.photos.length || b.description || b.price;
       if (!l && !has) draftDrop();
