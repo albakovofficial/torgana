@@ -3882,7 +3882,6 @@
   const dateLong = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
   const dateShort = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   const daysLeft = (ts) => Math.max(0, Math.ceil((ts - Date.now()) / 86400000));
-  const isBiz = () => !!(S.user && S.user.business && S.user.business.status === 'verified');
   // Что даёт каждый тариф — ровно то, что работает в коде (lib/business.js, lib/deals.js, lib/support.js, lib/feed.js, lib/promo.js).
   const planFeatures = (key, pr) => ({
     free: ['Объявления без лимитов, 30 дней показа', 'Чат, предложения цены и до 12 быстрых ответов', 'Статистика каждого объявления', 'Значок «ИП проверен» или «Компания проверена» после проверки'],

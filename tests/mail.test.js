@@ -261,3 +261,19 @@ test('отзывы: продавцу — «Новый отзыв», автору
   await new Promise((r) => setTimeout(r, 600));
   assert.ok(!smtp.inbox.slice(n).some((x) => x.to === 'boris@test.local' && /отзыв/i.test(x.subject)), 'после отписки писем об отзывах нет');
 });
+
+// 1.41.0: подборка за день без сохранённых поисков — кнопка ведёт туда, о чём письмо.
+test('подборка за день: снижение цен — кнопка «Избранное», подписки — «Мои подписки»', () => {
+  const { T } = require('../lib/emails');
+  const row = { listing_id: 7, title: 'Велосипед', price: 9000, city: 'Казань', photo: '' };
+  const base = { base: 'https://torgana.test', support: 'support@test.local', name: 'Анна', unsubscribe: 'https://torgana.test/unsubscribe?t=x' };
+  const prices = T.digest({ ...base, prices: [{ ...row, old: 12000 }] });
+  assert.equal(prices.subject, 'Цена снижена: Велосипед');
+  assert.match(prices.html, /https:\/\/torgana\.test\/favorites/);
+  assert.doesNotMatch(prices.html + prices.text, /поиск/i);
+  const follow = T.digest({ ...base, prices: [], follows: [{ id: 3, name: 'Борис', unsubscribe: 'u', items: [row] }] });
+  assert.equal(follow.subject, 'Новое у продавца Борис: 1');
+  assert.match(follow.html, /\/profile\/following/);
+  const both = T.digest({ ...base, prices: [{ ...row, old: 12000 }], follows: [{ id: 3, name: 'Борис', unsubscribe: 'u', items: [row] }] });
+  assert.equal(both.subject, 'Новое в подписках (1) и снижение цен');
+});

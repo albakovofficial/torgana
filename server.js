@@ -732,7 +732,7 @@ function publishListing(id, fresh = false) {
     created_at = CASE WHEN ? OR (expires_at IS NOT NULL AND expires_at <= ?) THEN ? ELSE created_at END,
     expires_at = CASE WHEN ? OR expires_at IS NULL OR expires_at <= ? THEN ? ELSE expires_at END, updated_at = ? WHERE id = ?`)
     .run(fresh ? 1 : 0, t, t, fresh ? 1 : 0, t, t + LISTING_TTL, t, id);
-  alerts.onPublished(id); // сохранённые поиски, подписчики, снижение цены
+  alerts.onPublished(id); // подписчики продавца, снижение цены
   if (boostApi) boostApi.onPublished(id); // оплаченное продвижение начинается с публикации
 }
 helpers.publishListing = publishListing;
@@ -984,6 +984,7 @@ route('POST', '/api/conversations', async (ctx) => {
   if (l.user_id === u.id) throw new HttpError(400, 'Это ваше объявление');
   const existing = db.prepare('SELECT id FROM conversations WHERE listing_id = ? AND buyer_id = ?').get(listingId, u.id);
   if (existing) return { id: existing.id };
+  rateLimit(`conv:${u.id}`, 30, 60 * 60 * 1000); // 1.41.0: защита от рассылки — не больше 30 новых диалогов в час
   const t = now();
   const info = db.prepare('INSERT INTO conversations (listing_id, buyer_id, seller_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
     .run(listingId, u.id, l.user_id, t, t);
@@ -1111,6 +1112,9 @@ const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'X-Frame-Options': 'DENY',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()',
+  // HTTPS запоминается браузером на год (без поддоменов: stats.torgana.ru — отслеживание переходов SMTP.BZ по http).
+  ...(PUBLIC_URL.startsWith('https://') ? { 'Strict-Transport-Security': 'max-age=31536000' } : {}),
   // mc.yandex.ru — Яндекс.Метрика (загружается только после согласия на статистические cookie).
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob: https://mc.yandex.ru https://mc.yandex.com; style-src 'self' 'unsafe-inline'; font-src 'self'; media-src 'self' blob:; connect-src 'self' https://mc.yandex.ru https://mc.yandex.com; script-src 'self' https://mc.yandex.ru; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 };
@@ -1134,19 +1138,24 @@ function serveMapFrame(res) {
   res.end(MAP_FRAME.replace(/__NONCE__/g, nonce).replace('__KEY__', encodeURIComponent(key)));
 }
 
-function serveFile(res, filePath, cache) {
+// 1.41.0: ETag — браузер переспрашивает файл (иконки, манифест, sw.js) и получает 304 без повторной загрузки.
+function serveFile(res, filePath, cache, req = null) {
   fs.stat(filePath, (err, st) => {
     if (err || !st.isFile()) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('Не найдено');
       return;
     }
+    const etag = `W/"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+    if (req && req.headers['if-none-match'] === etag) { res.writeHead(304, { ETag: etag, 'Cache-Control': cache }); res.end(); return; }
     res.writeHead(200, {
       'Content-Type': MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
       'Content-Length': st.size,
       'Cache-Control': cache,
+      ETag: etag,
       ...SECURITY_HEADERS
     });
+    if (req && req.method === 'HEAD') { res.end(); return; }
     fs.createReadStream(filePath).pipe(res);
   });
 }
@@ -1205,7 +1214,7 @@ function serveStatic(req, res, pathname, search) {
     const name = pathname.slice('/uploads/'.length);
     if (video.NAME_RE.test(name)) { serveVideo(req, res, path.join(UPLOAD_DIR, name)); return; }
     if (!/^[a-f0-9]{32}\.(jpg|png|webp)$/.test(name)) { res.writeHead(404); res.end(); return; }
-    serveFile(res, path.join(UPLOAD_DIR, name), 'public, max-age=31536000, immutable');
+    serveFile(res, path.join(UPLOAD_DIR, name), 'public, max-age=31536000, immutable', req);
     return;
   }
   if (pathname !== '/' && pathname !== '/index.html' && !pathname.includes('..')) {
@@ -1214,7 +1223,7 @@ function serveStatic(req, res, pathname, search) {
       const versioned = search === `?v=${ASSET_VERSION}`;
       const cache = versioned ? 'public, max-age=31536000, immutable'
         : pathname.startsWith('/assets/fonts/') ? 'public, max-age=2592000' : 'no-cache';
-      serveFile(res, filePath, cache);
+      serveFile(res, filePath, cache, req);
       return;
     }
   }
@@ -1227,9 +1236,19 @@ function serveStatic(req, res, pathname, search) {
 
 // ---------- сервер ----------
 
+// 1.41.0: www.torgana.ru → torgana.ru одним адресом (301), чтобы не было дублей страниц.
+const CANON_HOST = PUBLIC_URL ? new URL(PUBLIC_URL).host : '';
+
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://localhost');
-  const pathname = decodeURIComponent(url.pathname);
+  let url; let pathname;
+  // Битая кодировка в адресе (%E0%A4%A) раньше роняла весь процесс — теперь просто 400.
+  try { url = new URL(req.url, 'http://localhost'); pathname = decodeURIComponent(url.pathname); } catch {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('Неверный адрес'); return;
+  }
+  const reqHost = req.headers['x-forwarded-host'] || req.headers.host || '';
+  if (CANON_HOST && reqHost === `www.${CANON_HOST}` && (req.method === 'GET' || req.method === 'HEAD')) {
+    res.writeHead(301, { Location: `${PUBLIC_URL.replace(/\/$/, '')}${req.url}`, 'Cache-Control': 'public, max-age=86400' }); res.end(); return;
+  }
 
   if (!pathname.startsWith('/api/')) {
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
@@ -1315,6 +1334,9 @@ alerts.start({ tickMs: Number(process.env.DIGEST_TICK_MS) || undefined, minAge: 
 setInterval(() => { try { listingTick(); } catch (e) { console.error('listings:', e.message); } }, Number(process.env.LISTING_TICK_MS) || 60 * 1000).unref();
 // Автопроверка объявлений, которые ждали проверки до появления автопроверок (один раз при запуске).
 for (const { id } of db.prepare('SELECT id FROM listings WHERE status = \'pending\' AND checks = \'\'').all()) autoChecks.run(id);
+
+// Страховка: необработанная ошибка в фоне пишется в журнал и владельцу, но не роняет сайт.
+process.on('unhandledRejection', (e) => { console.error('unhandledRejection:', e); try { ops.onError(e instanceof Error ? e : new Error(String(e))); } catch { /* нет */ } });
 
 server.listen(PORT, HOST, () => {
   console.log(`Торгана запущена: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
