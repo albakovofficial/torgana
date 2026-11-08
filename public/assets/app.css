@@ -1297,7 +1297,9 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
 .promo-now svg { flex: none; margin-top: 1px; }
 .promo-now b { display: block; color: var(--text); }
 .promo-now span { font-size: 13.5px; color: var(--text-2); }
-.ml-promo { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; height: 24px; padding: 0 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; }
+.ml-promo { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; max-width: 100%; min-height: 24px; padding: 0 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ml-promo svg { flex: none; }
+.ml-promo + .ml-promo { margin-top: 2px; }
 .ml-promo.marking { background: var(--warn-soft); color: #8A5A00; }
 .nav-plan { margin-left: auto; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 11.5px; font-weight: 700; }
 @media (max-width: 600px) { .promo-pick { grid-template-columns: 1fr; } .promo-pick-opt span { flex-direction: row; justify-content: space-between; align-items: center; } }
@@ -2847,3 +2849,102 @@ body.pv-open { overflow: hidden; }
 .ed-draft svg { flex: none; }
 .ed-draft button { flex: none; height: 32px; padding: 0 14px; border: 0; border-radius: 999px; background: #fff; color: var(--text); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
 .ed-draft button:hover { background: #f4f4f1; }
+
+/* 1.37.0: модерация — ИИ по фото (Яндекс AI Studio) */
+.ai-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--text-2); }
+.ai-steps a { text-decoration: underline; }
+.ai-steps code { font-size: 13px; padding: 1px 6px; border-radius: 6px; background: var(--surface); }
+.ai-more summary { cursor: pointer; font-size: 14px; font-weight: 650; color: var(--text-2); margin-bottom: 10px; }
+.ai-more .field + .field { margin-top: 12px; }
+.ai-act { display: flex; gap: 10px; flex-wrap: wrap; }
+.ai-res { margin: 0; padding: 12px 14px; border-radius: 14px; font-size: 14px; }
+.ai-res.ok { background: var(--accent-soft); color: var(--accent); }
+.ai-res.bad { background: #FDECEC; color: #A32D2D; }
+
+/* 1.38.0: пробный тариф первым магазинам */
+.bz-gift { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 0 0 18px; padding: 18px 20px; border-radius: 24px; background: var(--accent); color: #fff; }
+.bz-gift-ic { width: 48px; height: 48px; flex: none; display: grid; place-items: center; border-radius: 16px; background: rgba(255, 255, 255, .16); }
+.bz-gift > div { flex: 1 1 260px; display: flex; flex-direction: column; gap: 3px; }
+.bz-gift b { font-size: 17px; }
+.bz-gift span { font-size: 14px; color: rgba(255, 255, 255, .82); }
+.bz-gift .btn-accent { background: #fff; color: var(--accent); }
+
+/* 1.38.0: быстрые вопросы покупателя в чате — текст в поле, остальные вопросы скрываются */
+.chat-asks .chip { background: var(--accent-soft); border-color: transparent; color: var(--accent); font-weight: 650; }
+.chat-asks .chip:hover { background: #DCE9E3; }
+
+/* 1.38.0: модерация — откуда приходят люди */
+.src-tbl { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 22px; overflow: hidden; background: #fff; margin-bottom: 18px; }
+.src-row { display: grid; grid-template-columns: minmax(0, 2.2fr) repeat(5, minmax(0, 1fr)); gap: 10px; align-items: center; padding: 12px 18px; border-top: 1px solid var(--line); font-size: 14.5px; }
+.src-row:first-child { border-top: 0; }
+.src-h { background: var(--surface); font-size: 12.5px; font-weight: 650; color: var(--muted); }
+.src-name { position: relative; display: flex; flex-direction: column; gap: 1px; min-width: 0; padding-bottom: 6px; }
+.src-name small { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.src-name i { position: absolute; left: 0; bottom: 0; height: 3px; border-radius: 3px; background: var(--accent); }
+.src-link { display: flex; flex-direction: column; gap: 12px; max-width: 760px; }
+@media (max-width: 760px) {
+  .src-row { grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr)); padding: 12px 14px; }
+  .src-row > span:nth-child(4), .src-row > span:nth-child(5) { display: none; }
+}
+
+/* 1.38: объявления на карте */
+.view-sw { flex: none; }
+.results-head select[hidden] { display: none; }
+.map-box { position: relative; height: min(70vh, 640px); min-height: 380px; border-radius: 24px; overflow: hidden; background: var(--surface); }
+.map-frame { display: block; width: 100%; height: 100%; border: 0; }
+.map-state { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--text-2); background: var(--surface); text-align: center; padding: 24px; }
+.map-state.hidden { display: none; }
+.map-note { display: flex; align-items: center; gap: 8px; margin: 12px 4px 0; color: var(--text-2); font-size: 13px; }
+.map-note svg { flex: none; }
+@media (max-width: 900px) { .map-box { height: 62vh; min-height: 320px; border-radius: 18px; } }
+
+/* 1.38.1: оплата прошла — коротко и сразу к объявлению */
+.pay-res .pay-lead { margin: 0 auto 22px; max-width: 380px; color: var(--text-2); font-size: 16px; line-height: 1.45; }
+.pay-line { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 18px; border-radius: 18px; background: var(--surface); font-size: 14.5px; text-align: left; }
+.pay-line span { color: var(--text-2); overflow-wrap: anywhere; }
+.pay-line b { flex: none; font-weight: 700; }
+.pay-hint { display: flex; gap: 8px; align-items: flex-start; margin: 14px 0 0; padding: 12px 14px; border-radius: 16px; background: var(--accent-soft); color: var(--accent); font-size: 14px; text-align: left; }
+.pay-hint svg { flex: none; margin-top: 1px; }
+.pay-foot { margin: 16px 0 0; color: var(--muted); font-size: 13px; }
+.pay-go { position: relative; overflow: hidden; }
+.pay-go span { position: relative; z-index: 1; }
+.pay-bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: rgba(255, 255, 255, .55); }
+.pay-go.run .pay-bar { animation: pay-bar 4s linear forwards; }
+@keyframes pay-bar { to { width: 100%; } }
+.pay-ic.pop { animation: pay-pop .45s cubic-bezier(.2, 1.4, .4, 1) both; }
+@keyframes pay-pop { from { transform: scale(.6); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .pay-ic.pop, .pay-go.run .pay-bar { animation: none; } }
+
+/* 1.38.1: «Продвигается» у автора */
+.bst { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 20px; background: var(--accent-soft); }
+.bst-ic { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 12px; background: var(--accent); color: #fff; }
+.bst.wait { background: var(--surface); }
+.bst.wait .bst-ic { background: #fff; color: var(--text-2); }
+.bst-body { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.bst-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.bst-top b { font-size: 15.5px; font-weight: 700; color: var(--accent); }
+.bst.wait .bst-top b { color: var(--text); }
+.bst-top em { font-style: normal; font-size: 14px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.bst.wait .bst-top em { color: var(--text-2); }
+.bst-sub { font-size: 13.5px; color: var(--text-2); }
+.bst-note { color: #8A5A00; }
+.bst-bar { display: block; height: 4px; margin-top: 7px; border-radius: 4px; background: rgba(31, 94, 74, .14); overflow: hidden; }
+.bst-bar i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.bst-end { font-size: 12.5px; color: var(--muted); }
+
+/* 1.38.2: текст для поисковиков (lib/seo.js) не мелькает при загрузке — интерфейс рисует страницу сам.
+   Без JavaScript он виден (index.html, <noscript>), поисковики читают его из HTML. */
+#app > .seo { display: none; }
+
+/* 1.38.2: «Продвигается» в «Моих объявлениях» — строка во всю ширину карточки */
+.ml-bst { grid-column: 1 / -1; position: relative; display: flex; align-items: center; gap: 8px; margin-top: 4px; padding: 7px 12px 9px 7px; border-radius: 16px; background: var(--accent-soft); overflow: hidden; font-size: 13px; }
+.ml-bst-ic { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 10px; background: var(--accent); color: #fff; }
+.ml-bst b { flex: none; color: var(--accent); font-size: 14px; }
+.ml-bst-kinds { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12.5px; }
+.ml-bst-left { flex: none; margin-left: auto; color: var(--accent); font-weight: 700; white-space: nowrap; }
+.ml-bst-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(31, 94, 74, .12); }
+.ml-bst-bar i { display: block; height: 100%; background: var(--accent); }
+.ml-bst.wait { background: var(--surface); }
+.ml-bst.wait .ml-bst-ic { background: #fff; color: var(--text-2); }
+.ml-bst.wait b { color: var(--text); }
+.ml-bst.wait .ml-bst-left { color: var(--text-2); font-weight: 500; }

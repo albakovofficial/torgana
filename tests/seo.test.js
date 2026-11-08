@@ -85,7 +85,7 @@ test('sitemap.xml и robots.txt', async () => {
 test('коды Вебмастера, Search Console и счётчик Метрики — из модерации', async () => {
   assert.equal((await seller.put('/api/admin/seo', { yandex: 'x' })).status, 403);
   const r = await admin.put('/api/admin/seo', { yandex: '<meta name="yandex-verification" content="a1b2c3d4e5f60718" />', google: 'g00gle-Code_1', metrika: '98 765 432' });
-  assert.deepEqual(r.data.seo, { yandex: 'a1b2c3d4e5f60718', google: 'g00gle-Code_1', metrika: '98765432' });
+  assert.deepEqual(r.data.seo, { yandex: 'a1b2c3d4e5f60718', google: 'g00gle-Code_1', metrika: '98765432', mapsKey: '' });
   const home = await page('/');
   assert.match(home.html, /<meta name="yandex-verification" content="a1b2c3d4e5f60718">/);
   assert.match(home.html, /<meta name="google-site-verification" content="g00gle-Code_1">/);

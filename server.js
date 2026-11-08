@@ -13,7 +13,7 @@ const { HttpError, sendJson, readJson, parseCookies, rateLimit } = require('./li
 const auth = require('./lib/auth');
 const { CATEGORIES, CATEGORY_IDS, CITIES, PRICE_UNITS, CONDITIONS, SUPPORT_FAQ } = require('./lib/constants');
 const { norm, parseQuery, searchSpec, specSql, brandAliases } = require('./lib/search');
-const { suggestFromPhoto } = require('./lib/ai');
+const { suggestFromPhoto, pingYandex } = require('./lib/ai');
 const { createMailer } = require('./lib/mailer');
 const { createPush } = require('./lib/push');
 const { checkProhibited } = require('./lib/prohibited');
@@ -302,12 +302,13 @@ const stats = require('./lib/stats')({ route, db, h: helpers });
 const reviews = require('./lib/reviews')({ route, db, mailer, h: helpers });
 const trust = require('./lib/trust')({ route, db, h: helpers, mailer }); // «Телефон подтверждён», проверенный бизнес
 require('./lib/admin')({ route, db, h: helpers, reviews, trust }); // сводка, пользователи, журнал, письма модератору
+helpers.sources = require('./lib/sources')({ route, db, h: helpers }); // откуда пришли люди (1.38)
 const oauth = require('./lib/oauth')({ route, db, h: helpers, auth, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, secureCookies: SECURE_COOKIES, adminEmails: ADMIN_EMAILS, testBase: process.env.OAUTH_TEST_BASE || '' });
 // Платные услуги для бизнеса: оплата через ЮKassa, тарифы «Магазин» и «Магазин Про», продвижение, автозагрузка из фида.
 helpers.logEvent = logEvent;
 helpers.categoryIds = CATEGORY_IDS;
 const billing = require('./lib/billing')({ route, db, h: helpers, mailer, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, testBase: process.env.YOOKASSA_TEST_BASE || '' });
-const business = require('./lib/business')({ route, db, h: helpers, billing, mailer, stats });
+const business = require('./lib/business')({ route, db, h: helpers, billing, mailer, stats, trust });
 const promo = require('./lib/promo')({ route, db, h: helpers, billing, business, stats, mailer, searchSpec, specSql, categoryIds: CATEGORY_IDS });
 // Продвижение в ленте и поиске для всех продавцов: XL-карточка, рамка, метки на фото (1.21.0).
 const boost = require('./lib/boost')({ route, db, h: helpers, billing });
@@ -328,19 +329,33 @@ opsApi = ops;
 helpers.business = business;
 
 // Поисковики и Метрика: коды подтверждения Вебмастера и Search Console, номер счётчика — «Модерация → Поиск и статистика».
+// ИИ по фото: Яндекс AI Studio (ключ и каталог — в модерации, «Настройки → ИИ по фото» или YANDEX_AI_KEY/YANDEX_FOLDER_ID),
+// иначе Claude (ANTHROPIC_API_KEY). Нет ни того, ни другого — подсказки выключены.
+const YA_VISION = 'qwen3.6-35b-a3b';
+const YA_TEXT = 'aliceai-llm';
+function aiCfg() {
+  const s = seoSetting('ai') || {};
+  if (s.off) return null;
+  const key = s.key || process.env.YANDEX_AI_KEY || '';
+  const folder = s.folder || process.env.YANDEX_FOLDER_ID || '';
+  if (key && folder) return { provider: 'yandex', key, folder, vision: s.vision || process.env.YANDEX_VISION_MODEL || YA_VISION, text: s.text === '' ? '' : (s.text || process.env.YANDEX_TEXT_MODEL || YA_TEXT) };
+  if (AI_KEY) return { provider: 'anthropic', key: AI_KEY, model: AI_MODEL };
+  return null;
+}
 const seoSetting = (key) => { const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(key); try { return r ? JSON.parse(r.value) : null; } catch { return null; } };
 const seo = require('./lib/seo')({ db, base: PUBLIC_URL || `http://localhost:${PORT}`, getSetting: seoSetting });
 route('GET', '/api/admin/seo', (ctx) => {
   requireAdmin(ctx);
   const base = PUBLIC_URL || `http://localhost:${PORT}`;
-  return { seo: { yandex: '', google: '', metrika: '', ...(seoSetting('seo') || {}) }, sitemap: `${base}/sitemap.xml`, robots: `${base}/robots.txt` };
+  return { seo: { yandex: '', google: '', metrika: '', mapsKey: '', ...(seoSetting('seo') || {}) }, sitemap: `${base}/sitemap.xml`, robots: `${base}/robots.txt` };
 });
 route('PUT', '/api/admin/seo', async (ctx) => {
   const admin = requireAdmin(ctx);
   const b = await readJson(ctx.req);
   const code = (v) => str(v, 120).replace(/^.*content=["']?([\w-]+)["']?.*$/s, '$1').replace(/[^\w-]/g, ''); // можно вставить весь <meta …>
   const metrika = str(b.metrika, 20).replace(/\D/g, '');
-  const next = { yandex: code(b.yandex), google: code(b.google), metrika };
+  const mapsKey = str(b.mapsKey, 80).trim().replace(/[^\w-]/g, ''); // ключ JavaScript API Яндекс Карт
+  const next = { yandex: code(b.yandex), google: code(b.google), metrika, mapsKey };
   db.prepare('INSERT INTO settings (key, value) VALUES (\'seo\', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(JSON.stringify(next));
   audit(admin, 'seo-settings', {}, next);
   return { seo: next };
@@ -371,14 +386,16 @@ route('GET', '/api/config', () => ({
   priceUnits: PRICE_UNITS,
   subcategories: taxonomy.publicTaxonomy(),
   metroCities: metro.cities(),
-  ai: !!AI_KEY,
+  ai: !!aiCfg(),
+  aiBy: (aiCfg() || {}).provider || '',
   payments: PAYMENTS_ENABLED,
   mail: mailer.ready(),
   supportEmail: SUPPORT_EMAIL,
   supportFaq: SUPPORT_FAQ,
   oauth: oauth.enabled(),
-  billing: { ready: billing.ready(), prices: billing.prices(), boostTags: boost.TAGS, boostDays: boost.BOOST_DAYS },
+  billing: { ready: billing.ready(), prices: billing.prices(), boostTags: boost.TAGS, boostDays: boost.BOOST_DAYS, starter: business.starterPublic() },
   metrika: (seoSetting('seo') || {}).metrika || '',
+  maps: !!(seoSetting('seo') || {}).mapsKey,
   operator: (({ name, inn, ogrnip }) => ({ name, inn, ogrnip }))(legal.operator())
 }));
 
@@ -405,6 +422,7 @@ route('POST', '/api/auth/register', async (ctx) => {
   const isAdmin = ADMIN_EMAILS.includes(email) ? 1 : 0;
   const info = db.prepare('INSERT INTO users (email, name, password_hash, is_admin, created_at, consent_at) VALUES (?, ?, ?, ?, ?, ?)')
     .run(email, name, auth.hashPassword(password), isAdmin, now(), now());
+  helpers.sources.tag(info.lastInsertRowid, body.src);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
   // Почта подключена — войти можно только после кода из письма (6 цифр). Без почты код не отправить — входим сразу.
   if (codesOn()) { mailer.sendCode(user); return { needCode: true, email: user.email }; }
@@ -591,6 +609,27 @@ route('GET', '/api/listings', (ctx) => {
   };
 });
 
+// Объявления на карте: те же фильтры, что в поиске. Точка — станция метро или центр города,
+// точный адрес не показываем никогда (его продавец сообщает в чате).
+const cityCenter = require('./lib/geo').cityCenter;
+route('GET', '/api/listings/map', (ctx) => {
+  const spec = searchSpec(Object.fromEntries(ctx.query.entries()), CATEGORY_IDS);
+  const f = specSql(spec);
+  const whereSql = ['l.status = \'active\'', 'u.is_blocked = 0', ...f.where].join(' AND ');
+  const total = db.prepare(`SELECT COUNT(*) AS n FROM listings l JOIN users u ON u.id = l.user_id WHERE ${whereSql}`).get(...f.args).n;
+  const rows = db.prepare(`SELECT l.id, l.title, l.price, l.price_unit, l.city, l.metro,
+      (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo
+    FROM listings l JOIN users u ON u.id = l.user_id WHERE ${whereSql} ORDER BY l.created_at DESC, l.id DESC LIMIT 1000`).all(...f.args);
+  const items = [];
+  for (const r of rows) {
+    const st = r.metro ? metro.geo(r.city, r.metro) : null;
+    const at = st || cityCenter(r.city);
+    if (!at) continue;
+    items.push({ id: r.id, lat: at.lat, lng: at.lng, title: r.title, price: r.price, priceUnit: r.price_unit, photo: photoUrl(r.photo), place: st ? `м. ${r.metro}` : r.city });
+  }
+  return { items, total, shown: rows.length };
+});
+
 route('GET', '/api/listings/:id', (ctx) => {
   const id = parseInt(ctx.params.id, 10);
   const l = loadListing(id);
@@ -611,7 +650,7 @@ route('GET', '/api/listings/:id', (ctx) => {
     ORDER BY (l.subcategory = ? AND l.subcategory != '') DESC, l.created_at DESC LIMIT 4`)
     .all(uid, l.category, id, l.subcategory).map(cardFromRow);
   const attrs = attrsOf(l);
-  const station = l.metro ? (metro.stations(l.city).find((s) => s.name === l.metro) || { name: l.metro, line: '', color: '' }) : null;
+  const station = l.metro ? (({ name, line, color }) => ({ name, line, color }))(metro.stations(l.city).find((s) => s.name === l.metro) || { name: l.metro, line: '', color: '' }) : null;
   let market = null;
   if (l.price) {
     const est = marketEstimate({ id, category: l.category, title: l.title, priceUnit: l.price_unit });
@@ -825,14 +864,15 @@ const AI_SUBS = Object.entries(taxonomy.SUBCATS).map(([cat, list]) => list.map((
 
 route('POST', '/api/ai/suggest', async (ctx) => {
   const u = requireUser(ctx);
-  if (!AI_KEY) throw new HttpError(501, 'ИИ-подсказки не подключены');
+  const cfg = aiCfg();
+  if (!cfg) throw new HttpError(501, 'ИИ-подсказки не подключены');
   rateLimit(`ai:${u.id}`, 30, 60 * 60 * 1000);
   const { file } = await readJson(ctx.req);
   const row = db.prepare('SELECT file FROM uploads WHERE file = ? AND user_id = ?').get(String(file || ''), u.id);
   if (!row) throw new HttpError(400, 'Сначала загрузите фото');
   const type = IMAGE_TYPES.find((t) => row.file.endsWith(`.${t.ext}`));
   try {
-    const s = await suggestFromPhoto({ apiKey: AI_KEY, model: AI_MODEL, filePath: path.join(UPLOAD_DIR, row.file), mime: type.mime, subs: AI_SUBS });
+    const s = await suggestFromPhoto({ cfg, filePath: path.join(UPLOAD_DIR, row.file), mime: type.mime, subs: AI_SUBS });
     // Раздел — только из разделов угаданной категории; характеристики — по одной, неверные отбрасываем.
     s.subcategory = s.category && (taxonomy.SUBCATS[s.category] || []).some((x) => x.id === s.subcategory) ? s.subcategory : '';
     const attrs = {};
@@ -844,6 +884,39 @@ route('POST', '/api/ai/suggest', async (ctx) => {
     console.error('AI suggest failed:', e.message);
     throw new HttpError(502, 'Не получилось распознать фото. Заполните поля вручную.');
   }
+});
+
+// ---------- модерация: ИИ по фото (Яндекс AI Studio) ----------
+const aiAdminView = () => {
+  const s = seoSetting('ai') || {};
+  const c = aiCfg();
+  return { provider: c ? c.provider : '', on: !!c, off: !!s.off, folder: s.folder || '', hasKey: !!s.key, fromEnv: !s.key && !!process.env.YANDEX_AI_KEY,
+    vision: s.vision || YA_VISION, text: s.text === '' ? '' : (s.text || YA_TEXT), defaults: { vision: YA_VISION, text: YA_TEXT } };
+};
+route('GET', '/api/admin/ai', (ctx) => { requireAdmin(ctx); return aiAdminView(); });
+route('PUT', '/api/admin/ai', async (ctx) => {
+  const admin = requireAdmin(ctx);
+  const b = await readJson(ctx.req);
+  const cur = seoSetting('ai') || {};
+  const model = (v, d) => { const t = String(v === undefined ? d : v).trim(); if (t && !/^[\w.\-/@]{2,80}$/.test(t)) throw new HttpError(400, 'Имя модели — латиница, цифры, точки и дефисы, например aliceai-llm'); return t; };
+  const next = {
+    key: b.clear ? '' : (b.key ? String(b.key).trim().slice(0, 300) : cur.key || ''),
+    folder: b.clear ? '' : String(b.folder === undefined ? cur.folder || '' : b.folder).trim().slice(0, 60),
+    vision: model(b.vision, cur.vision || YA_VISION) || YA_VISION,
+    text: model(b.text, cur.text === undefined ? YA_TEXT : cur.text),
+    off: !!b.off
+  };
+  if (next.folder && !/^[a-z0-9]{10,40}$/.test(next.folder)) throw new HttpError(400, 'Идентификатор каталога — строка вида b1g… из консоли Yandex Cloud');
+  if (next.key && !next.folder) throw new HttpError(400, 'Укажите идентификатор каталога Yandex Cloud');
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run('ai', JSON.stringify(next));
+  audit(admin, 'ai-settings', {}, { folder: next.folder, vision: next.vision, text: next.text, off: next.off });
+  return aiAdminView();
+});
+route('POST', '/api/admin/ai/test', async (ctx) => {
+  requireAdmin(ctx);
+  const c = aiCfg();
+  if (!c || c.provider !== 'yandex') throw new HttpError(400, 'Сначала сохраните ключ и каталог Яндекс AI Studio');
+  try { return { ok: true, answer: await pingYandex(c) }; } catch (e) { throw new HttpError(502, e.status === 401 || e.status === 403 ? 'Ключ не подошёл: проверьте API-ключ и что у сервисного аккаунта есть роль ai.languageModels.user' : e.message); }
 });
 
 route('GET', '/api/price-hint', (ctx) => {
@@ -947,7 +1020,7 @@ route('GET', '/api/conversations/:id', (ctx) => {
   return {
     conversation: { id: c.id, role: c.buyer_id === u.id ? 'buyer' : 'seller' },
     review: reviews.chatState(u.id, c),
-    listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, bargain: !!l.bargain, city: l.city, metro: l.metro || '', photo: photoUrl(photo && photo.file) },
+    listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, bargain: !!l.bargain, delivery: !!l.delivery, city: l.city, metro: l.metro || '', photo: photoUrl(photo && photo.file) },
     // 1.27: оценка собеседника — для колонки «Объявление и продавец» справа от чата
     other: { id: other.id, name: other.name, avatar: photoUrl(other.avatar), createdAt: other.created_at, rating: reviews.ratingOf(other.id) },
     offers: deals.offersOf(c.id), // состояния всех предложений — обновляются при каждом опросе
@@ -985,7 +1058,7 @@ route('GET', '/api/users/:id', (ctx) => {
 
 // Юридические документы (реквизиты и раздел «Запрещено» подставляются на сервере).
 route('GET', '/api/pages/:slug', (ctx) => {
-  const d = legal.docs({ ai: !!AI_KEY, metrika: !!(seoSetting('seo') || {}).metrika })[ctx.params.slug];
+  const d = legal.docs({ ai: (aiCfg() || {}).provider || false, metrika: !!(seoSetting('seo') || {}).metrika })[ctx.params.slug];
   if (!d) throw new HttpError(404, 'Страница не найдена');
   return { title: d[0], html: d[1] };
 });
@@ -1038,6 +1111,25 @@ const SECURITY_HEADERS = {
   // mc.yandex.ru — Яндекс.Метрика (загружается только после согласия на статистические cookie).
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob: https://mc.yandex.ru https://mc.yandex.com; style-src 'self' 'unsafe-inline'; font-src 'self'; media-src 'self' blob:; connect-src 'self' https://mc.yandex.ru https://mc.yandex.com; script-src 'self' https://mc.yandex.ru; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 };
+
+// Карта Яндекса живёт в отдельной странице-рамке со своей политикой безопасности:
+// основной сайт не пускает чужие скрипты, а скрипты карт работают только внутри рамки.
+// Рамка открывается в песочнице (без доступа к сайту, cookie и входу); точки получает сообщением от страницы поиска.
+const MAP_FRAME = fs.readFileSync(path.join(__dirname, 'lib/map-frame.html'), 'utf8');
+function serveMapFrame(res) {
+  const key = (seoSetting('seo') || {}).mapsKey || '';
+  const nonce = crypto.randomBytes(16).toString('base64');
+  const Y = 'https://*.yandex.ru https://*.yandex.net https://yandex.ru https://yastatic.net https://*.yastatic.net';
+  res.writeHead(key ? 200 : 404, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}' 'unsafe-eval' ${Y}; style-src 'unsafe-inline' blob: ${Y}; img-src 'self' data: blob: ${Y}; connect-src ${Y}; frame-src ${Y}; font-src ${Y}; worker-src blob:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'`
+  });
+  if (!key) { res.end('Карта не подключена'); return; }
+  res.end(MAP_FRAME.replace(/__NONCE__/g, nonce).replace('__KEY__', encodeURIComponent(key)));
+}
 
 function serveFile(res, filePath, cache) {
   fs.stat(filePath, (err, st) => {
@@ -1123,6 +1215,7 @@ function serveStatic(req, res, pathname, search) {
       return;
     }
   }
+  if (pathname === '/map-frame') { serveMapFrame(res); return; }
   if (pathname === '/sitemap.xml') { serveText(res, 'application/xml; charset=utf-8', seo.sitemap()); return; }
   if (pathname === '/robots.txt') { serveText(res, 'text/plain; charset=utf-8', seo.robots()); return; }
   // Все остальные пути — страницы приложения.
@@ -1223,5 +1316,5 @@ for (const { id } of db.prepare('SELECT id FROM listings WHERE status = \'pendin
 server.listen(PORT, HOST, () => {
   console.log(`Торгана запущена: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   if (!ADMIN_EMAILS.length) console.log('Подсказка: задайте ADMIN_EMAIL в .env, чтобы получить доступ к модерации.');
-  if (!AI_KEY) console.log('ИИ-подсказки по фото выключены (нет ANTHROPIC_API_KEY).');
+  if (!aiCfg()) console.log('ИИ-подсказки по фото выключены: подключите Яндекс AI Studio в модерации («Настройки → ИИ по фото»).');
 });

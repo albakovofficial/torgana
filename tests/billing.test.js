@@ -176,7 +176,7 @@ test('витрина магазина и публичная страница; б
   assert.equal((await admin.post(`/api/admin/users/${shop.user.id}/shop/clear`, { reason: 'x' })).status, 400, 'причина обязательна');
 });
 
-test('продвижение: скидка «Про», маркировка erid, блок «Реклама» по запросу, показы и переходы', async () => {
+test('продвижение: скидка «Про», запуск сразу после оплаты, блок «Реклама» по запросу, показы и переходы', async () => {
   const id = await publish(shop, admin, { title: 'Детская коляска Cybex', category: 'personal', city: 'Казань', price: 34500 });
   const opts = (await shop.get(`/api/listings/${id}/promote`)).data;
   assert.equal(opts.options.find((o) => o.days === 7).price, 140, '200 ₽ − 30%');
@@ -185,17 +185,13 @@ test('продвижение: скидка «Про», маркировка erid
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.equal(ykSeen.filter((x) => x.url === '/payments').pop().body.amount.value, '140.00');
   await payAndNotify(r);
-  let cur = (await shop.get(`/api/listings/${id}`)).data.promo;
-  assert.equal(cur.status, 'marking', 'ждёт токена erid');
-  assert.equal((await client(srv.base).get('/api/ads?q=коляска')).data.items.length, 0, 'без erid не показываем');
-  assert.equal((await admin.get('/api/admin/stats')).data.ads, 1);
-  const ad = (await admin.get('/api/admin/ads?tab=marking')).data.items[0];
+  const cur = (await shop.get(`/api/listings/${id}`)).data.promo;
+  assert.equal(cur.status, 'active', '1.38.1: без ожидания маркировки');
+  assert.equal((await admin.get('/api/admin/stats')).data.ads, 0, 'ничего не ждёт');
+  const ad = (await admin.get('/api/admin/ads')).data.items[0];
   assert.equal(ad.inn, '500100732259');
   assert.equal((await admin.post(`/api/admin/ads/${ad.id}/erid`, { erid: 'bad token!' })).status, 400);
-  assert.equal((await admin.post(`/api/admin/ads/${ad.id}/erid`, { erid: '2SDnjc7Jh3Q' })).status, 200);
-  await smtp.waitFor((m) => m.to === 'anna@test.local' && /Продвижение запущено/.test(m.subject));
-  cur = (await shop.get(`/api/listings/${id}`)).data.promo;
-  assert.equal(cur.status, 'active');
+  assert.equal((await admin.post(`/api/admin/ads/${ad.id}/erid`, { erid: '2SDnjc7Jh3Q' })).status, 200, 'токен по желанию можно добавить к идущей');
   assert.ok(cur.endsAt - Date.now() > 6.9 * 86400000);
 
   const hit = (await client(srv.base).get(`/api/ads?${new URLSearchParams({ q: 'коляска', city: 'Казань' })}`)).data.items;
@@ -252,13 +248,17 @@ test('возврат: частичный, с остановкой продвиж
   assert.ok((await admin.get('/api/admin/log')).data.items.some((i) => i.action === 'payment-refund'));
 });
 
-test('без обязательного erid продвижение запускается сразу после оплаты', async () => {
-  await admin.put('/api/admin/ads/settings', { requireErid: false });
-  const id = await publish(shop, admin, { title: 'Самокат Xiaomi', category: 'hobby', city: 'Казань', price: 15000 });
-  await payAndNotify(await shop.post(`/api/listings/${id}/promote`, { days: 3 }));
-  assert.equal((await shop.get(`/api/listings/${id}`)).data.promo.status, 'active');
-  assert.equal((await client(srv.base).get('/api/ads?q=самокат')).data.items.length, 1);
-  await admin.put('/api/admin/ads/settings', { requireErid: true });
+test('реклама над поиском — для любого продавца, без подтверждения бизнеса', async () => {
+  const vera = await registerUser(srv.base, { name: 'Вера', email: 'vera@test.local', smtp });
+  const id = await publish(vera, admin, { title: 'Самокат Xiaomi', category: 'hobby', city: 'Казань', price: 15000 });
+  const r = await vera.post(`/api/listings/${id}/promote`, { days: 3 });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  await payAndNotify(r);
+  assert.equal((await vera.get(`/api/listings/${id}`)).data.promo.status, 'active');
+  const hit = (await client(srv.base).get('/api/ads?q=самокат')).data.items;
+  assert.equal(hit.length, 1);
+  assert.equal(hit[0].ad.advertiser, 'Вера');
+  assert.equal(hit[0].ad.inn, '');
 });
 
 test('фид Авито: разбор, категории, города, защита от внутренних адресов', () => {

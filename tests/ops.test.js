@@ -164,6 +164,7 @@ test('почта сломана — владелец входит в модер�
     // защита была включена раньше (модератор уже подтверждал устройство)
     const { DatabaseSync } = require('node:sqlite');
     const sdb = new DatabaseSync(require('node:path').join(s2.tmp, 'data', 'torgana.db'));
+    sdb.exec('PRAGMA busy_timeout = 5000'); // сервер в это время пишет в базу (почтовая очередь) — ждём, а не падаем
     sdb.prepare('INSERT INTO admin_device_armed (user_id, at) VALUES (?, ?)').run(a.user.id, Date.now());
     sdb.close();
     assert.equal((await a.get('/api/admin/backup')).status, 403);

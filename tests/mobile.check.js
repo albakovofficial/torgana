@@ -16,6 +16,21 @@ const VIEWPORTS = {
   desktop: { viewport: { width: 1280, height: 860 } }
 };
 
+// Заглушка API Яндекс Карт для проверки: тот же интерфейс, что использует рамка (Map, ObjectManager), без сети.
+const YMAPS_STUB = `window.ymaps = {
+  ready: (cb) => cb(),
+  Map: function (id) { this.geoObjects = { add() {} }; this.setBounds = () => Promise.resolve(); this.getZoom = () => 12; this.setZoom = () => {}; this.setCenter = () => {};
+    document.getElementById(id).style.cssText += ';overflow:auto;padding:12px;box-sizing:border-box;background:#e9eee9'; },
+  ObjectManager: function () {
+    const box = () => document.getElementById('map'); const opt = { set() {} };
+    this.objects = { options: opt }; this.clusters = { options: opt };
+    this.removeAll = () => { box().innerHTML = ''; };
+    this.add = (fc) => { for (const f of fc.features) { const d = document.createElement('div'); d.style.cssText = 'background:#fff;border-radius:14px;padding:10px;margin:0 0 10px;box-shadow:0 2px 10px rgba(0,0,0,.1)'; d.innerHTML = f.properties.balloonContentBody; box().appendChild(d); } };
+    this.getBounds = () => [[55, 37], [56, 38]];
+  }
+};
+setTimeout(() => window.__mapReady && window.__mapReady(), 0);`;
+
 async function seed(base, browser) {
   const seller = await registerUser(base, { name: 'Анна Смирнова', email: 'anna@test.local' });
   const buyer = await registerUser(base, { name: 'Борис', email: 'boris@test.local' });
@@ -134,7 +149,7 @@ async function seed(base, browser) {
   const spam = await registerUser(base, { name: 'Иван Спамов', email: 'spam@test.local' });
   await admin.post(`/api/admin/users/${spam.user.id}/block`, { blocked: true, reason: 'Спам и повторные объявления' });
 
-  // 1.12: магазин с тарифом «Магазин Про», витрина, продвижение (идёт и ждёт erid), платежи (поддельная ЮKassa).
+  // 1.12: магазин с тарифом «Магазин Про», витрина, продвижение (запускается сразу после оплаты), платежи (поддельная ЮKassa).
   await admin.put('/api/admin/seo', { yandex: 'a1b2c3d4e5f60718', metrika: '98765432' });
   await admin.put('/api/admin/billing', { config: { shopId: '123456', secret: 'test_AbCdEfGhIjKlMnOp', receipts: true, vat: 1, mode: 'full_payment' } });
   const shop = await registerUser(base, { name: 'Ольга Детство', email: 'shop@test.local' });
@@ -157,8 +172,6 @@ async function seed(base, browser) {
   const s2 = (await shop.post('/api/listings', { title: 'Автокресло Britax Römer', category: 'personal', city: 'Казань', price: '18900' })).data.id;
   await admin.post(`/api/admin/listings/${s2}/restore`);
   await pay(await shop.post(`/api/listings/${s1}/promote`, { days: 7 }));
-  const ad = (await admin.get('/api/admin/ads?tab=marking')).data.items[0].id;
-  await admin.post(`/api/admin/ads/${ad}/erid`, { erid: '2SDnjc7Jh3Q' });
   await pay(await shop.post(`/api/listings/${s2}/promote`, { days: 30 }));
   const pendingPay = (await shop.post('/api/my/plan/pay', { plan: 'pro', months: 12 })).data.id;
   for (let i = 0; i < 3; i++) await client(base).post('/api/stats/impressions', { ids: [s1, s2] }, { origin: base, 'user-agent': ua(20 + i) });
@@ -174,6 +187,7 @@ async function seed(base, browser) {
   await admin.post(`/api/admin/boosts/${(await admin.get('/api/admin/boost-tags')).data.items[0].id}/tags`, { ok: true });
   await pay(await seller.post(`/api/listings/${ids[0]}/boost`, { frame: true }));
   await pay(await seller.post(`/api/listings/${ids[1]}/boost`, { tags: ['Есть гарантия', 'С чеком'] }));
+  await admin.put('/api/admin/seo', { mapsKey: 'test-maps-key' }); // 1.38: карта объявлений включается ключом
   return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay, scheduled, boostPay };
 }
 
@@ -202,9 +216,13 @@ function pages(d) {
     ['category-city', '/c/personal/kazan', null],
     ['category', '/c/personal', null],
     ['section-sub', '/c/transport/cars', null],
+    // 1.38: объявления на карте — рамка-песочница, точки сообщением, клик открывает объявление
+    ['search-map', '/search?view=map', null, 'map'],
     ['search-city', '/search?category=transport', null, 'city'],
     ['search-filters', '/search?category=transport&sub=cars', null, 'filters'],
     ['section-sub-city', '/c/transport/cars/moskva', null],
+    // 1.38.1: капсула категории на главной переключает ленту на месте
+    ['home-cat', '/', null, 'cat'],
     ['cookie', '/', null],
     ['admin-seo', '/admin?status=seo', d.admin],
     ['confirm-code', '/confirm', null, 'code'],
@@ -225,6 +243,8 @@ function pages(d) {
     ['favorites', '/favorites', d.buyer],
     ['messages', '/messages', d.buyer],
     ['chat', `/messages/${d.conv}`, d.buyer],
+    // 1.38: быстрые вопросы покупателя — нажал, и вопрос ушёл продавцу
+    ['chat-ask', `/messages/${d.conv}`, d.buyer, 'ask'],
     ['admin', '/admin', d.admin],
     ['admin-mail', '/admin?status=mail', d.admin],
     ['admin-site', '/admin?status=site', d.admin],
@@ -232,6 +252,8 @@ function pages(d) {
     ['admin-users', '/admin?status=users', d.admin],
     ['admin-biz', '/admin?status=biz', d.admin],
     ['admin-oauth', '/admin?status=oauth', d.admin],
+    ['admin-ai', '/admin?status=ai', d.admin],
+    ['admin-sources', '/admin?status=sources', d.admin],
     ['admin-user', `/admin/u/${d.seller.user.id}`, d.admin],
     ['admin-log', '/admin?status=log', d.admin],
     ['admin-notify', '/admin?status=notify', d.admin],
@@ -269,8 +291,6 @@ function pages(d) {
     ['ad-info', `/search?q=${encodeURIComponent('самокат')}`, null, '[data-ad-info]'],
     ['my-listings-promo', '/profile', d.shop],
     ['admin-payments', '/admin?status=payments', d.admin],
-    ['admin-ads', '/admin?status=ads', d.admin],
-    ['admin-ads-active', '/admin?status=ads&tab=active', d.admin],
     ['admin-billing', '/admin?status=billing', d.admin],
     ['admin-user-shop', `/admin/u/${d.shop.user.id}`, d.admin],
     // 1.16: разделы, характеристики, метро, видео
@@ -310,8 +330,11 @@ function pages(d) {
     ['search-exchange', '/search?exchange=1', null],
     // 1.21: продвижение в ленте — XL, рамка, метки; выбор при подаче и «Продвинуть»; проверка меток
     ['boost-modal', `/l/${d.ids[3]}`, d.seller, '[data-promote]'],
-    ['boost-modal-busy', `/l/${d.car}`, d.seller, '[data-promote]'],
+    ['boost-modal-busy', `/l/${d.ids[0]}`, d.seller, '[data-promote]'],
     ['pay-boost', `/pay/${d.boostPay}`, d.seller],
+    // 1.38.1: вернулся с ЮKassa во встроенном Safari без входа; у автора — «Продвигается» с остатком срока
+    ['pay-boost-guest', `/pay/${d.boostPay}`, null],
+    ['listing-boosted', `/l/${d.car}`, d.seller],
     ['admin-tags', '/admin?status=tags', d.admin],
     ['new-step-publish-boost', '/new', d.seller, 'step:2:boost'],
     // 1.36: «Ещё по желанию» на шаге «Отправка» — метро, район, необязательные характеристики, видео
@@ -381,6 +404,8 @@ async function main() {
         }
         // Внешние ресурсы (шрифты и т. п.) в проверке не грузим — тест не должен зависеть от интернета.
         await ctx.route((u) => !u.href.startsWith(srv.base), (r) => r.fulfill({ status: 200, body: '' }));
+        // Скрипт Яндекс Карт подменяем заглушкой: рисует точки простыми блоками с той же карточкой, что в балуне.
+        await ctx.route(/api-maps\.yandex\.ru/, (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: YMAPS_STUB }));
         // Плашку cookie показываем только на своей странице проверки, на остальных — выбор уже сделан.
         if (name !== 'cookie') await ctx.addInitScript(() => { try { localStorage.setItem('tg_cookie', 'necessary'); } catch { /* нет */ } });
         // Разовый вопрос про уведомления — только на своей странице проверки.
@@ -431,7 +456,8 @@ async function main() {
           // 1.35: компьютер — выбор в фильтрах применяется сразу, без «Показать»; телефон — «Показать N» с числом и видна на экране.
           if (vpName === 'mobile') {
             await page.click('#filters-toggle'); await page.waitForTimeout(200);
-            await page.click('#f-extra [data-field="gearbox"] [data-av="Автомат"]'); await page.waitForTimeout(700);
+            await page.click('#f-extra [data-field="gearbox"] [data-av="Автомат"]');
+            await page.waitForFunction(() => /\d/.test(document.querySelector('#f-show').textContent), null, { timeout: 5000 }).catch(() => {}); // число приходит с сервера
             const t = await page.textContent('#f-show');
             if (!/^Показать 1 объявление$/.test(t)) errors.push(`кнопка «Показать» без числа: «${t}»`);
             const r = await page.$eval('#f-show', (el) => el.getBoundingClientRect().bottom);
@@ -480,6 +506,35 @@ async function main() {
           await page.waitForTimeout(200);
           if (!(await page.$('#preview .card.is-xl .b-tag'))) errors.push('превью без XL и метки');
           if (!/128 ₽/.test(await page.textContent('[data-submit] >> visible=true'))) errors.push('на кнопке нет цены продвижения');
+        } else if (open === 'cat') {
+          await page.click('.cat-pill[data-cat="transport"]');
+          await page.waitForTimeout(700);
+          if (!/\/\?cat=transport$/.test(page.url())) errors.push(`адрес не сменился: ${page.url()}`);
+          if (!/Транспорт/.test(await page.textContent('.cat-pill.on'))) errors.push('капсула не переключилась');
+          if (!/^Транспорт/.test(await page.textContent('#feed-h'))) errors.push('заголовок ленты не сменился');
+          if ((await page.$$('#feed .card')).length !== 1) errors.push(`в ленте не только транспорт: ${(await page.$$('#feed .card')).length}`);
+          await page.click('.cat-pill[data-cat=""]');
+          await page.waitForTimeout(700);
+          if ((await page.$$('#feed .card')).length < 3) errors.push('«Все» не вернули ленту');
+          await page.click('.cat-pill[data-cat="transport"]');
+          await page.waitForTimeout(600);
+        } else if (open === 'map') {
+          await page.waitForSelector('.map-state.hidden', { state: 'attached', timeout: 5000 }).catch(() => errors.push('карта не сообщила, что готова'));
+          const fr = page.frames().find((f) => f.url().includes('/map-frame'));
+          const n = fr ? await fr.$$eval('.mc[data-id]', (x) => x.length).catch(() => 0) : 0;
+          if (n < 2) errors.push(`на карте ${n} точек`);
+          if (!/на карте/.test(await page.textContent('#count'))) errors.push('нет счётчика «на карте»');
+          if (!(await page.$('.view-sw a.on[href*="view=map"]'))) errors.push('переключатель «Карта» не выбран');
+          if (fr && await fr.evaluate(() => { try { return !!window.parent.document; } catch { return false; } })) errors.push('рамка видит страницу сайта');
+          await page.screenshot({ path: path.join(SHOTS, `${vpName}-search-map-open.png`) });
+          if (fr && n) { await fr.click('.mc[data-id] >> nth=0'); await page.waitForURL(/\/l\/\d+/, { timeout: 3000 }).catch(() => errors.push('клик по точке не открыл объявление')); }
+        } else if (open === 'ask') {
+          const n0 = await page.$$eval('.msg.out', (x) => x.length);
+          await page.click('.chat-asks .chip >> nth=0');
+          await page.waitForTimeout(300);
+          if (!/актуально/.test(await page.inputValue('#chat-body'))) errors.push('быстрый вопрос не попал в поле');
+          if (await page.$('.chat-asks')) errors.push('остальные вопросы не убрались');
+          if ((await page.$$eval('.msg.out', (x) => x.length)) !== n0) errors.push('вопрос ушёл без отправки');
         } else if (open === 'pv-slide') {
           await page.click('.g-img');
           await page.waitForTimeout(300);
