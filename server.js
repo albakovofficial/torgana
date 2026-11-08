@@ -599,8 +599,10 @@ route('GET', '/api/listings', (ctx) => {
   const where = ['l.status = \'active\'', 'u.is_blocked = 0', ...f.where];
   const params = f.args;
   const sort = q.get('sort');
-  const order = sort === 'cheap' ? 'l.price IS NULL, l.price ASC, l.id DESC'
-    : sort === 'expensive' ? 'l.price IS NULL, l.price DESC, l.id DESC'
+  // С фильтром цены «договорных» (NULL) в выдаче нет — сортируем прямо по индексу цены.
+  const nulls = Number.isFinite(spec.min) || Number.isFinite(spec.max) ? '' : 'l.price IS NULL, ';
+  const order = sort === 'cheap' ? `${nulls}l.price ASC, l.id DESC`
+    : sort === 'expensive' ? `${nulls}l.price DESC, l.id DESC`
       : 'l.created_at DESC, l.id DESC';
   const limit = Math.min(Math.max(parseInt(q.get('limit') || '24', 10) || 24, 1), 60);
   const offset = Math.max(parseInt(q.get('offset') || '0', 10) || 0, 0);
