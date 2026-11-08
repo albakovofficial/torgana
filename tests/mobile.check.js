@@ -458,7 +458,8 @@ async function main() {
           // 1.35: компьютер — выбор в фильтрах применяется сразу, без «Показать»; телефон — «Показать N» с числом и видна на экране.
           if (vpName === 'mobile') {
             await page.click('#filters-toggle'); await page.waitForTimeout(200);
-            await page.click('#f-extra [data-field="gearbox"] [data-av="Автомат"]'); await page.waitForTimeout(700);
+            await page.click('#f-extra [data-field="gearbox"] [data-av="Автомат"]');
+            await page.waitForFunction(() => /\d/.test(document.querySelector('#f-show').textContent), null, { timeout: 5000 }).catch(() => {}); // число приходит с сервера
             const t = await page.textContent('#f-show');
             if (!/^Показать 1 объявление$/.test(t)) errors.push(`кнопка «Показать» без числа: «${t}»`);
             const r = await page.$eval('#f-show', (el) => el.getBoundingClientRect().bottom);
