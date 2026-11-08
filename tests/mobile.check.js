@@ -190,6 +190,15 @@ async function seed(base, browser) {
   await pay(await seller.post(`/api/listings/${ids[0]}/boost`, { frame: true }));
   await pay(await seller.post(`/api/listings/${ids[1]}/boost`, { tags: ['Есть гарантия', 'С чеком'] }));
   await admin.put('/api/admin/seo', { mapsKey: 'test-maps-key' }); // 1.38: карта объявлений включается ключом
+  // 1.43: продавец отвечает — 5 покупателей написали про автомобиль, на все ответы (плитки «Отвечает за час»).
+  // Регистраций с одного адреса — не больше 10 за 10 минут: трое уже есть, двое новых.
+  const askers = [buyer, critic, shop];
+  for (let i = 0; i < 2; i++) askers.push(await registerUser(base, { name: `Покупатель ${i + 1}`, email: `buyer${i + 1}@test.local` }));
+  for (const b of askers) {
+    const c = (await b.post('/api/conversations', { listingId: car })).data.id;
+    await b.post(`/api/conversations/${c}/messages`, { body: 'Здравствуйте! Машина ещё продаётся?' });
+    await seller.post(`/api/conversations/${c}/messages`, { body: 'Да, приезжайте посмотреть' });
+  }
   // 1.42: продавец удалил объявление — переписка покупателя остаётся с пометкой «Объявление удалено».
   const scooter = (await seller.post('/api/listings', { title: 'Самокат Xiaomi Pro 2', category: 'hobby', city: 'Москва', price: '18000' })).data.id;
   await admin.post(`/api/admin/listings/${scooter}/restore`);
@@ -212,6 +221,8 @@ function pages(d) {
     ['search', `/search?q=${encodeURIComponent('коляска до 50 000 с доставкой')}`, null],
     ['category', '/search?category=electronics', null],
     ['listing', `/l/${d.ids[0]}`, null],
+    ['listing-reply', `/l/${d.car}`, null], // 1.43: как быстро отвечает продавец
+    ['search-typo', `/search?q=${encodeURIComponent('айфн')}`, null], // 1.43: исправленный запрос
     ['listing-guest-long', `/l/${d.ids[2]}`, null],
     ['user', `/u/${d.seller.user.id}`, null],
     ['login', '/login', null],

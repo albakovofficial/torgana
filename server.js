@@ -12,7 +12,7 @@ const { openDb } = require('./lib/db');
 const { HttpError, sendJson, readJson, parseCookies, rateLimit } = require('./lib/http');
 const auth = require('./lib/auth');
 const { CATEGORIES, CATEGORY_IDS, CITIES, PRICE_UNITS, CONDITIONS, SUPPORT_FAQ } = require('./lib/constants');
-const { norm, parseQuery, searchSpec, specSql, brandAliases } = require('./lib/search');
+const { norm, parseQuery, searchSpec, specSql, brandAliases, correctQuery } = require('./lib/search');
 const { suggestFromPhoto, pingYandex } = require('./lib/ai');
 const { createMailer } = require('./lib/mailer');
 const { createPush } = require('./lib/push');
@@ -166,7 +166,7 @@ const countListings = (whereSql, params) => db.memo(`count|${whereSql}|${JSON.st
 const CARD_SELECT = `
   SELECT l.id, l.title, l.price, l.price_unit, l.city, l.category, l.delivery, l.exchange, l.status, l.created_at, l.price_was, l.price_drop_at,
     l.subcategory, l.attrs, l.metro, l.video,
-    (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
+    (SELECT COALESCE(NULLIF(p.thumb, ''), p.file) FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
     EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id = l.id AND f.user_id = ?) AS is_fav,
     (SELECT json_object('xl', MAX(b.xl), 'frame', MAX(b.frame)) FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active') AS boost,
     (SELECT b.tags FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active' AND b.tags != '[]' ORDER BY b.id DESC LIMIT 1) AS boost_tags,
@@ -252,13 +252,9 @@ function attachPhotos(userId, listingId, files) {
     const row = owned.get(f, userId);
     return row && (row.listing_id === null || row.listing_id === listingId) && !isAvatar.get(f);
   });
-  const current = db.prepare('SELECT file FROM uploads WHERE listing_id = ?').all(listingId).map((r) => r.file);
-  for (const f of current) {
-    if (!valid.includes(f)) {
-      db.prepare('DELETE FROM uploads WHERE file = ?').run(f);
-      fs.rm(path.join(UPLOAD_DIR, f), { force: true }, () => {});
-    }
-  }
+  const gone = db.prepare('SELECT file, thumb FROM uploads WHERE listing_id = ?').all(listingId).filter((r) => !valid.includes(r.file));
+  for (const r of gone) db.prepare('DELETE FROM uploads WHERE file = ?').run(r.file);
+  removeUploadFiles(gone);
   const upd = db.prepare('UPDATE uploads SET listing_id = ?, position = ? WHERE file = ?');
   valid.forEach((f, i) => upd.run(listingId, i, f));
 }
@@ -274,7 +270,7 @@ function loadListing(id, { deleted = false } = {}) {
 // фото, видео, описание и характеристики стираются, остаются название и цена — их видят собеседники в чатах.
 function removeListing(id, { wipe = false } = {}) {
   if (wipe) {
-    for (const { file } of db.prepare('SELECT file FROM uploads WHERE listing_id = ?').all(id)) fs.rm(path.join(UPLOAD_DIR, file), { force: true }, () => {});
+    removeUploadFiles(db.prepare('SELECT file, thumb FROM uploads WHERE listing_id = ?').all(id));
     const v = db.prepare('SELECT video FROM listings WHERE id = ?').get(id);
     if (v && v.video) video.remove(v.video);
     db.prepare('DELETE FROM uploads WHERE listing_id = ?').run(id);
@@ -599,14 +595,37 @@ route('POST', '/api/me/password', async (ctx) => {
   return { ok: true, signedOut: Number(others.changes) };
 });
 
+// Словарь для исправления опечаток (lib/search.js correctQuery): слова опубликованных объявлений, раз в 10 минут.
+let vocab = { at: 0, map: new Map() };
+function searchVocab() {
+  if (vocab.at > now() - 10 * 60 * 1000) return vocab.map;
+  const map = new Map();
+  for (const { t } of db.prepare('SELECT search_text AS t FROM listings WHERE status = \'active\'').iterate()) {
+    for (const w of new Set(t.split(/[^a-zа-я0-9]+/))) if (w.length >= 3 && w.length <= 30 && !/\d/.test(w)) map.set(w, (map.get(w) || 0) + 1);
+  }
+  vocab = { at: now(), map };
+  return map;
+}
+
 route('GET', '/api/listings', (ctx) => {
-  const q = ctx.query;
-  const uid = ctx.user ? ctx.user.id : 0;
+  const r = findListings(ctx.query, ctx.user ? ctx.user.id : 0);
+  // 1.43.0: ничего не нашлось — пробуем исправить опечатки («айфн» → «айфон»); exact=1 — искать как написано.
+  const qText = ctx.query.get('q') || '';
+  if (!r.total && qText && ctx.query.get('exact') !== '1') { // и для следующих страниц — исправление то же
+    const fixed = correctQuery(qText, searchVocab());
+    if (fixed) {
+      const q2 = new URLSearchParams(ctx.query); q2.set('q', fixed);
+      const r2 = findListings(q2, ctx.user ? ctx.user.id : 0);
+      if (r2.total) return { ...r2, corrected: fixed };
+    }
+  }
+  return r;
+});
+function findListings(q, uid) {
   const spec = searchSpec(Object.fromEntries(q.entries()), CATEGORY_IDS);
   const { parsed } = spec;
+  const base = ['l.status = \'active\'', 'u.is_blocked = 0'];
   const f = specSql(spec);
-  const where = ['l.status = \'active\'', 'u.is_blocked = 0', ...f.where];
-  const params = f.args;
   const sort = q.get('sort');
   // С фильтром цены «договорных» (NULL) в выдаче нет — сортируем прямо по индексу цены.
   const nulls = Number.isFinite(spec.min) || Number.isFinite(spec.max) ? '' : 'l.price IS NULL, ';
@@ -615,15 +634,16 @@ route('GET', '/api/listings', (ctx) => {
       : 'l.created_at DESC, l.id DESC';
   const limit = Math.min(Math.max(parseInt(q.get('limit') || '24', 10) || 24, 1), 60);
   const offset = Math.max(parseInt(q.get('offset') || '0', 10) || 0, 0);
-  const whereSql = where.join(' AND ');
-  const total = countListings(whereSql, params);
-  const rows = db.prepare(`${CARD_SELECT} WHERE ${whereSql} ORDER BY ${order} LIMIT ? OFFSET ?`).all(uid, ...params, limit, offset);
+  const total = countListings([...base, ...f.where].join(' AND '), f.args);
+  // Подходящих тысячи — страницу быстрее найти просмотром по дате, чем через индекс слов (lib/search.js specSql).
+  const g = total > 2000 && spec.words.length ? specSql(spec, { fts: false }) : f;
+  const rows = db.prepare(`${CARD_SELECT} WHERE ${[...base, ...g.where].join(' AND ')} ORDER BY ${order} LIMIT ? OFFSET ?`).all(uid, ...g.args, limit, offset);
   return {
     items: rows.map(cardFromRow),
     total,
     understood: { city: parsed.city, min: parsed.min, max: parsed.max, delivery: parsed.delivery }
   };
-});
+}
 
 // Объявления на карте: те же фильтры, что в поиске. Точка — станция метро или центр города,
 // точный адрес не показываем никогда (его продавец сообщает в чате).
@@ -634,7 +654,7 @@ route('GET', '/api/listings/map', (ctx) => {
   const whereSql = ['l.status = \'active\'', 'u.is_blocked = 0', ...f.where].join(' AND ');
   const total = countListings(whereSql, f.args);
   const rows = db.prepare(`SELECT l.id, l.title, l.price, l.price_unit, l.city, l.metro,
-      (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo
+      (SELECT COALESCE(NULLIF(p.thumb, ''), p.file) FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo
     FROM listings l JOIN users u ON u.id = l.user_id WHERE ${whereSql} ORDER BY l.created_at DESC, l.id DESC LIMIT 1000`).all(...f.args);
   const items = [];
   for (const r of rows) {
@@ -687,7 +707,7 @@ route('GET', '/api/listings/:id', (ctx) => {
       appealReply: (isOwner || isAdmin) ? l.appeal_reply : '', flags: (isOwner || isAdmin) ? l.flags : ''
     },
     seller: { id: seller.id, name: seller.name, city: seller.city, avatar: photoUrl(seller.avatar), createdAt: seller.created_at, activeCount: sellerActive, rating: reviews.ratingOf(seller.id), badges: badgesOf(seller),
-      followers: deals.followers(seller.id), following: deals.isFollowing(ctx.user ? ctx.user.id : 0, seller.id) },
+      followers: deals.followers(seller.id), following: deals.isFollowing(ctx.user ? ctx.user.id : 0, seller.id), reply: replyStats(seller.id) },
     similar,
     market,
     promo: isOwner ? promo.currentOf(id) : null,
@@ -833,7 +853,7 @@ route('POST', '/api/listings/:id/appeal', async (ctx) => {
 route('GET', '/api/my/listings', (ctx) => {
   const u = requireUser(ctx);
   const rows = db.prepare(`
-    SELECT l.*, (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
+    SELECT l.*, (SELECT COALESCE(NULLIF(p.thumb, ''), p.file) FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
       (SELECT COUNT(*) FROM favorites f WHERE f.listing_id = l.id) AS fav_count
     FROM listings l WHERE l.user_id = ? AND l.status != 'deleted' ORDER BY l.created_at DESC`).all(u.id);
   return {
@@ -852,14 +872,24 @@ const IMAGE_TYPES = [
 
 // Сохранить фото на диск и в uploads (своё, ещё не привязанное). Возвращает имя файла или бросает 400.
 // hash — отпечаток dHash от браузера (только подсказка модератору о повторах).
-function saveImage(userId, buf, hash = '') {
+// thumb — лёгкая копия для ленты (1.43.0): тот же формат имени, лежит рядом, удаляется вместе с фото (removeUploadFiles).
+function saveImage(userId, buf, hash = '', thumb = null) {
   if (buf.length > 6 * 1024 * 1024) throw new HttpError(413, 'Фото больше 6 МБ');
-  const type = IMAGE_TYPES.find((t) => t.test(buf));
-  if (!type) throw new HttpError(400, 'Файл не похож на изображение');
-  const file = `${crypto.randomBytes(16).toString('hex')}.${type.ext}`;
-  fs.writeFileSync(path.join(UPLOAD_DIR, file), buf);
-  db.prepare('INSERT INTO uploads (file, user_id, hash, created_at) VALUES (?, ?, ?, ?)').run(file, userId, /^[0-9a-f]{16}$/.test(String(hash)) ? hash : '', now());
+  const write = (b) => {
+    const type = IMAGE_TYPES.find((t) => t.test(b));
+    if (!type) throw new HttpError(400, 'Файл не похож на изображение');
+    const name = `${crypto.randomBytes(16).toString('hex')}.${type.ext}`;
+    fs.writeFileSync(path.join(UPLOAD_DIR, name), b);
+    return name;
+  };
+  const file = write(buf);
+  const small = thumb && thumb.length <= 400 * 1024 ? write(thumb) : '';
+  db.prepare('INSERT INTO uploads (file, user_id, hash, thumb, created_at) VALUES (?, ?, ?, ?, ?)').run(file, userId, /^[0-9a-f]{16}$/.test(String(hash)) ? hash : '', small, now());
   return file;
+}
+// Файлы фото (и их лёгкие копии) с диска; строки uploads удаляет вызывающий.
+function removeUploadFiles(rows) {
+  for (const r of rows) for (const f of [r.file, r.thumb]) if (f) fs.rm(path.join(UPLOAD_DIR, f), { force: true }, () => {});
 }
 helpers.saveImage = saveImage;
 
@@ -867,9 +897,11 @@ route('POST', '/api/uploads', async (ctx) => {
   const u = requireUser(ctx);
   rateLimit(`upload:${u.id}`, 120, 60 * 60 * 1000);
   const body = await readJson(ctx.req, 9 * 1024 * 1024);
-  const m = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(body.data || ''));
+  const dataUrl = (v) => /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(v || ''));
+  const m = dataUrl(body.data);
   if (!m) throw new HttpError(400, 'Загрузите фото в формате JPG, PNG или WebP');
-  const file = saveImage(u.id, Buffer.from(m[2], 'base64'), body.hash);
+  const t = dataUrl(body.thumb);
+  const file = saveImage(u.id, Buffer.from(m[2], 'base64'), body.hash, t ? Buffer.from(t[2], 'base64') : null);
   return { file, url: photoUrl(file) };
 });
 
@@ -965,6 +997,36 @@ route('POST', '/api/favorites/:id', (ctx) => {
   return { fav: !exists, favCount: db.prepare('SELECT COUNT(*) AS n FROM favorites WHERE listing_id = ?').get(id).n };
 });
 
+// 1.43.0: как быстро отвечает продавец — по его чатам за 30 дней (первое сообщение покупателя → первый ответ продавца).
+// Только при 5+ таких чатах; чат без ответа считается, когда покупатель ждёт больше суток. Пересчёт — не чаще раза в 10 минут.
+const replyCache = new Map();
+const REPLY_TTL = process.env.REPLY_CACHE_MS ? Number(process.env.REPLY_CACHE_MS) : 10 * 60 * 1000; // в тестах — 1
+function replyStats(sellerId) {
+  const t = now();
+  const hit = replyCache.get(sellerId);
+  if (hit && hit.at > t - REPLY_TTL) return hit.v;
+  const rows = db.prepare(`SELECT c.id, (SELECT MIN(m.created_at) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id = c.buyer_id) AS asked
+    FROM conversations c WHERE c.seller_id = ? AND c.created_at > ? ORDER BY c.id DESC LIMIT 200`).all(sellerId, t - 30 * DAY);
+  const firstReply = db.prepare('SELECT MIN(created_at) AS at FROM messages WHERE conversation_id = ? AND sender_id = ? AND created_at >= ?');
+  const delays = [];
+  let total = 0;
+  for (const r of rows) {
+    if (!r.asked) continue;
+    const at = firstReply.get(r.id, sellerId, r.asked).at;
+    if (at) { delays.push(at - r.asked); total++; } else if (t - r.asked > DAY) total++;
+  }
+  let v = null;
+  if (total >= 5) {
+    delays.sort((a, b) => a - b);
+    const med = delays.length ? delays[Math.floor(delays.length / 2)] : null;
+    const H = 3600 * 1000;
+    v = { rate: Math.round((delays.length / total) * 10), time: med === null ? '' : med <= H ? 'hour' : med <= 3 * H ? 'hours' : med <= DAY ? 'day' : 'days' };
+  }
+  if (replyCache.size > 5000) replyCache.clear();
+  replyCache.set(sellerId, { at: t, v });
+  return v;
+}
+
 function unreadCount(userId) {
   return db.prepare(`SELECT COUNT(*) AS n FROM messages m JOIN conversations c ON c.id = m.conversation_id
     WHERE (c.buyer_id = ? OR c.seller_id = ?) AND m.sender_id != ? AND m.read_at IS NULL`).get(userId, userId, userId).n;
@@ -974,7 +1036,7 @@ route('GET', '/api/conversations', (ctx) => {
   const u = requireUser(ctx);
   const rows = db.prepare(`
     SELECT c.id, c.listing_id, c.buyer_id, c.seller_id, c.updated_at, l.title, l.price, l.price_unit, l.status,
-      (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
+      (SELECT COALESCE(NULLIF(p.thumb, ''), p.file) FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
       ou.id AS other_id, ou.name AS other_name, ou.avatar AS other_avatar,
       (SELECT CASE WHEN body = '' AND photo != '' THEN '📷 Фото' ELSE body END FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_body,
       (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != ? AND m.read_at IS NULL) AS unread
@@ -1312,13 +1374,11 @@ const server = http.createServer(async (req, res) => {
 // Чистим просроченные сессии и брошенные загрузки раз в час.
 setInterval(() => {
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now());
-  const old = db.prepare(`SELECT file FROM uploads WHERE listing_id IS NULL AND created_at < ? AND file NOT IN (SELECT avatar FROM users WHERE avatar != '')
+  const old = db.prepare(`SELECT file, thumb FROM uploads WHERE listing_id IS NULL AND created_at < ? AND file NOT IN (SELECT avatar FROM users WHERE avatar != '')
     AND file NOT IN (SELECT photo FROM messages WHERE photo != '') AND file NOT IN (SELECT photo FROM support_messages WHERE photo != '')
     AND file NOT IN (SELECT shop_cover FROM users WHERE shop_cover != '')`).all(now() - 24 * 3600 * 1000);
-  for (const { file } of old) {
-    fs.rm(path.join(UPLOAD_DIR, file), { force: true }, () => {});
-    db.prepare('DELETE FROM uploads WHERE file = ?').run(file);
-  }
+  removeUploadFiles(old);
+  for (const { file } of old) db.prepare('DELETE FROM uploads WHERE file = ?').run(file);
   video.cleanup();
 }, 60 * 60 * 1000).unref();
 metro.start();
