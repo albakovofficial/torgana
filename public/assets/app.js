@@ -277,6 +277,7 @@
     b.type = 'button';
     b.className = `pick-btn${sel.classList.contains('adm-select') ? ' sm' : ''}`;
     if (sel.getAttribute('style')) b.setAttribute('style', sel.getAttribute('style'));
+    if (sel.hidden) b.hidden = true; // скрытый список (сортировка в режиме карты) — скрыта и кнопка
     const lab = sel.id ? document.querySelector(`label[for="${sel.id}"]`) : null;
     if (lab) { b.setAttribute('aria-label', lab.textContent.trim()); lab.addEventListener('click', (e) => { e.preventDefault(); b.click(); }); }
     sel.classList.add('pick-native');
@@ -726,13 +727,11 @@
     S.unread = n;
     $$('[data-unread]').forEach((el) => { el.textContent = n; el.classList.toggle('hidden', !n); });
   }
-  // Новое по сохранённым поискам — значок у пункта «Поиски».
+  // Новое у продавцов, на которых подписан, — значок у пункта «Подписки».
   function setFresh(f) {
-    S.fresh = f || { search: 0, price: 0, follow: 0 };
-    $$('[data-fresh]').forEach((el) => { el.textContent = S.fresh.search; el.classList.toggle('hidden', !S.fresh.search); });
+    S.fresh = f || { price: 0, follow: 0 };
     $$('[data-fresh-follow]').forEach((el) => { el.textContent = S.fresh.follow || 0; el.classList.toggle('hidden', !S.fresh.follow); });
   }
-  const freshBadge = () => html`<span class="badge ${S.fresh && S.fresh.search ? '' : 'hidden'}" data-fresh>${S.fresh ? S.fresh.search : 0}</span>`;
 
   // ================= карточки =================
   // it.ad — карточка из блока «Реклама»: пометка, рекламодатель и erid по кнопке «Реклама» (38-ФЗ, ст. 18.1).
@@ -937,6 +936,8 @@
     const r = ROUTES.find(([re]) => re.test(path));
     const keep = S.keep; S.keep = null;
     window.scrollTo(0, 0);
+    // Профиль временно удалён — после входа открыт только экран восстановления (и правила).
+    if (S.user && S.user.deactivatedAt && !path.startsWith('/page/')) { viewDeactivated(); return; }
     if (!r) { viewNotFound(); return; }
     const m = path.match(r[0]);
     try {
@@ -1210,7 +1211,6 @@
         <div class="results-head">
           <div><h1>${title}</h1><div class="muted" id="count">&nbsp;</div></div>
           ${S.config.maps ? html`<nav class="seg view-sw" aria-label="Вид">${[['', 'Список'], ['map', 'Карта']].map(([v, t]) => html`<a href="/search?${new URLSearchParams(Object.entries({ ...params, view: v }).filter(([, x]) => x))}" class="${(params.view === 'map') === (v === 'map') ? 'on' : ''}" ${(params.view === 'map') === (v === 'map') ? raw('aria-current="page"') : ''}>${t}</a>`)}</nav>` : ''}
-          <button type="button" class="btn btn-soft save-search" id="save-search">${ic('bell', 18, 2)}<span>Сохранить поиск</span></button>
           <label class="sr" for="sort">Сортировка</label>
           <select id="sort" ${onMap ? raw('hidden') : ''} class="select" style="width:auto;min-width:200px;height:44px;border-radius:999px">
             <option value="">Сначала новые</option>
@@ -1321,7 +1321,6 @@
     ff.addEventListener('input', (e) => { if (narrow() && e.target.matches('input.input')) liveCount(); });
     ff.onsubmit = (e) => { e.preventDefault(); if (narrow()) { clearTimeout(applyTimer); goSearch(formParams()); } else apply(); };
     $('#sort').onchange = (e) => { const p = { ...params, sort: e.target.value }; go(`/search?${new URLSearchParams(Object.entries(p).filter(([, v]) => v))}`); };
-    bindSaveSearch($('#save-search'), params);
 
     if (onMap) { await mountMap($('#results'), params); return; }
     await listingFeed($('#results'), params, {
@@ -1353,7 +1352,7 @@
       <p class="map-note">${ic('shield', 16, 2)}<span>Точка — у станции метро или в центре города. Точный адрес продавец сообщает в чате.</span></p>`);
     const fr = $('.map-frame', box);
     const state = $('#map-state', box);
-    const q = Object.fromEntries(Object.entries(params).filter(([k, v]) => v && k !== 'view' && k !== 'sort' && k !== 'ss'));
+    const q = Object.fromEntries(Object.entries(params).filter(([k, v]) => v && k !== 'view' && k !== 'sort'));
     let items = null;
     const send = () => { if (items && fr.contentWindow) fr.contentWindow.postMessage({ type: 'points', items, origin: location.origin }, '*'); };
     const onMsg = (e) => {
@@ -1380,38 +1379,13 @@
     } catch (ex) { state.innerHTML = String(html`${ic('warn', 22, 2)}<span>${ex.message}</span>`); }
   }
 
-  // ---------- сохранённые поиски ----------
-  // Параметры поиска в том же виде, что хранит сервер: только эти поля, без пустых, в этом порядке.
+  // Параметры поиска для блока «Реклама»: только эти поля, без пустых.
   const SEARCH_KEYS = ['q', 'category', 'sub', 'city', 'metro', 'min', 'max', 'delivery', 'bargain', 'exchange'];
   const searchParams = (p) => {
     const x = subOf(p.sub);
     const attrs = x ? Object.keys(p).filter((k) => /^a_[A-Za-z]+(_min|_max)?$/.test(k) && x.fields.some((f) => k.replace(/^a_|_min$|_max$/g, '') === f.key)).sort() : [];
     return Object.fromEntries([...SEARCH_KEYS, ...attrs].map((k) => [k, String(p[k] || '').trim()]).filter(([, v]) => v && v !== '0'));
   };
-  const searchUrl = (s) => `/search?${new URLSearchParams({ ...s.params, ss: s.id })}`;
-  async function bindSaveSearch(btn, params) {
-    const want = JSON.stringify(searchParams(params));
-    let saved = null;
-    const paint = () => {
-      btn.classList.toggle('on', !!saved);
-      btn.innerHTML = String(html`${ic(saved ? 'check' : 'bell', 18, 2)}<span>${saved ? 'Поиск сохранён' : 'Сохранить поиск'}</span>`);
-      btn.title = saved ? 'Пришлём уведомление о новых объявлениях. Нажмите, чтобы удалить поиск.' : 'Пришлём уведомление, когда появятся новые объявления';
-    };
-    if (S.user) {
-      const { items } = await api('GET', '/api/saved-searches').catch(() => ({ items: [] }));
-      saved = items.find((x) => JSON.stringify(x.params) === want) || null;
-      if (saved && params.ss && Number(params.ss) === saved.id && saved.fresh) api('POST', `/api/saved-searches/${saved.id}/seen`).then(refreshMe).catch(() => {});
-    }
-    paint();
-    btn.onclick = async () => {
-      if (!S.user) { go(`/login?next=${encodeURIComponent(location.pathname + location.search)}`); return; }
-      try {
-        if (saved) { await api('DELETE', `/api/saved-searches/${saved.id}`); saved = null; toast('Поиск удалён'); }
-        else { saved = (await api('POST', '/api/saved-searches', searchParams(params))).search; toast('Поиск сохранён — пришлём уведомление о новых объявлениях'); }
-        paint();
-      } catch (e) { toast(e.message, true); }
-    };
-  }
 
   // Подписки на продавцов: кто (сколько нового), лента их свежих объявлений; новое помечено.
   async function renderFollowing(reload) {
@@ -1422,43 +1396,14 @@
       box.innerHTML = String(html`<div class="empty"><h3>Вы ни на кого не подписаны</h3><p>Откройте профиль продавца или магазина и нажмите «Подписаться» — новые объявления придут уведомлением и в подборке на почту.</p><a class="btn btn-dark" href="/">Смотреть объявления</a></div>`);
       return;
     }
-    box.innerHTML = String(html`<div id="nudge"></div>
-      <div class="fl-sellers">${sellers.map((x) => html`<div class="fl-seller">
+    box.innerHTML = String(html`<div class="fl-sellers">${sellers.map((x) => html`<div class="fl-seller">
         <a href="/u/${x.id}" class="fl-who">${ava(x)}<span class="fl-txt"><b>${x.name}${x.shop ? html` <span class="pf-badge dark">${ic('store', 12, 2)} Магазин</span>` : ''}</b><span>${x.active} ${plural(x.active, 'объявление', 'объявления', 'объявлений')}${x.city ? ` · ${x.city}` : ''}</span></span>
           ${x.fresh ? html`<span class="ss-new">${x.fresh} ${plural(x.fresh, 'новое', 'новых', 'новых')}</span>` : ''}</a>
         <button type="button" class="btn btn-line btn-sm" data-unfollow="${x.id}">Отписаться</button></div>`)}</div>
       <div class="section-head" style="margin-top:28px"><h2>Свежее у продавцов</h2></div>
       ${items.length ? grid(items) : html`<div class="pf-empty sm"><h3>Пока нет объявлений</h3><p>Как только продавцы что-то опубликуют, объявления появятся здесь.</p></div>`}`);
-    pushNudge($('#nudge', box), 'Узнаете о новых объявлениях продавцов сразу.');
     $$('[data-unfollow]', box).forEach((b) => {
       b.onclick = async () => { try { await api('POST', `/api/users/${b.dataset.unfollow}/follow`, { follow: false }); toast('Вы отписались'); reload(); } catch (e) { toast(e.message, true); } };
-    });
-  }
-
-  async function renderSavedSearches(reload) {
-    const { items } = await api('GET', '/api/saved-searches');
-    const box = $('#box');
-    // Название поиска с сервера: «Что ищем · уточнения».
-    const head = (s) => s.title.split(' · ')[0];
-    const chips = (s) => s.title.split(' · ').slice(1);
-    box.innerHTML = String(html`<div id="nudge"></div>
-      ${items.length ? html`<div class="ss-list">${items.map((s) => html`<div class="ss-card">
-          <a class="ss-main" href="${searchUrl(s)}"><span class="ss-ic">${ic(s.params.category ? 'tag' : 'search', 20, 2)}</span>
-            <span class="ss-txt"><b>${head(s)}</b>
-              <span>${chips(s).join(' · ') || 'Вся Россия'}</span></span>
-            ${s.fresh ? html`<span class="ss-new">${s.fresh} ${plural(s.fresh, 'новое', 'новых', 'новых')}</span>` : ''}</a>
-          <div class="ss-side">
-            <label class="mini-switch" title="Уведомлять о новых"><input type="checkbox" data-ss-notify="${s.id}" ${s.notify ? raw('checked') : ''}><span class="track"></span><span class="sr">Уведомлять</span></label>
-            <button type="button" class="icon-btn sm" data-ss-del="${s.id}" aria-label="Удалить поиск">${ic('trash', 17)}</button>
-          </div></div>`)}</div>
-        <p class="muted" style="margin:0;font-size:14px">Новые объявления по включённым поискам приходят push-уведомлением и подборкой на почту раз в день. Настроить — <a href="/profile/settings#sn" style="text-decoration:underline">в настройках</a>.</p>`
-      : html`<div class="empty"><h3>Сохранённых поисков пока нет</h3><p>В выдаче нажмите «Сохранить поиск» — расскажем, когда появятся новые объявления.</p><a class="btn btn-dark" href="/search">Перейти к поиску</a></div>`}`);
-    pushNudge($('#nudge', box), 'Сразу узнаете о новых объявлениях по вашим поискам.');
-    $$('[data-ss-notify]', box).forEach((c) => {
-      c.onchange = async () => { try { await api('PATCH', `/api/saved-searches/${c.dataset.ssNotify}`, { notify: c.checked }); toast(c.checked ? 'Будем уведомлять' : 'Уведомления по поиску выключены'); } catch (e) { c.checked = !c.checked; toast(e.message, true); } };
-    });
-    $$('[data-ss-del]', box).forEach((b) => {
-      b.onclick = async () => { try { await api('DELETE', `/api/saved-searches/${b.dataset.ssDel}`); toast('Поиск удалён'); reload(); refreshMe(); } catch (e) { toast(e.message, true); } };
     });
   }
 
@@ -3003,7 +2948,6 @@
     const convId = cid && !isSupport ? Number(cid) : null;
     app.innerHTML = String(html`<div class="wrap"><div class="inbox ${cid ? 'has-chat' : ''}">
       <div class="inbox-list"><h1>Сообщения</h1>
-        <div id="nudge" class="inbox-nudge"></div>
         <a href="/messages/support" class="conv support ${isSupport ? 'on' : ''}" id="support-row">
           ${supportAva(44)}
           <span class="conv-body"><span class="support-name">${SUPPORT_NAME}</span><span class="conv-sub">Отвечают люди, а не боты</span></span>
@@ -3015,7 +2959,6 @@
       <section class="chat" id="chat">${cid ? html`<div class="loader" style="flex:1"></div>` : html`<div class="chat-empty"><div>${svg(P.chat, 40, 1.4)}<p>Выберите диалог слева.<br>Чтобы написать продавцу, откройте объявление.</p></div></div>`}</section>
     </div></div>`);
 
-    pushNudge($('#nudge'), 'Узнаете о новых сообщениях сразу, даже когда сайт закрыт.');
     const loadList = async () => {
       const { items } = await api('GET', '/api/conversations');
       const box = $('#convs');
@@ -3291,7 +3234,7 @@
   }
   // Пункт меню со значком — один для меню профиля, панели ≡ и меню модерации.
   const navLink = (href, icon, label, on, right = '', key = '') => html`<a href="${href}" class="${on ? 'on' : ''}"${on ? raw(' aria-current="page"') : ''}${key ? raw(` data-k="${key}"`) : ''}>${ic(icon, 20)}<span class="lbl">${label}</span>${right}</a>`;
-  // На телефоне в профиле меню прячется, а четыре пункта (data-k: msg, fav, searches, reviews) становятся плитками.
+  // На телефоне в профиле меню прячется, а четыре пункта (data-k: msg, fav, following, reviews) становятся плитками.
   function profileNav(full = false) {
     const active = navKey();
     const u = S.user;
@@ -3310,7 +3253,6 @@
       ${item('/profile', 'tag', 'Мои объявления', 'listings')}
       ${item('/messages', 'chat', 'Сообщения', 'msg', html`<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span>`)}
       ${item('/favorites', 'heart', 'Избранное', 'fav')}
-      ${item('/profile/searches', 'bell', 'Поиски', 'searches', freshBadge())}
       ${item('/profile/following', 'users', 'Подписки', 'following', html`<span class="badge ${S.fresh && S.fresh.follow ? '' : 'hidden'}" data-fresh-follow>${S.fresh ? S.fresh.follow || 0 : 0}</span>`)}
       ${item('/profile/reviews', 'star', 'Отзывы', 'reviews', u.rating && u.rating.count ? html`<span class="nav-rating">${starSvg(true, 14)}${fmtAvg(u.rating)}</span>` : '')}
       ${item('/profile/business', 'store', 'Для бизнеса', 'business', u.plan ? html`<span class="nav-plan">${u.plan.id === 'pro' ? 'Про' : 'Магазин'}</span>` : '')}
@@ -3401,12 +3343,13 @@
     if (!requireAuth()) return;
     if (!section && q.get('tab') === 'settings') { go(`/profile/settings${location.hash}`, true); return; }
     if (section === 'settings') { viewSettings(); return; }
+    if (section === 'searches') { go('/profile/following', true); return; } // 1.39.0: сохранённые поиски убраны
     const hub = !section || section === 'listings';
     const statId = section && section.startsWith('stats/') ? section.slice(6) : null;
     const bizSub = section && section.startsWith('business') ? section.split('/')[1] || '' : null;
     const sec = statId ? 'stats' : bizSub !== null ? 'business' : section || 'listings';
     const BIZ_TITLE = { '': 'Для бизнеса', shop: 'Витрина магазина', stats: 'Статистика магазина', feed: 'Автозагрузка' };
-    setTitle(sec === 'business' ? BIZ_TITLE[bizSub] : { stats: 'Статистика', reviews: 'Отзывы', searches: 'Поиски', following: 'Подписки' }[sec] || 'Профиль');
+    setTitle(sec === 'business' ? BIZ_TITLE[bizSub] : { stats: 'Статистика', reviews: 'Отзывы', following: 'Подписки' }[sec] || 'Профиль');
     const u = S.user;
     const { items } = await api('GET', '/api/my/listings');
     const count = (st) => items.filter((i) => i.status === st).length;
@@ -3426,8 +3369,6 @@
       ? html`<div class="pf-head"><h1>Статистика</h1><div class="seg" role="tablist">${[['7', '7 дней'], ['30', '30 дней'], ['0', 'Всё время']].map(([v, t]) => html`<a role="tab" aria-selected="${v === days ? 'true' : 'false'}" class="${v === days ? 'on' : ''}" href="/profile/stats/${statId}?days=${v}">${t}</a>`)}</div></div>`
       : sec === 'following'
       ? html`<div class="pf-head"><h1>Подписки</h1></div>`
-      : sec === 'searches'
-      ? html`<div class="pf-head"><h1>Поиски</h1><a class="btn btn-soft" href="/search">${ic('search', 18, 2)}<span>Новый поиск</span></a></div>`
       : sec === 'reviews'
       ? html`<div class="pf-head"><h1>Отзывы</h1><div class="seg" role="tablist">${[['', 'Обо мне'], ['mine', 'Я оставил']].map(([v, t]) => html`<a role="tab" aria-selected="${(q.get('tab') || '') === v ? 'true' : 'false'}" class="${(q.get('tab') || '') === v ? 'on' : ''}" href="/profile/reviews${v ? `?tab=${v}` : ''}">${t}</a>`)}</div></div>`
       : html`<div class="pf-head"><h1>Мои объявления</h1><a class="btn btn-accent" href="/new" aria-label="Разместить объявление">${ic('plus', 18, 2.2)}<span>Разместить</span></a></div>`;
@@ -3448,7 +3389,6 @@
     if (sec === 'stats') return renderStats(statId, days);
     if (sec === 'business') return renderBusinessHub(bizSub, bizDays, again);
     if (sec === 'reviews') return renderMyReviews(q.get('tab') === 'mine' ? 'mine' : 'about', again);
-    if (sec === 'searches') return renderSavedSearches(again);
     if (sec === 'following') return renderFollowing(again);
     return renderMyListings(items, q.get('status') || 'active', again);
   }
@@ -3613,9 +3553,9 @@
   // Уведомления таблицей: событие, пояснение, поле push и поле письма (null — такого канала у события нет).
   const NOTIFY_ROWS = [
     ['Сообщения', 'Чаты и ответы поддержки. Письмо — если не прочитали за 5 минут', 'pushMessages', 'notifyMessages'],
-    ['Поиски и подписки', 'Новые объявления по вашим поискам и от продавцов, на которых вы подписаны', 'pushSearches', null],
+    ['Подписки', 'Новые объявления продавцов, на которых вы подписаны', 'pushSearches', null],
     ['Снижение цены', 'Подешевело то, что у вас в избранном', 'pushPrices', null],
-    ['Подборка за день', 'Новое по поискам и подпискам и снижение цен — одним письмом', null, 'notifyDigest'],
+    ['Подборка за день', 'Новое у продавцов и снижение цен — одним письмом', null, 'notifyDigest'],
     ['Модерация', 'Решения по объявлениям и апелляциям, проверка бизнеса, оплаты', 'pushModeration', 'notifyModeration'],
     ['Отзывы', 'Новый отзыв о вас и решения по отзывам', 'pushReviews', 'notifyReviews']
   ];
@@ -3630,10 +3570,11 @@
     el.innerHTML = String(!st.ok
       ? card('bell', 'На этом устройстве push недоступны', st.ios ? 'На iPhone: «Поделиться» → «На экран «Домой»», откройте Торгану с экрана и включите уведомления здесь.' : 'Браузер не поддерживает уведомления. Письма на почту продолжат приходить.')
       : st.sub ? card('check', 'Включены на этом устройстве', deviceName(), html`<button type="button" class="btn btn-soft btn-sm" data-test>Проверить</button><button type="button" class="btn btn-line btn-sm" data-off>Выключить</button>`)
-        : st.perm === 'denied' ? card('bell', 'Уведомления запрещены в браузере', 'Разрешите их в настройках сайта (значок замка в адресной строке), затем обновите страницу.')
-          : card('bell', 'Push на этом устройстве выключены', 'Включите, чтобы сразу узнавать о сообщениях и новых объявлениях.', html`<button type="button" class="btn btn-dark btn-sm" data-on>Включить</button>`));
+        : st.perm === 'denied' ? card('bell', 'Уведомления запрещены в браузере', 'Вы отклонили запрос. Разрешите уведомления в настройках сайта (значок замка рядом с адресом), обновите страницу и нажмите «Включить уведомления».', html`<button type="button" class="btn btn-accent" data-reload>Я разрешил — обновить</button>`)
+          : card('bell', 'Уведомления выключены', 'Сообщим о новых сообщениях, решениях модерации, снижении цен и новом у продавцов из подписок.', html`<button type="button" class="btn btn-accent" data-on>${ic('bell', 18, 2)}Включить уведомления</button>`));
     const act = async (fn, okText) => { try { await fn(); if (okText) toast(okText); renderPushDevice(el); } catch (e) { toast(e.message, true); } };
     const on = $('[data-on]', el); if (on) on.onclick = () => act(pushOn, 'Уведомления включены');
+    const rl = $('[data-reload]', el); if (rl) rl.onclick = () => location.reload();
     const off = $('[data-off]', el); if (off) off.onclick = () => act(pushOff, 'Уведомления на этом устройстве выключены');
     const tst = $('[data-test]', el); if (tst) tst.onclick = () => act(async () => { const r = await api('POST', '/api/push/test'); if (!r.ok) throw new Error('Не получилось отправить — выключите и включите уведомления'); }, 'Отправили проверочное уведомление');
   }
@@ -3671,6 +3612,49 @@
         try { await api('DELETE', '/api/me/business'); toast('Данные убраны'); await refreshMe(); reload(); } catch (ex) { toast(ex.message, true); }
       };
     });
+  }
+
+  // ================= удаление профиля (1.39) =================
+  // «Напишите УДАЛИТЬ» — общее окно для пользователя и модератора.
+  function eraseModal(title, text, onOk) {
+    openModal(String(html`<h2>${title}</h2><p class="muted" style="margin:0">${text}</p>
+      <div class="field" style="margin-top:14px"><label for="er-word">Напишите <b>УДАЛИТЬ</b>, чтобы подтвердить</label><input id="er-word" class="input" autocomplete="off" autocapitalize="characters"></div>
+      <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-danger" data-ok disabled>Удалить навсегда</button></div>`), (m, close) => {
+      const inp = $('#er-word', m); const ok = $('[data-ok]', m);
+      inp.oninput = () => { ok.disabled = inp.value.trim().toUpperCase() !== 'УДАЛИТЬ'; };
+      $('[data-x]', m).onclick = close;
+      ok.onclick = async () => { ok.disabled = true; try { await onOk(inp.value.trim()); close(); } catch (e) { ok.disabled = false; toast(e.message, true); } };
+      setTimeout(() => inp.focus(), 50);
+    });
+  }
+  function bindAccountDelete() {
+    const off = $('[data-acc-off]');
+    if (off) {
+      off.onclick = async () => {
+        if (!(await confirmModal('Удалить профиль временно?', 'Профиль и объявления скроются, вы выйдете на всех устройствах. Вернуться можно в любой момент: войдите и нажмите «Восстановить».', 'Удалить временно', true))) return;
+        try { await api('POST', '/api/me/deactivate'); S.user = null; go('/', true); toast('Профиль удалён временно. Чтобы вернуться — просто войдите'); } catch (e) { toast(e.message, true); }
+      };
+    }
+    const er = $('[data-acc-erase]');
+    if (er) er.onclick = () => eraseModal('Удалить профиль навсегда?', 'Объявления, фото, избранное, подписки и данные профиля удалятся. Восстановить их будет нельзя.', async (word) => {
+      await api('POST', '/api/me/erase', { confirm: word }); S.user = null; go('/', true); toast('Профиль удалён');
+    });
+  }
+  // После входа во временно удалённый профиль: вернуть или удалить навсегда.
+  function viewDeactivated() {
+    setTitle('Профиль удалён');
+    app.innerHTML = String(html`<div class="wrap"><div class="acc-gone">
+      <span class="acc-gone-ic">${ic('user', 30, 1.9)}</span>
+      <h1>Профиль временно удалён</h1>
+      <p>${dateLong(S.user.deactivatedAt)} вы удалили профиль. Его и ваши объявления никто не видит. Восстановите профиль — объявления будут ждать в архиве, их можно опубликовать снова.</p>
+      <div class="acc-gone-act"><button class="btn btn-accent btn-lg" data-restore>Восстановить профиль</button><button class="btn btn-soft btn-lg" data-logout>Выйти</button></div>
+      <button type="button" class="acc-gone-erase" data-acc-erase>Удалить навсегда</button>
+    </div></div>`);
+    $('[data-restore]').onclick = async (e) => {
+      e.currentTarget.disabled = true;
+      try { await api('POST', '/api/me/restore'); await refreshMe(); toast('С возвращением! Объявления — в архиве «Моих объявлений»'); go('/profile?status=archived', true); } catch (ex) { e.currentTarget.disabled = false; toast(ex.message, true); }
+    };
+    bindAccountDelete();
   }
 
   // ================= настройки =================
@@ -3778,7 +3762,11 @@
           ${row('clock', 'На Торгане', `с ${since(u.createdAt)}`)}
           ${row('logout', 'Выйти из аккаунта', 'На этом устройстве', html`<button type="button" class="btn btn-soft btn-sm" data-logout>Выйти</button>`)}
         </div>
-        <div class="set-danger"><div><b>Удалить аккаунт</b><span>Напишите в поддержку с этой почты — удалим профиль, объявления и переписку.</span></div><a class="btn btn-line btn-sm" href="/messages/support">Написать в поддержку</a></div>`
+        ${u.isOwner ? '' : html`<div class="acc-del">
+          <h3>Удаление профиля</h3>
+          <div class="acc-del-row"><span class="acc-del-ic">${ic('clock', 20, 2)}</span><span class="acc-del-txt"><b>Удалить временно</b><span>Профиль и объявления скроются. Чтобы вернуться, войдите и нажмите «Восстановить» — объявления будут ждать в архиве.</span></span><button type="button" class="btn btn-line btn-sm" data-acc-off>Удалить временно</button></div>
+          <div class="acc-del-row danger"><span class="acc-del-ic">${ic('trash', 20, 2)}</span><span class="acc-del-txt"><b>Удалить навсегда</b><span>Объявления, фото, избранное, подписки и данные профиля удалятся без возможности восстановления.</span></span><button type="button" class="btn btn-danger btn-sm" data-acc-erase>Удалить навсегда</button></div>
+        </div>`}`
     };
     $('#box').innerHTML = String(body[sec]());
     // Пришли по ссылке на поле (#s-city) или фото (#s-photo) — покажем его.
@@ -3786,6 +3774,7 @@
     if (to) { const field = to.matches('input'); to.scrollIntoView({ block: 'center' }); if (field) to.focus(); }
     const q = new URLSearchParams(location.search).get('oauth');
     if (q) { toast(q === 'linked' ? 'Готово — сервис привязан' : 'Этот аккаунт сервиса уже привязан к другому пользователю', q !== 'linked'); history.replaceState({}, '', location.pathname + location.hash); }
+    if (sec === 's-acc') bindAccountDelete();
     if (sec === 'sf') {
       $('[data-ava-set]').onclick = () => pickAvatar(reload);
       const del = $('[data-ava-del]'); if (del) del.onclick = () => removeAvatar(reload);
@@ -4650,6 +4639,7 @@
           ${u.shop && (u.shop.about || u.shop.cover || u.shop.site) ? html`<div class="muted" style="font-size:14px">Витрина: ${u.shop.about ? `«${u.shop.about.slice(0, 140)}${u.shop.about.length > 140 ? '…' : ''}»` : 'без описания'}${u.shop.site ? ` · ${u.shop.site}` : ''}</div>
           <div class="adm-person-act"><a class="btn btn-soft btn-sm" href="/u/${u.id}" target="_blank">${ic('store', 16)}Витрина</a><button class="btn btn-line btn-sm" data-shop-clear="${u.id}">Очистить витрину</button></div>` : html`<div class="muted" style="font-size:14px">Витрина не заполнена.</div>`}
           <a href="/admin?status=payments" class="muted" style="font-size:13px;text-decoration:underline">Платежи и возвраты</a></div>` : ''}
+        ${svcBlock(u, d.services)}
         ${u.blocked ? html`<div class="banner danger"><strong>Заблокирован${u.blockedAt ? ` ${when(u.blockedAt)}` : ''}${blockedBy && blockedBy.admin ? ` · ${blockedBy.admin.name}` : ''}.</strong> ${u.blockReason || 'Причина не указана.'}</div>` : ''}
         <div class="adm-facts">${[
           ['Email', u.email], ['Телефон', u.phone || '—'], ['Город', u.city || '—'],
@@ -4660,8 +4650,14 @@
           <button class="btn btn-dark btn-sm" data-support="${u.id}">${ic('headset', 18)}Написать</button>
           <a class="btn btn-soft btn-sm" href="/u/${u.id}" target="_blank">${ic('eye', 18)}Публичный профиль</a>
           ${u.avatar ? html`<button class="btn btn-soft btn-sm" data-ava-remove="${u.id}">${ic('image', 18)}Убрать фото</button>` : ''}
-          ${u.isAdmin ? '' : html`<button class="btn ${u.blocked ? 'btn-line' : 'btn-danger'} btn-sm" data-block="${u.id}" data-blocked="${u.blocked ? '1' : ''}">${ic('lock', 18)}${u.blocked ? 'Разблокировать' : 'Заблокировать'}</button>`}
+          ${u.isAdmin || u.deletedAt ? '' : html`<button class="btn ${u.blocked ? 'btn-line' : 'btn-danger'} btn-sm" data-block="${u.id}" data-blocked="${u.blocked ? '1' : ''}">${ic('lock', 18)}${u.blocked ? 'Разблокировать' : 'Заблокировать'}</button>`}
         </div>
+        ${u.isAdmin ? '' : u.deletedAt ? html`<div class="banner danger"><strong>Профиль удалён навсегда ${when(u.deletedAt)}.</strong> Личные данные стёрты, объявления удалены; платежи сохранены обезличенно.</div>`
+    : html`<div class="adm-del">
+          ${u.deactivatedAt ? html`<span class="adm-del-note">${ic('clock', 16, 2)}Профиль временно удалён ${when(u.deactivatedAt)}</span><button class="btn btn-soft btn-sm" data-u-restore>Восстановить</button>`
+    : html`<span class="adm-del-note">Удаление профиля</span><button class="btn btn-line btn-sm" data-u-off>Удалить временно</button>`}
+          <button class="btn btn-danger btn-sm" data-u-erase>${ic('trash', 16)}Удалить навсегда</button>
+        </div>`}
       </div>
       <div class="seg adm-seg" role="tablist">${tabs.map(([k, t], i) => html`<a role="tab" href="#" data-pane="${k}" class="${i ? '' : 'on'}" aria-selected="${i ? 'false' : 'true'}">${t}</a>`)}</div>
       <div id="pane">${panes.listings}</div>`));
@@ -4689,9 +4685,35 @@
         try { await api('POST', `/api/admin/users/${u.id}/plan`, { plan: $('#g-plan', m).value, days: $('#g-days', m).value }); close(); toast('Тариф подарен — продавец получил уведомление'); render(); } catch (e) { toast(e.message, true); }
       };
     });
+    // Удаление профиля модератором: временно (можно восстановить) и навсегда — со словом УДАЛИТЬ.
+    const uOff = $('[data-u-off]');
+    if (uOff) uOff.onclick = () => reasonModal({ title: `Удалить профиль ${u.name} временно?`, hint: 'Профиль и объявления скроются, пользователь выйдет на всех устройствах. Вернуть можно здесь же или сам пользователь — войдя и нажав «Восстановить».', url: `/api/admin/users/${u.id}/deactivate`, okLabel: 'Удалить временно', minText: 0, reasons: ['Просьба пользователя', 'Нарушение правил площадки', 'Подозрение на мошенничество'], placeholder: 'Причина — для журнала (необязательно)' });
+    const uRe = $('[data-u-restore]');
+    if (uRe) uRe.onclick = async () => { if (!(await confirmModal('Восстановить профиль?', 'Профиль снова будет виден. Объявления останутся в архиве — пользователь опубликует их сам.', 'Восстановить'))) return; try { await api('POST', `/api/admin/users/${u.id}/restore`); toast('Профиль восстановлен'); render(); } catch (e) { toast(e.message, true); } };
+    const uEr = $('[data-u-erase]');
+    if (uEr) uEr.onclick = () => eraseModal(`Удалить профиль ${u.name} навсегда?`, 'Личные данные сотрутся, объявления с фото, избранное и подписки удалятся. Платежи останутся обезличенными для учёта и возвратов. Отменить нельзя.', async (word) => { await api('POST', `/api/admin/users/${u.id}/erase`, { confirm: word }); toast('Профиль удалён навсегда'); render(); });
+    // Платные услуги: отключить даже оплаченное (деньги — отдельно, в «Платежах»).
+    const SVC_REASONS = ['Нарушение правил площадки', 'Запрещённый товар или услуга', 'Жалобы покупателей', 'По просьбе продавца'];
+    const svcHint = 'Причину увидит продавец. Деньги не возвращаются автоматически — возврат оформляется в «Платежах».';
+    const sp = $('[data-svc-plan]');
+    if (sp) sp.onclick = () => reasonModal({ title: `Отключить тариф «${u.plan.name}»`, hint: svcHint, url: `/api/admin/users/${u.id}/plan/stop`, okLabel: 'Отключить тариф', reasons: SVC_REASONS, placeholder: 'Почему отключаем — для продавца' });
+    $$('[data-svc-promo]').forEach((b) => { b.onclick = () => reasonModal({ title: 'Отключить рекламу над поиском', hint: svcHint, url: `/api/admin/ads/${b.dataset.svcPromo}/stop`, okLabel: 'Отключить рекламу', reasons: SVC_REASONS, placeholder: 'Почему отключаем — для продавца' }); });
+    $$('[data-svc-boost]').forEach((b) => { b.onclick = () => reasonModal({ title: 'Отключить продвижение', hint: svcHint, url: `/api/admin/boosts/${b.dataset.svcBoost}/stop`, okLabel: 'Отключить продвижение', reasons: SVC_REASONS, placeholder: 'Почему отключаем — для продавца' }); });
     const sc = $('[data-shop-clear]');
     if (sc) sc.onclick = () => reasonModal({ title: 'Очистить витрину', hint: 'Уберём описание, обложку, часы, адрес и сайт. Тариф продолжит действовать. Причину увидит продавец.', url: `/api/admin/users/${u.id}/shop/clear`, okLabel: 'Очистить', reasons: ['Контакты и мессенджеры в описании', 'Оскорбительное или недостоверное содержание', 'Ссылка на подозрительный сайт', 'Чужое фото на обложке'], placeholder: 'Что не так — для продавца' });
     bindModActions(app);
+  }
+
+  // Карточка пользователя в модерации: идущие платные услуги — тариф, реклама над поиском, продвижение.
+  function svcBlock(u, sv) {
+    sv = sv || { promos: [], boosts: [] };
+    if (!u.plan && !sv.promos.length && !sv.boosts.length) return '';
+    const row = (icon, t, sub, attr) => html`<div class="adm-svc-row"><span class="adm-svc-ic">${ic(icon, 18, 2)}</span><span class="adm-svc-txt"><b>${t}</b><span>${sub}</span></span><button type="button" class="btn btn-line btn-sm" ${raw(attr)}>Отключить</button></div>`;
+    return html`<div class="adm-svc"><h3 class="adm-sub" style="margin:0">Платные услуги</h3>
+      ${u.plan ? row('store', `${u.plan.trial ? 'Пробный тариф' : 'Тариф'} «${u.plan.name}»`, `до ${dateLong(u.plan.until)}`, 'data-svc-plan') : ''}
+      ${sv.promos.map((p) => row('megaphone', 'Реклама над поиском', html`<a href="/admin/l/${p.listingId}">«${p.title}»</a>${p.endsAt ? ` · до ${dateShort(p.endsAt)}` : ''}`, `data-svc-promo="${Number(p.id)}"`))}
+      ${sv.boosts.map((b) => row('bolt', `Продвижение${b.kinds.length ? `: ${b.kinds.join(', ')}` : ''}`, html`<a href="/admin/l/${b.listingId}">«${b.title}»</a> · ${b.status === 'active' ? `до ${dateShort(b.endsAt)}` : 'начнётся после проверки'}`, `data-svc-boost="${Number(b.id)}"`))}
+      <p class="muted" style="margin:0;font-size:13px">Отключение не возвращает деньги — возврат оформляется в <a href="/admin?status=payments" style="text-decoration:underline">«Платежах»</a>.</p></div>`;
   }
 
   // ---------- журнал действий ----------
@@ -4701,9 +4723,9 @@
     'review-published': 'Опубликовал отзыв', 'review-rejected': 'Не опубликовал отзыв', 'review-hidden': 'Скрыл отзыв по жалобе', 'review-kept': 'Оставил отзыв после жалобы',
     'review-restored': 'Вернул отзыв', 'biz-verified': 'Подтвердил бизнес', 'biz-rejected': 'Отказал в подтверждении бизнеса', 'reply-published': 'Опубликовал ответ продавца', 'reply-rejected': 'Не опубликовал ответ продавца', 'support-reply': 'Ответил в поддержке',
     'billing-settings': 'Изменил настройки оплаты', 'billing-prices': 'Изменил цены', 'payment-refund': 'Оформил возврат', 'promo-erid': 'Указал erid и запустил рекламу',
-    'promo-stopped': 'Остановил продвижение', 'seo-settings': 'Изменил настройки поиска и Метрики', 'ads-settings': 'Изменил настройки рекламы', 'shop-cleared': 'Очистил витрину магазина'
+    'promo-stopped': 'Отключил рекламу над поиском', 'plan-stopped': 'Отключил тариф', 'boost-stopped': 'Отключил продвижение', 'user-deactivated': 'Временно удалил профиль', 'user-restored': 'Восстановил профиль', 'user-erased': 'Удалил профиль навсегда', 'seo-settings': 'Изменил настройки поиска и Метрики', 'ads-settings': 'Изменил настройки рекламы', 'shop-cleared': 'Очистил витрину магазина'
   };
-  const LOG_TONE = { 'promo-erid': 'ok', 'promo-stopped': 'bad', 'shop-cleared': 'bad', 'biz-verified': 'ok', 'biz-rejected': 'bad', rejected: 'bad', 'appeal-denied': 'bad', 'user-blocked': 'bad', 'review-rejected': 'bad', 'review-hidden': 'bad', 'reply-rejected': 'bad', approved: 'ok', restored: 'ok', 'appeal-approved': 'ok', 'user-unblocked': 'ok', 'review-published': 'ok', 'reply-published': 'ok', 'review-restored': 'ok' };
+  const LOG_TONE = { 'promo-erid': 'ok', 'promo-stopped': 'bad', 'plan-stopped': 'bad', 'boost-stopped': 'bad', 'user-deactivated': 'bad', 'user-erased': 'bad', 'user-restored': 'ok', 'shop-cleared': 'bad', 'biz-verified': 'ok', 'biz-rejected': 'bad', rejected: 'bad', 'appeal-denied': 'bad', 'user-blocked': 'bad', 'review-rejected': 'bad', 'review-hidden': 'bad', 'reply-rejected': 'bad', approved: 'ok', restored: 'ok', 'appeal-approved': 'ok', 'user-unblocked': 'ok', 'review-published': 'ok', 'reply-published': 'ok', 'review-restored': 'ok' };
   function logRow(e) {
     const act = e.action === 'rejected' ? (e.data.from === 'pending' ? 'Отклонил объявление' : 'Снял с публикации') : LOG_TEXT[e.action] || e.action;
     const target = e.listing ? html`<a href="/admin/l/${e.listing.id}">«${e.listing.title}»</a>`
@@ -5448,7 +5470,6 @@
         <p>В выдаче есть фильтры: категория и раздел, характеристики раздела (например, марка, год или размер), город и метро, цена, доставка, «Торг уместен» и «Возможен обмен». Сортировка — сначала новые, дешевле или дороже.</p>
         <h2>Как не пропустить нужное</h2>
         <ul><li><b>Избранное.</b> Нажмите на сердечко — объявление сохранится в «Избранном». Если продавец снизит цену, придёт уведомление.</li>
-          <li><b>Сохранённый поиск.</b> Кнопка «Сохранить поиск» в выдаче — новые объявления по запросу отметим в разделе «Поиски», пришлём push (если они включены) и подборку за день на почту. Всё это выключается в настройках.</li>
           <li><b>Подписка на продавца.</b> Кнопка «Подписаться» в профиле продавца — узнаете о его новых объявлениях.</li></ul>
         <h2>Честная выдача</h2>
         <p>Платное продвижение не меняет порядок объявлений: такие карточки подписаны «Продвигается». Реклама показывается отдельным блоком с пометкой «Реклама».</p>`],
@@ -5621,22 +5642,8 @@
     await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
     await sub.unsubscribe().catch(() => {});
   }
-  // Подсказка «включите уведомления» — в поисках и сообщениях, пока push не включён и человек её не закрыл.
-  const NUDGE_KEY = 'torgana:push-nudge';
-  async function pushNudge(box, text) {
-    if (!box || !S.user) return;
-    try { if (localStorage.getItem(NUDGE_KEY)) return; } catch { /* приватный режим */ }
-    const st = await pushState();
-    if ((st.ok && (st.sub || st.perm === 'denied')) || (!st.ok && !st.ios)) return;
-    box.innerHTML = String(html`<div class="nudge">${ic('bell', 22, 2)}<span class="nudge-txt"><b>Включите уведомления</b><span>${st.ios ? 'На iPhone: «Поделиться» → «На экран «Домой»», затем откройте Торгану оттуда.' : text}</span></span>
-      ${st.ios ? '' : html`<button type="button" class="btn btn-dark btn-sm" data-on>Включить</button>`}<button type="button" class="icon-btn sm" data-x aria-label="Скрыть">${ic('close', 16, 2)}</button></div>`);
-    const on = $('[data-on]', box);
-    if (on) on.onclick = async () => { try { await pushOn(); box.innerHTML = ''; toast('Уведомления включены'); } catch (e) { toast(e.message, true); } };
-    $('[data-x]', box).onclick = () => { box.innerHTML = ''; try { localStorage.setItem(NUDGE_KEY, '1'); } catch { /* ничего */ } };
-  }
-
   // ================= запуск =================
-  // Кто вошёл, непрочитанное и новое по поискам — при запуске и раз в 30 секунд.
+  // Кто вошёл, непрочитанное и новое у продавцов — при запуске и раз в 30 секунд.
   function applyMe(r) {
     const changed = (S.user && S.user.id) !== (r.user && r.user.id);
     S.user = r.user;

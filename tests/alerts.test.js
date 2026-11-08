@@ -82,30 +82,23 @@ test('подписка: только адреса push-служб, VAPID-под�
 });
 
 let bike;
-test('сохранённый поиск: новое объявление → push и счётчик нового', async () => {
-  const s = await boris.post('/api/saved-searches', { q: 'велосипед', city: 'Казань', max: '20000', sort: 'cheap' });
-  assert.equal(s.status, 200);
-  assert.deepEqual(s.data.search.params, { q: 'велосипед', city: 'Казань', max: '20000' });
-  assert.match(s.data.search.title, /велосипед.*Казань.*до 20/);
-  assert.equal((await boris.post('/api/saved-searches', { q: 'велосипед', city: 'Казань', max: '20000' })).data.search.id, s.data.search.id, 'тот же поиск не дублируется');
-
-  await publish(anna, admin, { title: 'Велосипед горный', description: 'Почти новый', category: 'hobby', city: 'Москва', price: 15000 }); // другой город
-  await publish(anna, admin, { title: 'Велосипед дорожный', description: 'Отличный', category: 'hobby', city: 'Казань', price: 50000 }); // дороже
+test('подписка на продавца: новое объявление → push и счётчик нового; сохранённых поисков больше нет', async () => {
+  assert.equal((await boris.post('/api/saved-searches', { q: 'велосипед' })).status, 404, '1.39.0: сохранённые поиски убраны');
+  assert.equal((await boris.post(`/api/users/${anna.user.id}/follow`, { follow: true })).status, 200);
   bike = await publish(anna, admin, { title: 'Велосипед детский', description: 'Для 5–8 лет', category: 'hobby', city: 'Казань', price: 9000 });
-  const m = await waitPush((x) => x.title.startsWith('Новое:'));
+  const m = await waitPush((x) => x.title === 'Новое у продавца Анна');
   assert.match(m.msg.body, /Велосипед детский — 9/);
   assert.equal(m.msg.url, `/l/${bike}`);
-  assert.equal(inbox.filter((x) => borisPhone.decrypt(x.body).title.startsWith('Новое:')).length, 1, 'только подходящее');
   const me = (await boris.get('/api/me')).data;
-  assert.equal(me.fresh.search, 1);
-  await boris.post(`/api/saved-searches/${s.data.search.id}/seen`);
-  assert.equal((await boris.get('/api/me')).data.fresh.search, 0);
+  assert.equal(me.fresh.follow, 1);
+  assert.equal(me.fresh.search, undefined);
+  await boris.get('/api/my/following');
+  assert.equal((await boris.get('/api/me')).data.fresh.follow, 0, 'открыл подписки — просмотрено');
 
-  // Своё объявление по своему поиску не присылаем.
-  await boris.post('/api/saved-searches', { q: 'самокат' });
+  // Своё объявление себе не присылаем.
   await publish(boris, admin, { title: 'Самокат', category: 'hobby', city: 'Казань', price: 3000 });
   await waitPush((x) => x.title === 'Объявление опубликовано' && x.body.includes('Самокат')); // решение модерации — да
-  assert.ok(!inbox.some((x) => /^Новое:.*самокат/.test(borisPhone.decrypt(x.body).title)), 'по своему объявлению — нет');
+  assert.ok(!inbox.some((x) => /^Новое у продавца Борис/.test(borisPhone.decrypt(x.body).title)), 'по своему объявлению — нет');
 });
 
 test('снижение цены в избранном: push, зачёркнутая цена; повышение — без уведомлений', async () => {
@@ -118,7 +111,7 @@ test('снижение цены в избранном: push, зачёркнут�
   const fav = (await boris.get('/api/favorites')).data.items.find((i) => i.id === bike);
   assert.equal(fav.priceWas, 9000);
   assert.equal((await boris.get(`/api/listings/${bike}`)).data.listing.priceWas, 9000);
-  // Повторная публикация не рассылает объявление по поискам заново.
+  // Повторная публикация не рассылает объявление подписчикам заново.
   assert.equal(inbox.filter((x) => borisPhone.decrypt(x.body).body.includes('Велосипед детский —')).length, 1);
 });
 
@@ -141,16 +134,16 @@ test('чат: фото в сообщении, push собеседнику; вы�
   assert.equal(inbox.length, n);
 });
 
-test('подборка за день: новое по поиску и снижение цены одним письмом', async () => {
-  // Новое объявление по поиску Бориса, которое он ещё не видел.
+test('подборка за день: новое у продавца и снижение цены одним письмом', async () => {
+  // Новое объявление продавца, на которого подписан Борис, — он его ещё не видел.
   await publish(anna, admin, { title: 'Велосипед BMX', category: 'hobby', city: 'Казань', price: 12000 });
   await admin.put('/api/admin/mail', { host: '127.0.0.1', port: smtp.port, security: 'none', user: smtp.user, pass: smtp.pass, from: 'no-reply@torgana.test' });
-  const m = await smtp.waitFor((x) => x.to === 'boris@test.local' && /Новое по/.test(x.subject), 6000);
+  const m = await smtp.waitFor((x) => x.to === 'boris@test.local' && /Новое у продавца/.test(x.subject), 6000);
   assert.match(m.html, /Велосипед BMX/);
   assert.match(m.html, /Подборка за день/);
   assert.match(m.headers, /List-Unsubscribe/);
   await new Promise((r) => setTimeout(r, 600));
-  assert.equal(smtp.inbox.filter((x) => x.to === 'boris@test.local' && /Новое по/.test(x.subject)).length, 1, 'не чаще раза в сутки');
+  assert.equal(smtp.inbox.filter((x) => x.to === 'boris@test.local' && /Новое у продавца/.test(x.subject)).length, 1, 'не чаще раза в сутки');
 });
 
 test('устройство отписалось в браузере (410) — подписка удаляется', async () => {

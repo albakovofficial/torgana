@@ -80,4 +80,12 @@ test('подарок от модерации: только подтверждё�
   const p = await planOf(e);
   assert.equal(p.id, 'shop'); assert.equal(p.trial, true);
   assert.ok(Math.abs(p.until - (u1 + 10 * DAY)) < 1000, 'продлили на 10 дней');
+
+  // 1.39.0: модератор отключает тариф (даже оплаченный) — с причиной; в карточке он виден среди платных услуг.
+  assert.equal((await e.post(`/api/admin/users/${e.user.id}/plan/stop`, { reason: 'Нарушение правил площадки' })).status, 403);
+  assert.equal((await admin.post(`/api/admin/users/${e.user.id}/plan/stop`, { reason: 'x' })).status, 400, 'без причины — нельзя');
+  assert.ok((await admin.get(`/api/admin/users/${e.user.id}`)).data.services, 'в карточке — платные услуги');
+  assert.equal((await admin.post(`/api/admin/users/${e.user.id}/plan/stop`, { reason: 'Нарушение правил площадки' })).status, 200);
+  assert.equal(await planOf(e), null, 'тариф отключён');
+  assert.equal((await admin.post(`/api/admin/users/${e.user.id}/plan/stop`, { reason: 'Нарушение правил площадки' })).status, 404, 'второй раз — тарифа уже нет');
 });

@@ -111,18 +111,6 @@ test('поиск: подкатегория, характеристика из с
   assert.deepEqual(await ids(enc('sub=cars&a_mileage_max=50 000')), ['Lada Vesta']);
 });
 
-test('сохранённый поиск с характеристиками: приходит только подходящее объявление', async () => {
-  const s = await buyer.post('/api/saved-searches', { sub: 'cars', a_gearbox: 'Автомат', a_year_min: '2015', a_bogus: 'x' });
-  assert.equal(s.status, 200, JSON.stringify(s.data));
-  assert.equal(s.data.search.title, 'Автомобили · год выпуска от 2015 · Автомат');
-  assert.deepEqual(Object.keys(s.data.search.params), ['sub', 'a_gearbox', 'a_year_min']);
-  await publish(seller, admin, { title: 'Kia Rio механика', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', mileage: 40000, gearbox: 'Механика', year: 2019 } });
-  await publish(seller, admin, { title: 'Kia Rio автомат', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', mileage: 40000, gearbox: 'Автомат', year: 2019 } });
-  const list = (await buyer.get('/api/saved-searches')).data.items;
-  const mine = list.find((x) => x.id === s.data.search.id);
-  assert.equal(mine.fresh, 1);
-});
-
 test('метро: станции города из справочника, станция не из списка — ошибка, в городе без метро — не сохраняется', async () => {
   const st = (await buyer.get('/api/metro?city=Санкт-Петербург')).data.stations;
   assert.deepEqual(st.map((x) => x.name), ['Владимирская', 'Невский проспект', 'Площадь Восстания']);

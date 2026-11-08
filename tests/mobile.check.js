@@ -135,8 +135,6 @@ async function seed(base, browser) {
   await buyer.post(`/api/conversations/${c3}/messages`, { body: 'Добрый день! Можно забрать завтра?' });
   await seller.post(`/api/conversations/${c3}/messages`, { body: 'Да, после обеда.' });
   // 1.10: сохранённые поиски, снижение цены, фото в чате
-  await buyer.post('/api/saved-searches', { q: 'велосипед', city: 'Казань' });
-  await buyer.post('/api/saved-searches', { category: 'electronics', max: '100000', delivery: '1' });
   const phone = (await seller.get(`/api/listings/${ids[1]}`)).data.listing;
   await seller.patch(`/api/listings/${ids[1]}`, { title: phone.title, description: phone.description, category: phone.category, city: phone.city, price: 79900, delivery: true, photos: [photos[1]] });
   await admin.post(`/api/admin/listings/${ids[1]}/restore`);
@@ -188,7 +186,13 @@ async function seed(base, browser) {
   await pay(await seller.post(`/api/listings/${ids[0]}/boost`, { frame: true }));
   await pay(await seller.post(`/api/listings/${ids[1]}/boost`, { tags: ['Есть гарантия', 'С чеком'] }));
   await admin.put('/api/admin/seo', { mapsKey: 'test-maps-key' }); // 1.38: карта объявлений включается ключом
-  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay, scheduled, boostPay };
+  // 1.39: временно удалённый профиль — после входа экран «Восстановить»; второй — для карточки в модерации.
+  const gone = await registerUser(base, { name: 'Глеб', email: 'gleb@test.local' });
+  await gone.post('/api/me/deactivate');
+  const gone2 = client(base);
+  await gone2.post('/api/auth/login', { email: 'gleb@test.local', password: 'password123' });
+  gone2.user = gone.user;
+  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay, scheduled, boostPay, gone: gone2 };
 }
 
 function pages(d) {
@@ -248,13 +252,15 @@ function pages(d) {
     ['admin', '/admin', d.admin],
     ['admin-mail', '/admin?status=mail', d.admin],
     ['admin-site', '/admin?status=site', d.admin],
-    ['profile-searches', '/profile/searches', d.buyer],
     ['admin-users', '/admin?status=users', d.admin],
     ['admin-biz', '/admin?status=biz', d.admin],
     ['admin-oauth', '/admin?status=oauth', d.admin],
     ['admin-ai', '/admin?status=ai', d.admin],
     ['admin-sources', '/admin?status=sources', d.admin],
     ['admin-user', `/admin/u/${d.seller.user.id}`, d.admin],
+    // 1.39: удаление профиля — экран восстановления и карточка временно удалённого в модерации
+    ['account-gone', '/profile', d.gone],
+    ['admin-user-gone', `/admin/u/${d.gone.user.id}`, d.admin],
     ['admin-log', '/admin?status=log', d.admin],
     ['admin-notify', '/admin?status=notify', d.admin],
     ['admin-pending', '/admin?status=pending', d.admin],
@@ -525,6 +531,7 @@ async function main() {
           if (n < 2) errors.push(`на карте ${n} точек`);
           if (!/на карте/.test(await page.textContent('#count'))) errors.push('нет счётчика «на карте»');
           if (!(await page.$('.view-sw a.on[href*="view=map"]'))) errors.push('переключатель «Карта» не выбран');
+          if (await page.$('.results-head .pick-btn:not([hidden])')) errors.push('сортировка видна на карте');
           if (fr && await fr.evaluate(() => { try { return !!window.parent.document; } catch { return false; } })) errors.push('рамка видит страницу сайта');
           await page.screenshot({ path: path.join(SHOTS, `${vpName}-search-map-open.png`) });
           if (fr && n) { await fr.click('.mc[data-id] >> nth=0'); await page.waitForURL(/\/l\/\d+/, { timeout: 3000 }).catch(() => errors.push('клик по точке не открыл объявление')); }
