@@ -2192,6 +2192,9 @@ body.pv-open { overflow: hidden; }
 .cat-rail.can-prev .cat-arrow.prev, .cat-rail.can-next .cat-arrow.next { display: grid; }
 .cat-rail.can-prev .cat-pills { -webkit-mask-image: linear-gradient(90deg, transparent, #000 56px, #000 calc(100% - 56px), transparent); mask-image: linear-gradient(90deg, transparent, #000 56px, #000 calc(100% - 56px), transparent); }
 .cat-rail:not(.can-prev):not(.can-next) .cat-pills { -webkit-mask-image: none; mask-image: none; }
+/* Долистали до конца — затухание только слева, последняя капсула («Для бизнеса») видна целиком. */
+.cat-rail.can-prev:not(.can-next) .cat-pills { -webkit-mask-image: linear-gradient(90deg, transparent, #000 56px); mask-image: linear-gradient(90deg, transparent, #000 56px); }
+@media (min-width: 901px) { .cat-rail .cat-pills { padding: 4px 4px 6px; margin: -2px -4px -2px; } } /* место для рамки фокуса */
 @media (max-width: 900px) { .cat-arrow { display: none !important; } .cat-rail.can-prev .cat-pills { -webkit-mask-image: none; mask-image: none; } }
 
 /* ---------- характеристики, вариант A (1.24): путь, плитки, список, условия значками ---------- */
