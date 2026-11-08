@@ -1,6 +1,6 @@
 {
   "name": "torgana",
-  "version": "1.41.2",
+  "version": "1.41.3",
   "description": "Торгана — площадка объявлений по всей России",
   "private": true,
   "main": "server.js",

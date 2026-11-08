@@ -159,6 +159,10 @@ function sellerOfCard(r) {
   return { id: r.seller_id, name: name || 'Продавец', avatar: photoUrl(r.seller_avatar), rating: n ? avg : 0, reviews: n || 0, shop };
 }
 
+// Сколько объявлений подходит под условие выдачи — из памяти, пока объявления не менялись (db.memo в lib/db.js).
+const countListings = (whereSql, params) => db.memo(`count|${whereSql}|${JSON.stringify(params)}`,
+  () => db.prepare(`SELECT COUNT(*) AS n FROM listings l JOIN users u ON u.id = l.user_id WHERE ${whereSql}`).get(...params).n);
+
 const CARD_SELECT = `
   SELECT l.id, l.title, l.price, l.price_unit, l.city, l.category, l.delivery, l.exchange, l.status, l.created_at, l.price_was, l.price_drop_at,
     l.subcategory, l.attrs, l.metro, l.video,
@@ -601,7 +605,7 @@ route('GET', '/api/listings', (ctx) => {
   const limit = Math.min(Math.max(parseInt(q.get('limit') || '24', 10) || 24, 1), 60);
   const offset = Math.max(parseInt(q.get('offset') || '0', 10) || 0, 0);
   const whereSql = where.join(' AND ');
-  const total = db.prepare(`SELECT COUNT(*) AS n FROM listings l JOIN users u ON u.id = l.user_id WHERE ${whereSql}`).get(...params).n;
+  const total = countListings(whereSql, params);
   const rows = db.prepare(`${CARD_SELECT} WHERE ${whereSql} ORDER BY ${order} LIMIT ? OFFSET ?`).all(uid, ...params, limit, offset);
   return {
     items: rows.map(cardFromRow),
@@ -617,7 +621,7 @@ route('GET', '/api/listings/map', (ctx) => {
   const spec = searchSpec(Object.fromEntries(ctx.query.entries()), CATEGORY_IDS);
   const f = specSql(spec);
   const whereSql = ['l.status = \'active\'', 'u.is_blocked = 0', ...f.where].join(' AND ');
-  const total = db.prepare(`SELECT COUNT(*) AS n FROM listings l JOIN users u ON u.id = l.user_id WHERE ${whereSql}`).get(...f.args).n;
+  const total = countListings(whereSql, f.args);
   const rows = db.prepare(`SELECT l.id, l.title, l.price, l.price_unit, l.city, l.metro,
       (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo
     FROM listings l JOIN users u ON u.id = l.user_id WHERE ${whereSql} ORDER BY l.created_at DESC, l.id DESC LIMIT 1000`).all(...f.args);
@@ -646,10 +650,11 @@ route('GET', '/api/listings/:id', (ctx) => {
   const isFav = ctx.user ? !!db.prepare('SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?').get(ctx.user.id, id) : false;
   const favCount = db.prepare('SELECT COUNT(*) AS n FROM favorites WHERE listing_id = ?').get(id).n;
   const uid = ctx.user ? ctx.user.id : 0;
-  // Похожие: сначала из той же подкатегории, потом из категории.
-  const similar = db.prepare(`${CARD_SELECT} WHERE l.status = 'active' AND u.is_blocked = 0 AND l.category = ? AND l.id != ?
-    ORDER BY (l.subcategory = ? AND l.subcategory != '') DESC, l.created_at DESC LIMIT 4`)
-    .all(uid, l.category, id, l.subcategory).map(cardFromRow);
+  // Похожие: сначала свежие из той же подкатегории, недостающие — из категории (оба запроса идут по индексу с датой).
+  const similarIn = (col, val, not) => db.prepare(`${CARD_SELECT} WHERE l.${col} = ? AND l.status = 'active' AND u.is_blocked = 0 AND l.id != ?
+    ${not.length ? `AND l.id NOT IN (${not.map(() => '?').join(',')})` : ''} ORDER BY l.created_at DESC LIMIT ?`).all(uid, val, id, ...not, 4 - not.length);
+  const sameSub = l.subcategory ? similarIn('subcategory', l.subcategory, []) : [];
+  const similar = [...sameSub, ...(sameSub.length < 4 ? similarIn('category', l.category, sameSub.map((r) => r.id)) : [])].map(cardFromRow);
   const attrs = attrsOf(l);
   const station = l.metro ? (({ name, line, color }) => ({ name, line, color }))(metro.stations(l.city).find((s) => s.name === l.metro) || { name: l.metro, line: '', color: '' }) : null;
   let market = null;
