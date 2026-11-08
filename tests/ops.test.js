@@ -135,6 +135,18 @@ test('вход в модерацию с нового устройства — п
     const list = (await a.get('/api/admin/devices')).data.items;
     assert.equal(list.length, 1);
     assert.equal(list[0].current, true);
+    // 1.38.3: устройство подтверждено кодом, а отметки «защита включена» нет (подтверждали в старой версии) —
+    // раньше плашка «Защита не включена» не уходила; теперь подтверждённое устройство само включает защиту.
+    {
+      const { DatabaseSync } = require('node:sqlite');
+      const xdb = new DatabaseSync(require('node:path').join(s2.tmp, 'data', 'torgana.db'));
+      xdb.exec('PRAGMA busy_timeout = 5000');
+      xdb.prepare('DELETE FROM admin_device_armed WHERE user_id = ?').run(a.user.id);
+      xdb.close();
+      const st = (await a.get('/api/admin/device')).data;
+      assert.equal(st.confirmed, true);
+      assert.equal(st.armed, true, 'плашка больше не показывается');
+    }
     // тот же аккаунт на другом устройстве — снова код
     const other = client(s2.base);
     await other.post('/api/auth/login', { email: 'admin@test.local', password: 'password123' });
