@@ -431,24 +431,46 @@
     };
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
     let busy = false;
-    // Листание с анимацией: текущее фото уезжает, следующее приезжает с другой стороны.
-    const slide = async (k, dir) => {
+    // Листание как лента: соседнее фото едет рядом с текущим (за пальцем или по кнопке), без затемнения.
+    const gw = document.createElement('div'); gw.className = 'pv-gwrap'; gw.setAttribute('aria-hidden', 'true');
+    gw.innerHTML = '<img class="pv-img" alt="" draggable="false">';
+    stage.appendChild(gw);
+    const gimg = gw.firstChild;
+    const GAP = 24;
+    const EASE = 'transform .36s cubic-bezier(.22,.8,.24,1)';
+    const ghostTo = (k) => { if (gimg.dataset.k !== String(k)) { gimg.src = srcs[k]; gimg.dataset.k = String(k); } };
+    const ghostHide = () => { gw.style.transition = 'none'; gw.style.visibility = 'hidden'; gw.style.transform = ''; };
+    const peek = (dx) => { // во время свайпа: сосед с той стороны, куда тянут
       if (!many) return;
-      if (reduce || busy) { if (!busy) show(k); return; }
+      const dir = dx < 0 ? 1 : -1;
+      ghostTo((i + dir + srcs.length) % srcs.length);
+      gw.style.transition = 'none'; gw.style.visibility = 'visible';
+      gw.style.transform = `translateX(${dx + dir * (stage.clientWidth + GAP)}px)`;
+    };
+    const slide = (k, dir, dx = 0) => {
+      if (!many || busy) return;
+      k = (k + srcs.length) % srcs.length;
+      if (reduce) { show(k); return; }
       busy = true;
-      const W = stage.clientWidth * 0.55;
-      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-      img.style.transition = 'transform .18s cubic-bezier(.4,0,1,1), opacity .18s';
-      img.style.transform = `translateX(${-dir * W}px)`; img.style.opacity = '0';
-      await wait(170);
-      show(k);
-      img.style.transition = 'none'; img.style.transform = `translateX(${dir * W}px)`; img.style.opacity = '0';
-      try { await img.decode(); } catch { /* покажем как есть */ }
-      void img.offsetWidth;
-      img.style.transition = 'transform .32s cubic-bezier(.22,.8,.24,1), opacity .24s';
-      img.style.transform = 'translate(0px, 0px) scale(1)'; img.style.opacity = '1';
-      await wait(320);
-      img.style.transition = ''; busy = false;
+      const W = stage.clientWidth + GAP;
+      ghostTo(k);
+      gw.style.transition = 'none'; gw.style.visibility = 'visible'; gw.style.transform = `translateX(${dx + dir * W}px)`;
+      img.style.transition = 'none'; img.style.transform = `translateX(${dx}px)`;
+      void gw.offsetWidth;
+      gw.style.transition = EASE; img.style.transition = EASE;
+      gw.style.transform = 'translateX(0px)'; img.style.transform = `translateX(${-dir * W}px)`;
+      setTimeout(() => {
+        show(k);
+        const done = () => { ghostHide(); img.style.transition = ''; busy = false; };
+        img.decode ? img.decode().then(done, done) : done();
+      }, 360);
+    };
+    const snapBack = (dx) => { // не дотянули — оба фото возвращаются на место
+      if (!dx) { ghostHide(); apply(); return; }
+      const dir = dx < 0 ? 1 : -1;
+      gw.style.transition = EASE; gw.style.transform = `translateX(${dir * (stage.clientWidth + GAP)}px)`;
+      apply();
+      setTimeout(ghostHide, 360);
     };
     const show = (k) => {
       i = (k + srcs.length) % srcs.length; z = 1; x = 0; y = 0; apply(false);
@@ -501,7 +523,12 @@
       const dx = e.clientX - start0.px; const dy = e.clientY - start0.py;
       if (Math.abs(dx) + Math.abs(dy) > 6) moved = true;
       if (z > 1) { x = start0.x + dx; y = start0.y + dy; clamp(); apply(false); }
-      else if (moved) { img.style.transition = 'none'; img.style.transform = Math.abs(dy) > Math.abs(dx) && dy > 0 ? `translateY(${dy}px)` : `translateX(${dx}px)`; v.style.backgroundColor = Math.abs(dy) > Math.abs(dx) && dy > 0 ? `rgba(11, 11, 11, ${Math.max(0.3, 1 - dy / 400)})` : ''; }
+      else if (moved && !busy) {
+        const down = Math.abs(dy) > Math.abs(dx) && dy > 0;
+        img.style.transition = 'none'; img.style.transform = down ? `translateY(${dy}px)` : `translateX(${dx}px)`;
+        v.style.backgroundColor = down ? `rgba(11, 11, 11, ${Math.max(0.3, 1 - dy / 400)})` : '';
+        if (down) ghostHide(); else peek(dx);
+      }
     });
     const end = (e) => {
       pts.delete(e.pointerId);
@@ -512,8 +539,8 @@
       if (z === 1 && moved) {
         if (dy > 110 && Math.abs(dy) > Math.abs(dx)) { close(); return; }
         const fast = Math.abs(dx) / Math.max(1, Date.now() - start0.t) > 0.35;
-        if (many && (Math.abs(dx) > 60 || (fast && Math.abs(dx) > 24)) && Math.abs(dx) > Math.abs(dy)) { start0 = null; slide(i + (dx < 0 ? 1 : -1), dx < 0 ? 1 : -1); return; }
-        apply();
+        if (many && !busy && (Math.abs(dx) > 60 || (fast && Math.abs(dx) > 24)) && Math.abs(dx) > Math.abs(dy)) { start0 = null; slide(i + (dx < 0 ? 1 : -1), dx < 0 ? 1 : -1, dx); return; }
+        if (!busy) snapBack(Math.abs(dx) > Math.abs(dy) ? dx : 0);
       }
       // Двойное касание на телефоне — увеличить или вернуть.
       if (!moved && e.pointerType === 'touch') { const t = Date.now(); if (t - lastTap < 280) { zoomAt(z > 1 ? 1 : 2.5, e.clientX, e.clientY); lastTap = 0; } else lastTap = t; }
@@ -1869,15 +1896,13 @@
               ${opt('exchange', 'refresh', 'Обмен', 'Покажем «Обмен» в объявлении и фильтрах', !!src.exchange)}
               ${opt('delivery', 'truck', 'Доставка', 'Отправлю по России', !!src.delivery)}
               ${opt('', 'info', 'Договорная', 'Цену не показываем — договоритесь в чате', st.negotiable, 'neg')}
-            </div>`)}
-          ${step(3, 's-publish', 'Проверьте и отправьте', l && l.status === 'active' && l.expiresAt ? `Опубликовано до ${dateShort(l.expiresAt)} · после проверки вернётся в поиск` : '30 дней бесплатно · сначала проверит модератор', html`
-            <div class="ed-preview ed-preview-m" id="preview-m" aria-hidden="true"></div>
+            </div>
             <div class="field"><label for="city">Город</label>
               <div class="ed-icon-input">${ic('pin', 18)}<input id="city" name="city" class="input" data-cities autocomplete="off" value="${src.city || S.user.city || S.city || ''}" placeholder="Начните вводить город"></div></div>
             <div class="field"><label for="desc">Описание <small class="muted">— по желанию</small></label>
             <div class="ed-tips" aria-label="Что написать">${DESC_TIPS.map((t) => html`<button type="button" class="chip" data-tip="${t}">${ic('plus', 14, 2.2)}${t}</button>`)}</div>
             <div class="ed-input"><label for="desc" class="sr">Описание</label><textarea id="desc" name="description" class="textarea" maxlength="4000" placeholder="Состояние, комплектация, причина продажи, особенности">${src.description || ''}</textarea><span class="ed-count" id="desc-count"></span></div></div>
-            <details class="ed-more" id="ed-more"><summary><span class="eb-ic">${ic('plus', 18, 2.2)}</span><span class="eb-t"><b>Ещё по желанию</b><small id="more-sub">метро, район, характеристики, видео</small></span>${ic('down', 18, 2)}</summary>
+            <details class="ed-more" id="ed-more"><summary><span class="em-ic">${ic('sparkle', 20, 1.9)}</span><span class="eb-t"><b>Дополнительно</b><small id="more-sub">метро, район, характеристики, видео — по желанию</small></span><span class="em-open">${ic('down', 18, 2)}</span></summary>
               <div class="ed-more-in">
             <div class="ed-where2">
               <div class="field hidden" id="metro-field"><label for="metro">Метро</label>
@@ -1888,7 +1913,9 @@
                 <div class="ed-attrs hidden" id="attrs-more"></div>
                 <div id="video-slot"></div>
               </div>
-            </details>
+            </details>`)}
+          ${step(3, 's-publish', 'Проверьте и отправьте', l && l.status === 'active' && l.expiresAt ? `Так увидят покупатели · опубликовано до ${dateShort(l.expiresAt)}` : 'Так увидят покупатели · 30 дней бесплатно', html`
+            <div class="rv" id="review"></div>
             ${canSchedule ? html`<fieldset class="ed-when"><legend class="sr">Когда опубликовать</legend>
               <div class="ed-seg">
                 <label><input type="radio" name="pub-when" value="now" ${at0 ? '' : raw('checked')}><span>${ic('bolt', 16, 2)}Сразу</span></label>
@@ -2223,13 +2250,13 @@
       ['s-what', 'Раздел', (b) => !!b.subcategory || (!!b.category && !subsOf(b.category).length), true],
       ['s-what', 'Характеристики', (b) => !!b.subcategory && !attrsMissing(b).length && attrsDone(b), attrsReq],
       ['s-what', 'Цена', (b) => !!b.price || st.negotiable, false],
-      ['s-publish', 'Город', (b) => b.city.length >= 2, true],
-      ['s-publish', 'Описание', (b) => b.description.length >= 20, false]
+      ['s-what', 'Город', (b) => b.city.length >= 2, true],
+      ['s-what', 'Описание', (b) => b.description.length >= 20, false]
     ];
     const ERR = {
       's-what': (b) => (b.title.length < 3 ? 'Напишите название — хотя бы пару слов.' : !b.category ? 'Выберите категорию.' : !b.subcategory && subsOf(b.category).length ? 'Выберите раздел — так объявление попадёт в нужные фильтры.'
-        : attrsMissing(b).length ? `Укажите: ${attrsMissing(b).map((f) => f.label.toLowerCase()).join(', ')}.` : ''),
-      's-publish': (b) => (b.city.length < 2 ? 'Укажите город.' : b.publishAt !== null && b.publishAt < Date.now() + 5 * 60 * 1000 ? 'Выберите время позже — хотя бы через несколько минут.' : boostErr(st.boost))
+        : attrsMissing(b).length ? `Укажите: ${attrsMissing(b).map((f) => f.label.toLowerCase()).join(', ')}.` : b.city.length < 2 ? 'Укажите город.' : ''),
+      's-publish': (b) => (b.publishAt !== null && b.publishAt < Date.now() + 5 * 60 * 1000 ? 'Выберите время позже — хотя бы через несколько минут.' : boostErr(st.boost))
     };
     let saveTimer = null;
     function changed() {
@@ -2257,13 +2284,14 @@
       const pb = st.boost;
       const ready = st.photos.filter((p) => p.url && !p.loading);
       const prevBoost = pb.xl || pb.frame || pb.tags.length ? { xl: pb.xl, frame: pb.frame, tags: pb.tags, photos: ready.slice(1, 3).map((p) => p.url), more: Math.max(0, ready.length - 3), desc: b.description.replace(/\s+/g, ' ').slice(0, 180) } : null;
-      $('#preview').innerHTML = $('#preview-m').innerHTML = String(card({ id: 0, title: b.title || 'Название объявления', price: b.price ? Number(b.price) : null, priceUnit: b.priceUnit, city: b.city || 'Город', createdAt: Date.now(), photo: first ? first.url : null, delivery: b.delivery, exchange: b.exchange,
+      $('#preview').innerHTML = String(card({ id: 0, title: b.title || 'Название объявления', price: b.price ? Number(b.price) : null, priceUnit: b.priceUnit, city: b.city || 'Город', createdAt: Date.now(), photo: first ? first.url : null, delivery: b.delivery, exchange: b.exchange,
         summary: attrSummary(b.subcategory, b.attrs), metro: b.metro, hasVideo: !!st.video, boost: prevBoost }));
       const q = boostQuote(pb);
       $$('[data-submit]').forEach((x) => { const t = x.id === 'dock-send' ? (l ? 'Сохранить' : 'На проверку') : sendLabel; x.textContent = q.any ? `${t} · ${rub(q.amount)}` : t; });
       const pt = $('#paid-terms'); if (pt) pt.classList.toggle('hidden', !q.any);
       const moreN = [b.metro, b.district, b.video].filter(Boolean).length + (subOf(b.subcategory) || { fields: [] }).fields.filter((f) => !f.req && b.attrs[f.key] !== undefined).length;
-      $('#more-sub').textContent = moreN ? `заполнено: ${moreN}` : 'метро, район, характеристики, видео';
+      $('#more-sub').textContent = moreN ? `заполнено: ${moreN} · можно добавить ещё` : 'метро, район, характеристики, видео — по желанию';
+      renderReview(b);
       const eb = $('#ed-boost');
       if (eb) { if (q.any) eb.open = true; eb.classList.toggle('on', q.any); const es = $('#eb-sum'); es.textContent = q.any ? rub(q.amount) : es.dataset.from; }
       if (st.tried) for (const sid of Object.keys(ERR)) showErr(sid, ERR[sid](b));
@@ -2271,6 +2299,26 @@
       if (!l && !has) draftDrop();
       if (!l && has) { clearTimeout(saveTimer); saveTimer = setTimeout(() => draftSave({ ...b, price: b.price, negotiable: st.negotiable, step: st.step, photos: st.photos.filter((p) => p.file).map((p) => ({ file: p.file, url: p.url })), video: st.video && st.video.file ? { file: st.video.file, url: st.video.url, duration: st.video.duration } : null }), 400); }
     }
+    // Шаг «Отправка»: объявление целиком — как увидят покупатели, с переходом к правке.
+    const renderReview = (b) => {
+      const box = $('#review'); if (!box) return;
+      const ph = st.photos.filter((p) => p.url && !p.loading);
+      const x = subOf(b.subcategory);
+      const kv = x ? x.fields.filter((f) => b.attrs[f.key] !== undefined).map((f) => [f.label, `${typeof b.attrs[f.key] === 'number' ? NF.format(b.attrs[f.key]) : b.attrs[f.key]}${f.unit ? ` ${f.unit}` : ''}`]) : [];
+      const deal = [b.bargain && !st.negotiable && 'Торг', b.exchange && 'Обмен', b.delivery && 'Доставка'].filter(Boolean);
+      const cat = S.config.categories.find((c) => c.id === b.category);
+      box.innerHTML = String(html`<div class="rv-media">${ph.length ? html`<div class="rv-main"><img src="${ph[0].url}" alt=""></div>${ph.length > 1 ? html`<div class="rv-strip">${ph.slice(1, 5).map((p, k) => html`<span><img src="${p.url}" alt="">${k === 3 && ph.length > 5 ? html`<em>+${ph.length - 5}</em>` : ''}</span>`)}</div>` : ''}` : html`<button type="button" class="rv-nophoto" data-rv="0">${ic('camera', 26, 1.7)}<b>Без фото</b><span>Объявления с фото смотрят в разы чаще — добавить</span></button>`}${st.video ? html`<span class="rv-vid">${ic('play', 12, 0)}Видео</span>` : ''}</div>
+        <div class="rv-body">
+          <div class="rv-top"><b class="rv-price">${b.price ? price(Number(b.price), b.priceUnit) : 'Цена договорная'}</b><button type="button" class="rv-edit" data-rv="1">${ic('edit', 15, 2)}Изменить</button></div>
+          <h3>${b.title || 'Без названия'}</h3>
+          <span class="rv-where">${ic('pin', 15, 2)}${b.city || 'Город не указан'}${b.metro ? ` · м. ${b.metro}` : ''}${b.district ? ` · ${b.district}` : ''}</span>
+          ${cat ? html`<span class="rv-cat">${cat.name}${x ? ` › ${x.name}` : ''}${CONDITION_CATS.has(b.category) && b.condition ? ` · ${b.condition === 'new' ? 'новое' : 'б/у'}` : ''}</span>` : ''}
+          ${deal.length ? html`<div class="rv-tags">${deal.map((t) => html`<span>${t}</span>`)}</div>` : ''}
+          ${kv.length ? html`<dl class="rv-kv">${kv.map(([k, v]) => html`<div><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>` : ''}
+          <p class="rv-desc ${b.description ? '' : 'empty'}">${b.description || 'Описание не добавлено — по желанию, но с ним продают быстрее.'}</p>
+        </div>`);
+      $$('[data-rv]', box).forEach((x2) => { x2.onclick = () => goStep(Number(x2.dataset.rv)); });
+    };
     const showErr = (sid, msg) => { const s = $(`#${sid}`); s.classList.toggle('bad', !!msg); const e = $('.ed-err', s); e.hidden = !msg; e.innerHTML = msg ? String(html`${ic('warn', 16, 2)}${msg}`) : ''; };
     form.title.oninput = () => { changed(); fetchHintSoon(); };
     form.city.oninput = () => { changed(); clearTimeout(metroTimer); metroTimer = setTimeout(loadMetro, 300); };
@@ -2289,7 +2337,7 @@
       const b = body();
       const miss = sid === 's-what' && b.subcategory ? attrsMissing(b)[0] : null;
       const f = sid === 's-what' && b.title.length < 3 ? form.title : sid === 's-what' && b.category && !b.subcategory ? $('[data-sub]')
-        : miss ? $(`#at-${miss.key}`) || $(`[data-field="${miss.key}"] button`) : sid === 's-publish' && b.city.length < 2 ? form.city : sid === 's-publish' ? $('#w-time + .pick-btn') : null;
+        : miss ? $(`#at-${miss.key}`) || $(`[data-field="${miss.key}"] button`) : sid === 's-what' && b.city.length < 2 ? form.city : sid === 's-publish' ? $('#w-time + .pick-btn') : null;
       if (f) setTimeout(() => { f.focus({ preventScroll: true }); if (miss) f.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 60);
     };
     // check — «Далее» не пускает дальше, пока на текущем шаге не заполнено обязательное.
