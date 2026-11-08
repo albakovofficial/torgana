@@ -316,10 +316,11 @@ function pages(d) {
     ['new-step-publish-boost', '/new', d.seller, 'step:2:boost'],
     // 1.36: «Ещё по желанию» на шаге «Отправка» — метро, район, необязательные характеристики, видео
     ['edit-step-more', `/edit/${d.ids[2]}`, d.seller, 'step:2:more'],
+    ['edit-step-review', `/edit/${d.ids[2]}`, d.seller, 'step:2'],
     // 1.22: характеристики чипсами, выбор из списка (метро, сортировка), карточка автора, уведомления
     ['edit-car-attrs', `/edit/${d.car}`, d.seller, 'step:1'],
     ['edit-sofa-attrs', `/edit/${d.ids[4]}`, d.seller, 'step:1'],
-    ['pick-metro', `/edit/${d.ids[2]}`, d.seller, 'pick:2:#metro'],
+    ['pick-metro', `/edit/${d.ids[2]}`, d.seller, 'pick:1:#metro'],
     ['pick-brand', `/edit/${d.car}`, d.seller, 'pick:1:[data-field="brand"] [data-av-more]'],
     ['pick-sort', '/search?category=transport', null, 'pick::#sort'],
     ['listing-owner', `/l/${d.ids[0]}`, d.seller],
@@ -330,6 +331,8 @@ function pages(d) {
     ['photo-viewer', `/l/${d.ids[0]}`, null, '.g-img'],
     // 1.35.5: галерея листается свайпом — лента едет за пальцем
     ['gallery-swipe', `/l/${d.ids[0]}`, null, 'swipe'],
+    // 1.36.1: в просмотре фото соседнее фото въезжает рядом, без затемнения
+    ['photo-viewer-slide', `/l/${d.ids[0]}`, null, 'pv-slide'],
     ['push-ask', '/', d.buyer, 'push-ask']
   ];
 }
@@ -458,11 +461,13 @@ async function main() {
           await page.waitForTimeout(1800);
           if (await page.$('.ask-push')) errors.push('вопрос про уведомления повторился');
         } else if (open === 'step:2:more') {
-          await page.click('[data-step="2"]');
+          await page.click('[data-step="1"]');
           await page.waitForTimeout(300);
           await page.evaluate(() => { document.querySelector('#ed-more').open = true; });
           await page.waitForTimeout(200);
-          if (!(await page.$('#ed-more #district'))) errors.push('нет «Ещё по желанию»');
+          if (!(await page.$('#ed-more #district'))) errors.push('нет «Дополнительно»');
+          await page.$eval('#ed-more', (e) => e.scrollIntoView({ block: 'start' }));
+          await page.waitForTimeout(300);
         } else if (open === 'step:2:boost') {
           // Продвижение при подаче: XL и метки, одна метка выбрана — цена на кнопке, превью с XL.
           await page.click('[data-step="2"]');
@@ -475,6 +480,15 @@ async function main() {
           await page.waitForTimeout(200);
           if (!(await page.$('#preview .card.is-xl .b-tag'))) errors.push('превью без XL и метки');
           if (!/128 ₽/.test(await page.textContent('[data-submit] >> visible=true'))) errors.push('на кнопке нет цены продвижения');
+        } else if (open === 'pv-slide') {
+          await page.click('.g-img');
+          await page.waitForTimeout(300);
+          await page.keyboard.press('ArrowRight');
+          await page.waitForTimeout(150);
+          const mid = await page.evaluate(() => { const g = document.querySelector('.pv-gwrap'); const im = document.querySelector('.pv-stage > .pv-img'); return { ghost: g && getComputedStyle(g).visibility, op: im && getComputedStyle(im).opacity }; });
+          if (mid.ghost !== 'visible' || mid.op !== '1') errors.push(`листание с затемнением: ${JSON.stringify(mid)}`);
+          await page.waitForTimeout(500);
+          if (!/^2 из/.test(await page.textContent('.pv-count'))) errors.push('просмотр не перелистнул фото');
         } else if (open === 'swipe') {
           const n = await page.$$eval('.g-slide', (x) => x.length);
           if (n > 1) {
