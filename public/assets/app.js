@@ -127,7 +127,8 @@
     sliders: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
     xl: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M14 5v14M14 12h7"/>',
     frame: '<rect x="4" y="4" width="16" height="16" rx="4"/><rect x="7.5" y="7.5" width="9" height="9" rx="2"/>',
-    bolt: '<path d="M13 3L5 13.5h6L10 21l8-10.5h-6z"/>'
+    bolt: '<path d="M13 3L5 13.5h6L10 21l8-10.5h-6z"/>',
+    phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>'
   };
   const CAT_P = {
     transport: '<path d="M3 13l2-5a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 5v4H3z"/><circle cx="7.5" cy="17" r="1.6"/><circle cx="16.5" cy="17" r="1.6"/>',
@@ -1018,13 +1019,13 @@
   // или (auto) сама при прокрутке. Возвращает функцию остановки для cleanup.
   function listingFeed(box, params, { limit = 24, empty, onFirst, auto = false }) {
     const more = box.nextElementSibling;
-    let offset = 0; let total = Infinity; let busy = false; let io = null;
+    let offset = 0; let total = Infinity; let busy = false; let io = null; let dead = false;
     const load = async () => {
-      if (busy || offset >= total) return;
+      if (busy || dead || offset >= total) return;
       busy = true;
       try {
         const data = await api('GET', `/api/listings?${new URLSearchParams({ ...params, limit, offset })}`);
-        if (!box.isConnected) return;
+        if (!box.isConnected || dead) return; // ленту уже сменили (другая категория на главной)
         if (offset === 0) {
           if (onFirst) onFirst(data);
           box.innerHTML = String(data.items.length ? grid(data.items) : empty);
@@ -1045,7 +1046,7 @@
       more.innerHTML = '<button class="btn btn-soft btn-lg" type="button">Показать ещё</button>';
       more.firstChild.onclick = load;
     }
-    return { first: load(), stop: () => io && io.disconnect() };
+    return { first: load(), stop: () => { dead = true; if (io) io.disconnect(); } };
   }
 
   // Блок «Реклама» над лентой или выдачей: один ряд — столько карточек, сколько колонок у сетки под ним.
@@ -1063,6 +1064,9 @@
   // Строка поиска и город, категории, бесконечная лента (на телефоне по 3 в ряд, на компьютере по 5).
   async function viewHome() {
     setTitle('');
+    // 1.38.1: капсула категории переключает ленту на месте (/?cat=…), без перехода в поиск.
+    let cat = new URLSearchParams(location.search).get('cat') || '';
+    if (!S.config.categories.some((c) => c.id === cat)) cat = '';
     app.innerHTML = String(html`
       <section class="wrap home-top">
         <h1 class="sr">Торгана — объявления по всей России</h1>
@@ -1074,19 +1078,44 @@
           <button class="hs-go" type="submit" aria-label="Найти">${ic('search', 19, 2.2)}</button>
         </form>
         <div class="cat-rail"><button type="button" class="cat-arrow prev" data-cat-scroll="-1" aria-label="Назад">${ic('left', 18, 2.2)}</button>
-          <nav class="cat-pills" aria-label="Категории"><a class="cat-pill on" href="/search${S.city ? `?city=${encodeURIComponent(S.city)}` : ''}">${ic('list', 17, 2)}Все</a>${S.config.categories.map((c) => html`<a class="cat-pill" href="${cpath(c.id, S.city)}">${catIc(c.id, 18)}${c.name}</a>`)}</nav>
+          <nav class="cat-pills" aria-label="Категории"><a class="cat-pill ${cat ? '' : 'on'}" data-cat="" href="/search${S.city ? `?city=${encodeURIComponent(S.city)}` : ''}" ${cat ? '' : raw('aria-current="true"')}>${ic('list', 17, 2)}Все</a>${S.config.categories.map((c) => html`<a class="cat-pill ${c.id === cat ? 'on' : ''}" data-cat="${c.id}" href="${cpath(c.id, S.city)}" ${c.id === cat ? raw('aria-current="true"') : ''}>${catIc(c.id, 18)}${c.name}</a>`)}</nav>
           <button type="button" class="cat-arrow next" data-cat-scroll="1" aria-label="Дальше">${ic('right', 18, 2.2)}</button></div>
       </section>
 
       <section class="wrap home-feed">
-        <div class="section-head"><h2>Свежие объявления${S.city ? html` · ${S.city}` : ''}</h2><a href="/search${S.city ? `?city=${encodeURIComponent(S.city)}` : ''}">Смотреть все</a></div>
+        <div class="section-head"><h2 id="feed-h"></h2><a id="feed-all" href="/search">Смотреть все</a></div>
         <div id="feed" class="feed">${skeletonGrid(15)}</div>
         <div class="more hidden"></div>
       </section>`);
-    const feed = listingFeed($('#feed'), S.city ? { city: S.city } : {}, {
-      limit: 30,
-      auto: true,
-      empty: html`<div class="empty"><h3>${S.city ? `В городе ${S.city} пока нет объявлений` : 'Здесь появятся первые объявления'}</h3><p>Разместите своё — это бесплатно и займёт пару минут.</p><a class="btn btn-dark" href="/new">Разместить объявление</a></div>`
+    let feed = null;
+    const startFeed = () => {
+      if (feed) feed.stop();
+      $$('.ads-row.feed').forEach((x) => x.remove());
+      const name = cat ? catName(cat) : '';
+      $('#feed-h').textContent = name ? `${name}${S.city ? ` · ${S.city}` : ''}` : `Свежие объявления${S.city ? ` · ${S.city}` : ''}`;
+      $('#feed-all').href = cat ? cpath(cat, S.city) : `/search${S.city ? `?city=${encodeURIComponent(S.city)}` : ''}`;
+      const params = { ...(S.city ? { city: S.city } : {}), ...(cat ? { category: cat } : {}) };
+      const box = $('#feed');
+      box.innerHTML = String(skeletonGrid(cat ? 9 : 15));
+      feed = listingFeed(box, params, {
+        limit: 30,
+        auto: true,
+        empty: cat ? html`<div class="empty"><h3>В разделе «${name}» пока пусто${S.city ? ` · ${S.city}` : ''}</h3><p>Станьте первым — разместить объявление бесплатно.</p><a class="btn btn-dark" href="/new">Разместить объявление</a></div>`
+          : html`<div class="empty"><h3>${S.city ? `В городе ${S.city} пока нет объявлений` : 'Здесь появятся первые объявления'}</h3><p>Разместите своё — это бесплатно и займёт пару минут.</p><a class="btn btn-dark" href="/new">Разместить объявление</a></div>`
+      });
+      feed.first.then(() => adRow(box, params, 'feed', S.city ? `в городе ${S.city}` : '')).catch(() => {});
+      return feed.first;
+    };
+    $('.cat-pills').addEventListener('click', (e) => {
+      const a = e.target.closest('[data-cat]');
+      if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.button) return; // в новой вкладке — обычная страница раздела
+      e.preventDefault();
+      if (a.dataset.cat === cat) return;
+      cat = a.dataset.cat;
+      $$('.cat-pill').forEach((x) => { const on = x === a; x.classList.toggle('on', on); if (on) x.setAttribute('aria-current', 'true'); else x.removeAttribute('aria-current'); });
+      a.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+      history.replaceState(history.state, '', cat ? `/?cat=${cat}` : '/');
+      startFeed().catch((ex) => toast(ex.message, true));
     });
     // Стрелки ленты категорий: видны, только когда есть куда листать.
     const rail = $('.cat-rail'); const pills = $('.cat-pills', rail);
@@ -1095,9 +1124,9 @@
     $$('[data-cat-scroll]', rail).forEach((b) => { b.onclick = () => pills.scrollBy({ left: Number(b.dataset.catScroll) * pills.clientWidth * 0.7 }); });
     window.addEventListener('resize', railPaint);
     railPaint();
-    cleanup = () => { feed.stop(); window.removeEventListener('resize', railPaint); };
-    await feed.first;
-    await adRow($('#feed'), S.city ? { city: S.city } : {}, 'feed', S.city ? `в городе ${S.city}` : '');
+    cleanup = () => { if (feed) feed.stop(); window.removeEventListener('resize', railPaint); };
+    await startFeed();
+    if (cat) $('.cat-pill.on').scrollIntoView({ inline: 'nearest', block: 'nearest' });
   }
 
   // ================= поиск =================
@@ -1498,14 +1527,15 @@
         l.status === 'scheduled' ? tile('data-status="archived"', 'pause', 'Не публиковать') : '',
         l.status === 'sold' || (l.status === 'archived' && !isExpired(l)) ? tile('data-status="active"', 'refresh', 'Опубликовать снова') : ''
       ].filter((x) => String(x));
-      const canPromote = ['active', 'pending', 'scheduled'].includes(l.status) && (boostOn() || pm || (data.boost || []).length);
+      const freeKinds = BOOST.filter(([k]) => !boostBusy(data.boost)[k]);
+      const canPromote = ['active', 'pending', 'scheduled'].includes(l.status) && boostOn();
       actions = html`<div class="own">
-        ${pm ? html`<div class="promo-now ${pm.status}">${ic(pm.status === 'active' ? 'megaphone' : 'clock', 20)}<div><b>${PROMO_STATUS[pm.status][1]}</b><span>${promoLine(pm)}</span></div></div>` : ''}
-        ${(data.boost || []).length ? html`<div class="promo-now active">${ic('bolt', 20)}<div><b>Продвигается</b><span>${data.boost.map((b) => `${b.kinds.map((k) => BOOST.find((x) => x[0] === k)[2]).join(', ')} — ${b.tagsState === 'review' ? 'метки на проверке, ' : b.tagsState === 'off' ? 'метки не одобрены, ' : ''}${boostState(b)}`).join('; ')}</span></div></div>` : ''}
+        ${pm && pm.status === 'active' ? promoCard(pm) : ''}
+        ${(data.boost || []).map(boostCard)}
         ${isExpired(l) ? html`<button class="btn btn-accent btn-lg btn-block" data-status="active">${ic('refresh', 20, 2)}Опубликовать снова</button>` : ''}
         ${l.status === 'scheduled' ? html`<button class="btn btn-accent btn-lg btn-block" data-status="active">Опубликовать сейчас</button>` : ''}
         <a class="btn btn-dark btn-lg btn-block" href="/edit/${l.id}">${ic('edit', 19, 2)}${l.status === 'rejected' ? 'Исправить' : 'Редактировать'}</a>
-        ${canPromote ? html`<button type="button" class="own-promo" data-promote><span class="own-promo-ic">${ic('bolt', 20, 2)}</span><span><b>Продвинуть</b><small>XL, рамка, метки · от ${rub(Math.min(...Object.values(boostPrices())))}</small></span>${ic('right', 18, 2)}</button>` : ''}
+        ${canPromote ? html`<button type="button" class="own-promo" data-promote><span class="own-promo-ic">${ic('bolt', 20, 2)}</span><span><b>${freeKinds.length < 3 ? 'Добавить продвижение' : 'Продвинуть'}</b><small>${freeKinds.length ? `${freeKinds.map(([k]) => ({ xl: 'XL', frame: 'рамка', tags: 'метки' })[k]).join(', ')} · от ${rub(Math.min(...freeKinds.map(([k]) => boostPrices()[k])))}` : 'реклама над поиском'}</small></span>${ic('right', 18, 2)}</button>` : ''}
         ${tiles.length ? html`<div class="own-acts n${tiles.length}">${tiles}</div>` : ''}
         <button type="button" class="own-del" data-delete>${ic('trash', 16, 2)}Удалить объявление</button>
       </div>`;
@@ -1781,6 +1811,33 @@
     return busy;
   }
   const boostState = (b) => (b.status === 'waiting' ? 'с публикацией' : `до ${dateShort(b.endsAt)}`);
+  // Реклама над поиском у автора — тем же видом, что и продвижение в ленте.
+  function promoCard(p) {
+    const left = Math.max(0, p.endsAt - Date.now());
+    const pct = Math.max(3, Math.min(100, Math.round((left / Math.max(1, p.endsAt - p.startsAt)) * 100)));
+    return html`<div class="bst"><span class="bst-ic">${ic('megaphone', 18, 2.2)}</span><div class="bst-body">
+      <div class="bst-top"><b>Реклама над поиском</b><em>${left < 86400000 ? 'последний день' : `ещё ${dayWord(Math.max(1, daysLeft(p.endsAt)))}`}</em></div>
+      <span class="bst-sub">показов ${NF.format(p.shows)} · переходов ${NF.format(p.clicks)}</span>
+      <span class="bst-bar" role="progressbar" aria-label="Осталось срока" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></span>
+      <span class="bst-end">до ${dateShort(p.endsAt)}</span></div></div>`;
+  }
+  // 1.38.1: «Продвигается» у автора на странице объявления — что включено, сколько осталось, полоска срока.
+  function boostCard(b) {
+    const names = b.kinds.map((k) => BOOST.find((x) => x[0] === k)[2]).join(' · ');
+    const tags = b.tagsState === 'review' ? html` · <span class="bst-note">метки на проверке</span>` : b.tagsState === 'off' ? html` · <span class="bst-note">метки не одобрены</span>` : '';
+    if (b.status !== 'active') {
+      return html`<div class="bst wait"><span class="bst-ic">${ic('clock', 18, 2.2)}</span><div class="bst-body">
+        <div class="bst-top"><b>Начнётся после проверки</b><em>7 дней</em></div><span class="bst-sub">${names}${tags}</span></div></div>`;
+    }
+    const left = Math.max(0, b.endsAt - Date.now());
+    const pct = Math.max(3, Math.min(100, Math.round((left / Math.max(1, b.endsAt - b.startsAt)) * 100)));
+    const d = Math.max(1, daysLeft(b.endsAt));
+    return html`<div class="bst"><span class="bst-ic">${ic('bolt', 18, 2.2)}</span><div class="bst-body">
+      <div class="bst-top"><b>Продвигается</b><em>${left < 86400000 ? 'последний день' : `ещё ${dayWord(d)}`}</em></div>
+      <span class="bst-sub">${names}${tags}</span>
+      <span class="bst-bar" role="progressbar" aria-label="Осталось срока" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></span>
+      <span class="bst-end">до ${dateShort(b.endsAt)}</span></div></div>`;
+  }
   function boostPicker(busy = {}) {
     const pr = boostPrices();
     const sum = pr.xl + pr.frame + pr.tags;
@@ -1826,8 +1883,7 @@
   const boostBody = (st) => ({ xl: st.xl, frame: st.frame, tags: st.tagsOn ? st.tags : [] });
   const boostErr = (st) => (st.tagsOn && !st.tags.length ? 'Выберите метки для фото — одну или две.' : '');
   async function boostPay(listingId, st) {
-    const r = await api('POST', `/api/listings/${listingId}/boost`, boostBody(st));
-    location.href = r.url;
+    goPay(await api('POST', `/api/listings/${listingId}/boost`, boostBody(st)));
   }
 
   // «Продвинуть» опубликованное или ждущее публикации объявление (из «Моих объявлений» и со страницы объявления).
@@ -1837,12 +1893,12 @@
     const busy = boostBusy(d.current);
     const st = { xl: false, frame: false, tagsOn: false, tags: [] };
     const all = Object.keys(busy).length >= 3;
-    const biz = isBiz() || promo;
+    const biz = true; // 1.38.1: реклама над поиском — для всех продавцов
     openModal(String(html`<div class="bm"><h2>Продвижение</h2><p class="muted bm-sub">«${title}» · ${d.days} дней${d.status === 'active' ? '' : ' с публикации'}</p>
       ${d.current.length ? html`<div class="bm-now">${d.current.map((b) => html`<div>${ic('check', 16, 2.4)}<span>${b.kinds.map((k) => BOOST.find((x) => x[0] === k)[2]).join(', ')}${b.tags.length ? ` (${b.tags.join(', ')})` : ''}</span><em>${b.tagsState === 'review' ? 'метки на проверке · ' : b.tagsState === 'off' ? 'метки не одобрены · ' : ''}${boostState(b)}</em></div>`)}</div>` : ''}
       ${all ? html`<p class="muted">Всё уже включено.</p>` : d.ready ? boostPicker(busy) : html`<p class="muted">Оплата пока не подключена.</p>`}
       <p class="bm-note">Порядок выдачи не меняется — карточка заметнее и подписана «Продвигается». Оплата на странице ЮKassa, чек — на ${S.user.email}. <a href="/page/terms#paid">Условия</a></p>
-      ${biz ? html`<button type="button" class="bm-biz" data-biz>${ic('megaphone', 18, 2)}<span><b>Реклама над поиском</b><small>для ИП и компаний${promo ? ` · ${PROMO_STATUS[promo.status][1].toLowerCase()}` : ''}</small></span>${ic('right', 18, 2)}</button>` : ''}
+      ${biz ? html`<button type="button" class="bm-biz" data-biz>${ic('megaphone', 18, 2)}<span><b>Реклама над поиском</b><small>${promo ? PROMO_STATUS[promo.status][1].toLowerCase() : 'отдельный блок над выдачей'}</small></span>${ic('right', 18, 2)}</button>` : ''}
       <div class="modal-actions"><button class="btn btn-soft" data-x>Закрыть</button>${!all && d.ready ? html`<button class="btn btn-accent" data-ok disabled>Выберите</button>` : ''}</div></div>`), (m, close) => {
       $('[data-x]', m).onclick = close;
       m.addEventListener('click', (e) => { if (e.target.closest('a[href]')) close(); });
@@ -3390,11 +3446,6 @@
     const groups = { active: [], scheduled: [], pending: [], rejected: [], sold: [], archived: [] };
     items.forEach((i) => (groups[i.status] || groups.archived).push(i));
     const list = groups[status] || [];
-    const tips = [
-      ['camera', 'Светлые фото', 'Снимайте при дневном свете, с разных сторон — первое фото видно в поиске.'],
-      ['sparkle', 'Честная цена', 'При размещении подскажем цену по похожим объявлениям.'],
-      ['chat', 'Отвечайте быстро', 'Первые часы после публикации — самые активные.']
-    ];
     $('#box').innerHTML = String(html`
       ${items.length ? html`<div class="pf-status" role="tablist">${Object.keys(MY_STATUS).filter((k) => k !== 'scheduled' || groups.scheduled.length || status === k).map((k) => html`<a class="chip ${k === status ? 'active' : ''} ${groups[k].length ? '' : 'zero'}" href="/profile?status=${k}">${MY_STATUS[k]}<span class="cnt">${groups[k].length}</span></a>`)}</div>` : ''}
       ${list.length ? html`<div class="ml-list">${list.map((i) => {
@@ -3409,8 +3460,8 @@
             <span class="ml-tag ${tone}"><i></i>${label}</span>
             <a href="/l/${i.id}" class="ml-title">${i.title}</a>
             <div class="ml-price">${price(i.price, i.priceUnit)}</div>
-            ${i.promo ? html`<span class="ml-promo ${i.promo.status}">${ic('megaphone', 13, 2)}${i.promo.status === 'active' ? `Реклама до ${dateShort(i.promo.endsAt)}` : 'Ждёт маркировки'}</span>` : ''}
-            ${(i.boost || []).map((b) => html`<span class="ml-promo ${b.status === 'active' ? 'active' : 'marking'}">${ic('bolt', 13, 2)}${b.kinds.map((k) => BOOST.find((x) => x[0] === k)[2]).join(', ')} · ${boostState(b)}${b.tagsState === 'review' ? ' · метки на проверке' : ''}</span>`)}
+            ${i.promo ? html`<span class="ml-promo ${i.promo.status}">${ic('megaphone', 13, 2)}${i.promo.status === 'active' ? `Реклама · ещё ${dayWord(Math.max(1, daysLeft(i.promo.endsAt)))}` : 'Реклама'}</span>` : ''}
+            ${(i.boost || []).map((b) => html`<span class="ml-promo ${b.status === 'active' ? 'active' : 'marking'}">${ic(b.status === 'active' ? 'bolt' : 'clock', 13, 2)}${b.status === 'active' ? `Продвигается · ещё ${dayWord(Math.max(1, daysLeft(b.endsAt)))}` : 'Продвижение — после проверки'}</span>`)}
             <div class="ml-meta"><span title="Просмотры">${svg(P.eye, 15, 1.8)} ${NF.format(i.views)}</span><span title="В избранном">${svg(P.heart, 15, 1.8)} ${i.favCount}</span><span>${i.city} · ${shortWhen(i.createdAt)}</span>${i.status === 'active' && i.expiresAt ? html`<span title="Объявление висит 30 дней, потом его можно бесплатно опубликовать снова">${ic('clock', 15, 1.8)} до ${dateShort(i.expiresAt)}</span>` : ''}</div>
           </div>
           <div class="ml-side">
@@ -3428,10 +3479,9 @@
       })}</div>`
       : status === 'active' && !items.length ? html`<div class="pf-empty">
           <div class="pf-empty-ic">${svg(P.tag, 34, 1.6)}</div>
-          <h3>Разместите первое объявление</h3>
-          <p>Это бесплатно и занимает пару минут. Каждое объявление проверяет модератор — обычно несколько часов.</p>
-          <a class="btn btn-dark" href="/new">${ic('plus', 18, 2.2)}Разместить объявление</a>
-          <div class="pf-tips">${tips.map(([icn, t, d]) => html`<div class="pf-tip"><span>${ic(icn, 20)}</span><div><b>${t}</b><p>${d}</p></div></div>`)}</div>
+          <h3>Пока нет объявлений</h3>
+          <p>Бесплатно и за пару минут.</p>
+          <a class="btn btn-dark" href="/new">${ic('plus', 18, 2.2)}Разместить</a>
         </div>`
       : html`<div class="pf-empty sm"><h3>Здесь пусто</h3><p>${{ active: 'Нет опубликованных объявлений.', scheduled: 'Нет объявлений, ждущих выбранного времени.', pending: 'Сейчас ничего не ждёт проверки.', rejected: 'Нет объявлений, которые нужно исправить.', sold: 'Отметьте объявление «Продано», и оно появится здесь.', archived: 'Снятые с публикации объявления появятся здесь.' }[status]}</p></div>`}`);
     const byId = Object.fromEntries(items.map((i) => [String(i.id), i]));
@@ -3843,7 +3893,7 @@
       m.addEventListener('click', (e) => { if (e.target.closest('a[href]')) close(); });
       $('[data-ok]', m).onclick = async (e) => {
         const b = e.currentTarget; b.disabled = true; b.textContent = 'Открываем оплату…';
-        try { const r = await api('POST', url, body); location.href = r.url; } catch (ex) { toast(ex.message, true); b.disabled = false; b.textContent = `Оплатить ${rub(amount)}`; }
+        try { goPay(await api('POST', url, body)); } catch (ex) { toast(ex.message, true); b.disabled = false; b.textContent = `Оплатить ${rub(amount)}`; }
       };
     });
   }
@@ -3855,7 +3905,7 @@
     ['Как оплатить?', 'На странице ЮKassa — банковской картой, через СБП и другими способами, доступными в ЮKassa. Чек придёт на почту. Автоплатежей нет: тариф продлеваете сами, когда нужно.'],
     ['Что будет, когда тариф закончится?', 'За 3 дня придёт письмо. После окончания витрина и значок «Магазин» скрываются, а объявления остаются на месте и продолжают показываться. Продлить можно в любой момент.'],
     ['Можно ли сменить тариф?', 'Да, в любой момент. Оставшиеся дни пересчитаем по цене месяца: например, 10 дней «Магазина» превратятся в 3 дня «Магазина Про», и к ним добавится оплаченный срок.'],
-    ['Чем продвижение в ленте отличается от рекламы над поиском?', 'Продвижение в ленте доступно всем продавцам: XL-карточка, рамка или метки на фото на 7 дней, порядок выдачи не меняется. «Реклама над поиском» — для ИП и компаний: объявление показывается в отдельном блоке «Реклама» над выдачей и лентой тем, кто ищет похожее в вашем городе; аукциона ставок нет, блок маркируется по закону (пометка «Реклама», рекламодатель, erid).'],
+    ['Чем продвижение в ленте отличается от рекламы над поиском?', 'Продвижение в ленте доступно всем продавцам: XL-карточка, рамка или метки на фото на 7 дней, порядок выдачи не меняется. «Реклама над поиском» — тоже для всех: объявление показывается в отдельном блоке «Реклама» над выдачей и лентой тем, кто ищет похожее в вашем городе; аукциона ставок нет, запуск сразу после оплаты.'],
     ['Можно ли вернуть деньги?', 'Да. Напишите в поддержку — вернём стоимость неиспользованных полных дней тарифа или рекламы тем же способом, которым вы платили. Продвижение в ленте возвращается автоматически, если объявление не опубликовали за 7 дней после оплаты; отклонённые метки — их долей.'],
     ['Что такое автозагрузка?', 'В тарифе «Магазин Про» объявления загружаются из XML-файла в формате автозагрузки Авито — по ссылке, той же, что вы указываете в Авито. Файл проверяется каждые 6 часов и по кнопке. Новые и изменённые объявления проходят проверку модератора, пропавшие из файла — снимаются с публикации.']
   ];
@@ -3954,9 +4004,9 @@
           </div>
           <div class="bz-pcard">
             <span class="bz-ic blue">${ic('megaphone', 20, 1.9)}</span>
-            <b class="bz-ph">Реклама над поиском</b><span class="bz-for">Для ИП и компаний</span>
+            <b class="bz-ph">Реклама над поиском</b><span class="bz-for">Для всех продавцов</span>
             <ul class="bz-prices">${[3, 7, 30].map((d) => html`<li><span>${d} ${plural(d, 'день', 'дня', 'дней')}${pr.proDiscount ? html` · в «Про» ${rub(Math.max(1, Math.round(pr.promo[d] * (100 - pr.proDiscount) / 100)))}` : ''}</span><b>${rub(pr.promo[d])}</b></li>`)}</ul>
-            <p>Отдельный блок «Реклама» над выдачей и лентой — для тех, кто ищет похожее в вашем городе. Обычная выдача не меняется. Маркируем по закону: пометка «Реклама», рекламодатель и erid; показ начинается после регистрации в ОРД, срок идёт с запуска.</p>
+            <p>Отдельный блок «Реклама» над выдачей и лентой — для тех, кто ищет похожее в вашем городе. Обычная выдача не меняется. Запускается сразу после оплаты.</p>
           </div>
         </div>
       </section>
@@ -4010,35 +4060,80 @@
 
   // /pay/:id — человек вернулся со страницы ЮKassa. Пока платёж в обработке — проверяем каждые 2,5 секунды.
   const CANCEL_REASON = { expired_on_confirmation: 'Время на оплату истекло', insufficient_funds: 'Недостаточно средств', card_expired: 'Истёк срок действия карты', canceled_by_merchant: 'Платёж отменён', '3d_secure_failed': 'Банк не подтвердил оплату', permission_revoked: 'Оплата отменена', payment_method_limit_exceeded: 'Превышен лимит платежей', payment_method_restricted: 'Способ оплаты недоступен', fraud_suspected: 'Банк заподозрил мошенничество', country_forbidden: 'Оплата из этой страны недоступна' };
+  // 1.38.1: возврат с ЮKassa. Вход не обязателен — на iPhone приложение с экрана «Домой» открывает оплату
+  // во встроенном Safari, где человек не вошёл. Оплачено — коротко «что включилось» и сразу к объявлению.
+  const PAY_KEY = 'tg_pay';
+  const payMark = (id) => { try { if (id) localStorage.setItem(PAY_KEY, JSON.stringify({ id, at: Date.now() })); else localStorage.removeItem(PAY_KEY); } catch { /* нет хранилища */ } };
+  const payPending = () => { try { const p = JSON.parse(localStorage.getItem(PAY_KEY) || 'null'); return p && p.id && Date.now() - p.at < 2 * 3600 * 1000 ? p.id : ''; } catch { return ''; } };
+  function goPay(r) {
+    payMark(r.id);
+    location.href = r.url;
+    // Страница осталась на месте (оплата открылась поверх приложения) — под ней уже ждёт результат.
+    setTimeout(() => { if (!location.pathname.startsWith('/pay/')) go(`/pay/${r.id}`); }, 1500);
+  }
+  const dayWord = (n) => `${n} ${plural(n, 'день', 'дня', 'дней')}`;
   async function viewPay(id) {
-    if (!requireAuth()) return;
     setTitle('Оплата');
     app.innerHTML = String(html`<div class="wrap"><div class="pay-res" id="pay"><div class="loader"></div></div></div>`);
     const box = $('#pay');
     const started = Date.now();
     let timer = null;
     cleanup = () => clearTimeout(timer);
-    const draw = ({ payment: p, url }) => {
-      const isBoost = p.kind === 'boost';
-      const back = p.kind === 'promo' || isBoost ? `/l/${p.item.listingId}` : '/business';
-      const home = isBoost ? ['/profile', 'Мои объявления'] : ['/profile/business', 'Для бизнеса'];
-      const state = p.status === 'succeeded' ? ['ok', 'check', 'Оплата прошла', p.kind === 'plan' ? `Тариф «${PLAN_NAME[p.item.plan]}» подключён. Чек ЮKassa пришлёт на почту.` : isBoost ? `Продвижение на 7 дней ${p.item.tags && p.item.tags.length ? '— метки появятся после проверки. ' : 'включено. '}Если объявление ещё на проверке — начнётся с публикацией.` : 'Продвижение оплачено. Чек ЮKassa пришлёт на почту.']
-        : p.status === 'canceled' ? ['bad', 'close', 'Оплата не прошла', `${CANCEL_REASON[p.error] || 'Банк или ЮKassa отклонили платёж'}. Деньги не списаны.`]
-          : ['wait', 'clock', 'Проверяем оплату', 'Если вы уже оплатили, страница обновится сама через несколько секунд.'];
+    const okText = (p, r) => {
+      if (p.kind === 'plan') return r && r.endsAt ? `Тариф «${PLAN_NAME[r.plan] || PLAN_NAME[p.item.plan]}» действует до ${dateShort(r.endsAt)}.` : `Тариф «${PLAN_NAME[p.item.plan]}» подключён.`;
+      if (p.kind === 'promo') return r && r.endsAt ? `Реклама над поиском идёт до ${dateShort(r.endsAt)}.` : 'Реклама над поиском запущена.';
+      if (!r) return 'Продвижение включено.';
+      const tags = r.tagsState === 'review' ? ' Метки появятся после проверки.' : '';
+      return r.status === 'active' ? `Продвигается ещё ${dayWord(Math.max(1, daysLeft(r.endsAt)))} — до ${dateShort(r.endsAt)}.${tags}` : `Начнётся, как только объявление пройдёт проверку, и продлится 7 дней.${tags}`;
+    };
+    const draw = ({ payment: p, result: r, url, guest }) => {
+      const lid = (r && r.listingId) || p.item.listingId;
+      const toListing = p.kind !== 'plan' && lid;
+      const back = toListing ? `/l/${lid}` : '/business';
+      const home = p.kind === 'boost' ? ['/profile', 'Мои объявления'] : ['/profile/business', 'Для бизнеса'];
+      if (p.status === 'succeeded') {
+        payMark('');
+        box.innerHTML = String(html`<div class="pay-ic ok pop">${ic('check', 34, 2.4)}</div>
+          <h1>Оплачено</h1><p class="pay-lead">${okText(p, r)}</p>
+          <div class="pay-line"><span>${p.title}</span><b>${rub(p.amount)}</b></div>
+          ${guest ? html`<p class="pay-hint">${ic('phone', 16, 2)}<span>Можно закрыть эту страницу и вернуться в приложение — всё уже включено.</span></p>` : ''}
+          <div class="pay-act">${toListing ? html`<a class="btn btn-accent btn-lg pay-go" href="${back}" data-go><span>Перейти к объявлению</span><i class="pay-bar"></i></a>`
+            : html`<a class="btn btn-accent btn-lg" href="/profile/business/shop">Заполнить витрину</a>`}
+            ${guest ? '' : html`<a class="btn btn-soft btn-lg" href="${home[0]}">${home[1]}</a>`}</div>
+          <p class="pay-foot">Чек ЮKassa пришлёт на почту.</p>`);
+        // Вошедшего через 4 секунды ведём к объявлению — там уже видно «Продвигается». Любое касание отменяет.
+        const go2 = $('[data-go]', box);
+        if (go2 && !guest) {
+          go2.classList.add('run');
+          timer = setTimeout(() => { if (box.isConnected) go(back, true); }, 4000);
+          const stop = () => { clearTimeout(timer); go2.classList.remove('run'); };
+          box.addEventListener('pointerdown', (e) => { if (!e.target.closest('[data-go]')) stop(); }, { once: true });
+        }
+        return;
+      }
+      const state = p.status === 'canceled' ? ['bad', 'close', 'Оплата не прошла', `${CANCEL_REASON[p.error] || 'Банк или ЮKassa отклонили платёж'}. Деньги не списаны.`]
+        : ['wait', 'clock', 'Проверяем оплату', 'Если вы уже оплатили, страница обновится сама.'];
       box.innerHTML = String(html`<div class="pay-ic ${state[0]}">${ic(state[1], 34, 2.2)}</div>
-        <h1>${state[2]}</h1><p class="muted">${state[3]}</p>
-        <div class="pay-sum">${[['Услуга', p.title], ['Сумма', rub(p.amount)], ...(p.method ? [['Способ', p.method]] : []), ...(p.test ? [['Режим', 'тестовый платёж ЮKassa']] : [])].map(([k, v]) => html`<div><span>${k}</span><b>${v}</b></div>`)}</div>
-        <div class="pay-act">${p.status === 'succeeded' ? html`${p.kind === 'plan' ? html`<a class="btn btn-accent" href="/profile/business/shop">Заполнить витрину</a>` : html`<a class="btn btn-accent" href="${back}">К объявлению</a>`}<a class="btn btn-soft" href="${home[0]}">${home[1]}</a>`
-    : p.status === 'canceled' ? html`<a class="btn btn-dark" href="${back}">Попробовать ещё раз</a><a class="btn btn-soft" href="/messages/support">Поддержка</a>`
-      : html`${url ? html`<a class="btn btn-dark" href="${url}" data-ext>Вернуться к оплате</a>` : ''}<a class="btn btn-soft" href="${home[0]}">${home[1]}</a>`}</div>`);
+        <h1>${state[2]}</h1><p class="pay-lead">${state[3]}</p>
+        <div class="pay-line"><span>${p.title}</span><b>${rub(p.amount)}</b></div>
+        <div class="pay-act">${p.status === 'canceled' ? html`<a class="btn btn-dark btn-lg" href="${back}">Попробовать ещё раз</a><a class="btn btn-soft btn-lg" href="/messages/support">Поддержка</a>`
+    : html`${url ? html`<a class="btn btn-dark btn-lg" href="${url}" data-ext>Вернуться к оплате</a>` : ''}<a class="btn btn-soft btn-lg" href="${toListing ? back : home[0]}">${toListing ? 'К объявлению' : home[1]}</a>`}</div>`);
+      if (p.status === 'canceled') payMark('');
       const ext = $('[data-ext]', box); if (ext) ext.onclick = (e) => { e.preventDefault(); location.href = url; };
     };
     const poll = async () => {
-      const d = await api('GET', `/api/payments/${encodeURIComponent(id)}`);
+      let d;
+      try { d = await api('GET', `/api/payments/${encodeURIComponent(id)}`); } catch (e) {
+        if (!box.isConnected) return;
+        payMark('');
+        box.innerHTML = String(html`<div class="pay-ic bad">${ic('close', 34, 2.2)}</div><h1>Платёж не найден</h1><p class="pay-lead">${e.message}</p><div class="pay-act"><a class="btn btn-soft btn-lg" href="/">На главную</a></div>`);
+        return;
+      }
       if (!box.isConnected) return;
       draw(d);
-      if (d.payment.status === 'pending' && Date.now() - started < 120000) timer = setTimeout(() => poll().catch(() => {}), 2500);
-      if (d.payment.status === 'succeeded') refreshMe();
+      const age = Date.now() - started;
+      if (d.payment.status === 'pending' && age < 15 * 60 * 1000) timer = setTimeout(() => poll().catch(() => {}), age < 2 * 60 * 1000 ? 2500 : 8000);
+      if (d.payment.status === 'succeeded' && S.user) refreshMe();
     };
     await poll();
   }
@@ -4052,11 +4147,10 @@
     let days = 7;
     openModal(String(html`<h2>Продвижение</h2><p class="muted" style="margin:0 0 14px">«${title}»</p>
       ${d.current ? html`<div class="banner ${d.current.status === 'active' ? 'ok' : 'warn'}" style="margin-bottom:14px"><strong>${PROMO_STATUS[d.current.status][1]}</strong> ${promoLine(d.current)}. Новая оплата ${d.current.status === 'active' ? 'продлит срок' : 'добавит дни'}.</div>` : ''}
-      ${!d.biz ? html`<div class="banner warn">Продвижение — для ИП и компаний: подтвердите данные бизнеса, они нужны для маркировки рекламы.</div><div class="modal-actions"><button class="btn btn-soft" data-x>Закрыть</button><a class="btn btn-dark" href="/profile/settings#s-biz">Подтвердить бизнес</a></div>`
-    : html`<div class="promo-pick" role="radiogroup" aria-label="Срок продвижения">${d.options.map((o) => html`<label class="promo-pick-opt"><input type="radio" name="days" value="${o.days}" ${o.days === days ? raw('checked') : ''}><span><b>${o.days} ${plural(o.days, 'день', 'дня', 'дней')}</b><em>${rub(o.price)}${o.price !== o.base ? html` <s>${rub(o.base)}</s>` : ''}</em></span></label>`)}</div>
+      ${html`<div class="promo-pick" role="radiogroup" aria-label="Срок продвижения">${d.options.map((o) => html`<label class="promo-pick-opt"><input type="radio" name="days" value="${o.days}" ${o.days === days ? raw('checked') : ''}><span><b>${o.days} ${plural(o.days, 'день', 'дня', 'дней')}</b><em>${rub(o.price)}${o.price !== o.base ? html` <s>${rub(o.base)}</s>` : ''}</em></span></label>`)}</div>
       ${d.discount ? html`<p class="muted" style="margin:8px 0 0;font-size:13px">Скидка ${d.discount}% — тариф «Магазин Про».</p>` : ''}
       <ul class="promo-how"><li>${ic('megaphone', 17)}Покажем в блоке «Реклама» над выдачей и лентой тем, кто ищет похожее в городе ${d.city || 'объявления'}.</li>
-        <li>${ic('shield', 17)}${d.requireErid ? 'Сначала промаркируем рекламу (токен erid в ОРД) — обычно в течение рабочего дня; срок начнётся с запуска.' : 'Запустим сразу после оплаты.'}</li>
+        <li>${ic('bolt', 17)}Запустим сразу после оплаты — без ожидания.</li>
         <li>${ic('chart', 17)}Показы и переходы из блока — в статистике объявления.</li></ul>
       <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button>${d.ready ? html`<button class="btn btn-accent" data-ok>Продолжить</button>` : html`<button class="btn btn-soft" disabled>Оплата скоро</button>`}</div>`}`), (m, close) => {
       $('[data-x]', m).onclick = close;
@@ -4365,7 +4459,7 @@
       backup: () => renderBackupAdmin(box),
       payments: () => renderPaymentsAdmin(box, q),
       tags: () => renderBoostTagsAdmin(box),
-      ads: () => renderAdsAdmin(box, ['marking', 'active', 'ended'].includes(q.get('tab')) ? q.get('tab') : 'marking'),
+      ads: () => renderAdsAdmin(box, ['active', 'ended'].includes(q.get('tab')) ? q.get('tab') : 'active'),
       billing: () => renderBillingAdmin(box),
       log: () => renderLogAdmin(box, q),
       notify: () => renderNotifyAdmin(box),
@@ -4435,7 +4529,6 @@
           ${tile('/admin?status=active', NF.format(d.totals.active), 'опубликовано сейчас', `подано за сутки: ${d.today.listings} · одобрено: ${d.today.approved}`)}
           ${tile('/admin?status=users', NF.format(d.totals.users), 'пользователей', `новых за сутки: ${d.today.users}${d.totals.blocked ? ` · заблокировано: ${d.totals.blocked}` : ''}`)}
           ${tile('/admin?status=appeals', NF.format(st.appeals), 'апелляций', `отзывов на проверке: ${st.reviews}`)}
-          ${st.ads ? tile('/admin?status=ads', NF.format(st.ads), 'реклама ждёт erid', 'оплачено — запустите после маркировки') : ''}
         </div>
       </div>
       <div class="dash-grid">
@@ -4778,17 +4871,9 @@
   // ---------- реклама: маркировка erid, идущие, завершённые ----------
   async function renderAdsAdmin(box, tab) {
     const d = await api('GET', `/api/admin/ads?tab=${tab}`);
-    const TABS = [['marking', 'Ждут маркировки'], ['active', 'Идут'], ['ended', 'Завершены']];
+    const TABS = [['active', 'Идут'], ['ended', 'Завершены']]; // 1.38.1: запуск сразу после оплаты, без ожидания erid
     const copy = (v) => html`<button type="button" class="copy-v" data-copy="${v}" title="Скопировать">${v}</button>`;
-    box.innerHTML = String(html`<div class="adm-head"><h1>Реклама</h1><a class="btn btn-soft btn-sm" href="/api/admin/ads.csv" download>${ic('download', 16, 2)}Отчёт для ОРД</a></div>
-      <div class="panel ads-help">
-        <label class="switch"><span>Показывать только с токеном erid<small>Оплаченное продвижение ждёт токена здесь; срок начинается с запуска. Выключите, только если юрист подтвердил, что маркировка не нужна.</small></span><input type="checkbox" id="req-erid" ${d.requireErid ? raw('checked') : ''}><span class="track"></span></label>
-        <details><summary>${ic('info', 16, 2)}Как получить erid</summary><ol>
-          <li>В личном кабинете ОРД (например, ОРД VK или Яндекса) зарегистрируйте договор с рекламодателем — название и ИНН ниже.</li>
-          <li>Добавьте креатив: объект рекламирования — ссылка на объявление, текст — название объявления, период — срок продвижения.</li>
-          <li>ОРД выдаст токен erid — вставьте его в поле и нажмите «Запустить». Продавцу придёт письмо, показ начнётся сразу.</li>
-          <li>Раз в месяц передавайте в ОРД показы — они в «Отчёте для ОРД».</li></ol></details>
-      </div>
+    box.innerHTML = String(html`<div class="adm-head"><h1>Реклама</h1><a class="btn btn-soft btn-sm" href="/api/admin/ads.csv" download>${ic('download', 16, 2)}Отчёт CSV</a></div>
       <div class="seg adm-seg" role="tablist">${TABS.map(([k, t]) => html`<a role="tab" class="${k === tab ? 'on' : ''}" aria-selected="${k === tab ? 'true' : 'false'}" href="/admin?status=ads&tab=${k}">${t} · ${d.counts[k]}</a>`)}</div>
       ${d.items.length ? html`<div class="adm-ads">${d.items.map((a) => html`<div class="adm-ad">
           <a class="my-img" href="${a.listingId ? `/admin/l/${a.listingId}` : '#'}" tabindex="-1" aria-hidden="true">${a.photo ? html`<img src="${a.photo}" alt="" loading="lazy">` : svg(P.image, 24, 1.3)}</a>
@@ -4802,13 +4887,10 @@
               ${a.startsAt ? html`<div><span>Период</span><b>${dateShort(a.startsAt)} — ${dateShort(a.endsAt)}</b></div><div><span>Показы / переходы</span><b>${NF.format(a.shows)} / ${NF.format(a.clicks)}</b></div>` : ''}
             </div>
             ${a.note ? html`<div class="muted" style="font-size:14px">${a.note}</div>` : ''}
-            ${['marking', 'active'].includes(a.status) ? html`<form class="erid-form" data-erid="${a.id}"><label class="sr" for="erid-${a.id}">Токен erid</label><input id="erid-${a.id}" name="erid" class="input" value="${a.erid}" placeholder="erid из ОРД, например 2SDnjc7Jh3Q" autocomplete="off">
-              <button class="btn ${a.status === 'marking' ? 'btn-accent' : 'btn-soft'} btn-sm" type="submit">${a.status === 'marking' ? 'Запустить' : 'Сохранить'}</button>
-              <button type="button" class="btn btn-line btn-sm" data-stop="${a.id}">Остановить</button></form>` : a.erid ? html`<div class="muted" style="font-size:14px">erid: ${a.erid}</div>` : ''}
+            ${a.status === 'active' ? html`<div class="erid-form"><button type="button" class="btn btn-line btn-sm" data-stop="${a.id}">Остановить</button></div>` : ''}
             <div class="muted adm-log-meta"><a href="/admin/u/${a.user.id}">${a.user.name}</a> · ${a.user.email} · оплачено ${when(a.createdAt)}</div>
           </div></div>`)}</div>` : html`<div class="empty"><h3>${tab === 'marking' ? 'Маркировки никто не ждёт' : 'Здесь пусто'}</h3><p>${tab === 'marking' ? 'Оплаченное продвижение появится здесь, если для показа нужен токен erid.' : 'Нет продвижений в этом разделе.'}</p></div>`}`);
     $$('[data-copy]', box).forEach((b) => { b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Скопировано'); } catch { toast(b.dataset.copy); } }; });
-    $('#req-erid', box).onchange = async (e) => { try { await api('PUT', '/api/admin/ads/settings', { requireErid: e.target.checked }); toast(e.target.checked ? 'Показ только с erid' : 'Продвижение запускается сразу после оплаты'); } catch (ex) { e.target.checked = !e.target.checked; toast(ex.message, true); } };
     $$('[data-erid]', box).forEach((f) => {
       f.onsubmit = async (e) => { e.preventDefault(); try { await api('POST', `/api/admin/ads/${f.dataset.erid}/erid`, { erid: f.erid.value }); toast(tab === 'marking' ? 'Запущено — продавцу отправлено письмо' : 'Токен сохранён'); render(); } catch (ex) { toast(ex.message, true); } };
     });
@@ -5658,6 +5740,9 @@
     }
     renderFooter();
     metrikaStart();
+    // Приложение открыли заново, а платёж ушёл на ЮKassa недавно — сразу показываем, чем закончилось.
+    const pend = payPending();
+    if (pend && !location.pathname.startsWith('/pay/')) history.replaceState(null, '', `/pay/${pend}`);
     await render();
     cookieBar();
     pushAskOnce();

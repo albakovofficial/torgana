@@ -149,7 +149,7 @@ async function seed(base, browser) {
   const spam = await registerUser(base, { name: 'Иван Спамов', email: 'spam@test.local' });
   await admin.post(`/api/admin/users/${spam.user.id}/block`, { blocked: true, reason: 'Спам и повторные объявления' });
 
-  // 1.12: магазин с тарифом «Магазин Про», витрина, продвижение (идёт и ждёт erid), платежи (поддельная ЮKassa).
+  // 1.12: магазин с тарифом «Магазин Про», витрина, продвижение (запускается сразу после оплаты), платежи (поддельная ЮKassa).
   await admin.put('/api/admin/seo', { yandex: 'a1b2c3d4e5f60718', metrika: '98765432' });
   await admin.put('/api/admin/billing', { config: { shopId: '123456', secret: 'test_AbCdEfGhIjKlMnOp', receipts: true, vat: 1, mode: 'full_payment' } });
   const shop = await registerUser(base, { name: 'Ольга Детство', email: 'shop@test.local' });
@@ -172,8 +172,6 @@ async function seed(base, browser) {
   const s2 = (await shop.post('/api/listings', { title: 'Автокресло Britax Römer', category: 'personal', city: 'Казань', price: '18900' })).data.id;
   await admin.post(`/api/admin/listings/${s2}/restore`);
   await pay(await shop.post(`/api/listings/${s1}/promote`, { days: 7 }));
-  const ad = (await admin.get('/api/admin/ads?tab=marking')).data.items[0].id;
-  await admin.post(`/api/admin/ads/${ad}/erid`, { erid: '2SDnjc7Jh3Q' });
   await pay(await shop.post(`/api/listings/${s2}/promote`, { days: 30 }));
   const pendingPay = (await shop.post('/api/my/plan/pay', { plan: 'pro', months: 12 })).data.id;
   for (let i = 0; i < 3; i++) await client(base).post('/api/stats/impressions', { ids: [s1, s2] }, { origin: base, 'user-agent': ua(20 + i) });
@@ -223,6 +221,8 @@ function pages(d) {
     ['search-city', '/search?category=transport', null, 'city'],
     ['search-filters', '/search?category=transport&sub=cars', null, 'filters'],
     ['section-sub-city', '/c/transport/cars/moskva', null],
+    // 1.38.1: капсула категории на главной переключает ленту на месте
+    ['home-cat', '/', null, 'cat'],
     ['cookie', '/', null],
     ['admin-seo', '/admin?status=seo', d.admin],
     ['confirm-code', '/confirm', null, 'code'],
@@ -292,7 +292,7 @@ function pages(d) {
     ['my-listings-promo', '/profile', d.shop],
     ['admin-payments', '/admin?status=payments', d.admin],
     ['admin-ads', '/admin?status=ads', d.admin],
-    ['admin-ads-active', '/admin?status=ads&tab=active', d.admin],
+    ['admin-ads-ended', '/admin?status=ads&tab=ended', d.admin],
     ['admin-billing', '/admin?status=billing', d.admin],
     ['admin-user-shop', `/admin/u/${d.shop.user.id}`, d.admin],
     // 1.16: разделы, характеристики, метро, видео
@@ -332,8 +332,11 @@ function pages(d) {
     ['search-exchange', '/search?exchange=1', null],
     // 1.21: продвижение в ленте — XL, рамка, метки; выбор при подаче и «Продвинуть»; проверка меток
     ['boost-modal', `/l/${d.ids[3]}`, d.seller, '[data-promote]'],
-    ['boost-modal-busy', `/l/${d.car}`, d.seller, '[data-promote]'],
+    ['boost-modal-busy', `/l/${d.ids[0]}`, d.seller, '[data-promote]'],
     ['pay-boost', `/pay/${d.boostPay}`, d.seller],
+    // 1.38.1: вернулся с ЮKassa во встроенном Safari без входа; у автора — «Продвигается» с остатком срока
+    ['pay-boost-guest', `/pay/${d.boostPay}`, null],
+    ['listing-boosted', `/l/${d.car}`, d.seller],
     ['admin-tags', '/admin?status=tags', d.admin],
     ['new-step-publish-boost', '/new', d.seller, 'step:2:boost'],
     // 1.36: «Ещё по желанию» на шаге «Отправка» — метро, район, необязательные характеристики, видео
@@ -504,6 +507,18 @@ async function main() {
           await page.waitForTimeout(200);
           if (!(await page.$('#preview .card.is-xl .b-tag'))) errors.push('превью без XL и метки');
           if (!/128 ₽/.test(await page.textContent('[data-submit] >> visible=true'))) errors.push('на кнопке нет цены продвижения');
+        } else if (open === 'cat') {
+          await page.click('.cat-pill[data-cat="transport"]');
+          await page.waitForTimeout(700);
+          if (!/\/\?cat=transport$/.test(page.url())) errors.push(`адрес не сменился: ${page.url()}`);
+          if (!/Транспорт/.test(await page.textContent('.cat-pill.on'))) errors.push('капсула не переключилась');
+          if (!/^Транспорт/.test(await page.textContent('#feed-h'))) errors.push('заголовок ленты не сменился');
+          if ((await page.$$('#feed .card')).length !== 1) errors.push(`в ленте не только транспорт: ${(await page.$$('#feed .card')).length}`);
+          await page.click('.cat-pill[data-cat=""]');
+          await page.waitForTimeout(700);
+          if ((await page.$$('#feed .card')).length < 3) errors.push('«Все» не вернули ленту');
+          await page.click('.cat-pill[data-cat="transport"]');
+          await page.waitForTimeout(600);
         } else if (open === 'map') {
           await page.waitForSelector('.map-state.hidden', { state: 'attached', timeout: 5000 }).catch(() => errors.push('карта не сообщила, что готова'));
           const fr = page.frames().find((f) => f.url().includes('/map-frame'));
