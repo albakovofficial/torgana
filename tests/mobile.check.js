@@ -180,9 +180,8 @@ async function seed(base, browser) {
   const sofa = (await seller.get(`/api/listings/${ids[4]}`)).data.listing;
   await seller.patch(`/api/listings/${ids[4]}`, { ...sofa, photos: sofa.photos.map((u) => u.split('/').pop()), subcategory: sofa.subcategory, metro: '', video: '', exchange: true, bargain: false });
   await admin.post(`/api/admin/listings/${ids[4]}/restore`);
-  // 1.21: продвижение в ленте — XL с рамкой и метками у автомобиля, рамка у коляски, метки iPhone ждут модератора.
+  // 1.21: продвижение в ленте — XL с рамкой и метками у автомобиля, рамка у коляски, метки у iPhone (видны сразу, 1.40).
   const boostPay = await pay(await seller.post(`/api/listings/${car}/boost`, { xl: true, frame: true, tags: ['Отдам сегодня', 'Как новый'] }));
-  await admin.post(`/api/admin/boosts/${(await admin.get('/api/admin/boost-tags')).data.items[0].id}/tags`, { ok: true });
   await pay(await seller.post(`/api/listings/${ids[0]}/boost`, { frame: true }));
   await pay(await seller.post(`/api/listings/${ids[1]}/boost`, { tags: ['Есть гарантия', 'С чеком'] }));
   await admin.put('/api/admin/seo', { mapsKey: 'test-maps-key' }); // 1.38: карта объявлений включается ключом
@@ -334,14 +333,14 @@ function pages(d) {
     ['my-scheduled', '/profile?status=scheduled', d.seller],
     ['listing-scheduled', `/l/${d.scheduled}`, d.seller],
     ['search-exchange', '/search?exchange=1', null],
-    // 1.21: продвижение в ленте — XL, рамка, метки; выбор при подаче и «Продвинуть»; проверка меток
+    // 1.21: продвижение в ленте — XL, рамка, метки; выбор при подаче и «Продвинуть»; 1.40: всё уже куплено — одна карточка
     ['boost-modal', `/l/${d.ids[3]}`, d.seller, '[data-promote]'],
     ['boost-modal-busy', `/l/${d.ids[0]}`, d.seller, '[data-promote]'],
+    ['boost-modal-all', `/l/${d.car}`, d.seller, '[data-promote]'],
     ['pay-boost', `/pay/${d.boostPay}`, d.seller],
     // 1.38.1: вернулся с ЮKassa во встроенном Safari без входа; у автора — «Продвигается» с остатком срока
     ['pay-boost-guest', `/pay/${d.boostPay}`, null],
     ['listing-boosted', `/l/${d.car}`, d.seller],
-    ['admin-tags', '/admin?status=tags', d.admin],
     ['new-step-publish-boost', '/new', d.seller, 'step:2:boost'],
     // 1.36: «Ещё по желанию» на шаге «Отправка» — метро, район, необязательные характеристики, видео
     ['edit-step-more', `/edit/${d.ids[2]}`, d.seller, 'step:2:more'],
