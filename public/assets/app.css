@@ -687,7 +687,7 @@ a.pf-num:hover { color: var(--text); box-shadow: 0 6px 18px rgba(16, 16, 16, .07
   /* «Мой профиль» на телефоне: шестерёнка в карточке и четыре раздела плитками вместо меню. */
   .pf2.is-hub .pf-gear { display: inline-flex; }
   .pf2.is-hub .pf-side .pf-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .pf2.is-hub .pf-side .pf-nav > :not([data-k="msg"]):not([data-k="fav"]):not([data-k="searches"]):not([data-k="reviews"]) { display: none; }
+  .pf2.is-hub .pf-side .pf-nav > :not([data-k="msg"]):not([data-k="fav"]):not([data-k="following"]):not([data-k="reviews"]) { display: none; }
   .pf2.is-hub .pf-side .pf-nav a { min-height: 56px; padding: 0 12px; gap: 10px; border: 1px solid var(--line); border-radius: 18px; font-weight: 600; }
   .pf2.is-hub .pf-side .pf-nav a > svg:first-child { color: var(--accent); }
   .pub { gap: 16px; padding-top: 12px; }
@@ -2951,3 +2951,39 @@ body.pv-open { overflow: hidden; }
 .ml-bst.wait .ml-bst-ic { background: #fff; color: var(--text-2); }
 .ml-bst.wait b { color: var(--text); }
 .ml-bst.wait .ml-bst-left { color: var(--text-2); font-weight: 500; }
+
+/* 1.39.0: выбранный раздел — прозрачный изумрудный (капсулы категорий, вкладки статусов, меню модерации на телефоне) */
+.chip.active, .cat-pill.on { background: rgba(31, 94, 74, .1); border-color: var(--accent); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.cat-pill.on svg { color: var(--accent); }
+.cat-pill.on:hover { background: rgba(31, 94, 74, .14); }
+.chip.active .cnt { color: var(--accent); opacity: .8; }
+@media (max-width: 900px) { .adm-nav a.on { background: rgba(31, 94, 74, .1); border-color: var(--accent); color: var(--accent); } }
+
+/* 1.39.0: модерация — платные услуги пользователя с кнопкой «Отключить» */
+.adm-svc { display: grid; gap: 8px; padding: 16px; border-radius: 20px; background: var(--surface); }
+.adm-svc-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; background: #fff; }
+.adm-svc-ic { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
+.adm-svc-txt { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.adm-svc-txt b { font-size: 14.5px; }
+.adm-svc-txt span { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-svc-txt a { color: inherit; text-decoration: underline; }
+
+/* 1.39.0: удаление профиля — в «Аккаунте» и экран «Профиль временно удалён» */
+.acc-del { display: grid; gap: 10px; margin-top: 18px; }
+.acc-del h3 { margin: 0 0 2px; font-size: 16px; }
+.acc-del-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border-radius: 20px; background: var(--surface); }
+.acc-del-row.danger { background: var(--danger-soft); }
+.acc-del-ic { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 13px; background: #fff; color: var(--text-2); }
+.acc-del-row.danger .acc-del-ic { color: var(--danger); }
+.acc-del-txt { flex: 1 1 240px; min-width: 0; display: grid; gap: 3px; }
+.acc-del-txt b { font-size: 15px; }
+.acc-del-row.danger .acc-del-txt b { color: var(--danger); }
+.acc-del-txt span { font-size: 13.5px; color: var(--text-2); line-height: 1.4; }
+.acc-gone { max-width: 480px; margin: 48px auto; text-align: center; display: grid; justify-items: center; gap: 12px; }
+.acc-gone-ic { width: 72px; height: 72px; display: grid; place-items: center; border-radius: 24px; background: var(--surface); color: var(--text-2); }
+.acc-gone h1 { margin: 6px 0 0; font-size: 28px; }
+.acc-gone p { margin: 0; color: var(--text-2); line-height: 1.5; }
+.acc-gone-act { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+.acc-gone-erase { margin-top: 10px; border: 0; background: none; color: var(--danger); font: inherit; font-size: 14px; text-decoration: underline; cursor: pointer; }
+.adm-del { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 14px; border-top: 1px solid var(--line); }
+.adm-del-note { flex: 1 1 200px; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-2); }

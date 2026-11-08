@@ -74,6 +74,7 @@ function clientIp(req) {
 function requireUser(ctx) {
   if (!ctx.user) throw new HttpError(401, 'Нужно войти в аккаунт');
   if (ctx.user.is_blocked) throw new HttpError(403, 'Аккаунт заблокирован. Напишите в поддержку.');
+  if (ctx.user.deactivated_at) { const e = new HttpError(403, 'Профиль удалён — восстановите его, чтобы продолжить'); e.extra = { deactivated: true }; throw e; }
   return ctx.user;
 }
 
@@ -102,7 +103,7 @@ function publicUser(u) {
     id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, avatar: photoUrl(u.avatar), isAdmin: !!u.is_admin, isOwner: !!u.is_admin && u.email === OWNER_EMAIL, createdAt: u.created_at,
     emailVerified: !!u.email_verified, ...Object.fromEntries(Object.entries(NOTIFY_FIELDS).map(([k, col]) => [k, !!u[col]])),
     rating: reviews.ratingOf(u.id), badges: badgesOf(u), business: trust.bizOf(u), phoneVia: u.phone_verified ? u.phone_verified_via : '', oauth: oauth.linkedOf(u.id),
-    plan: business.planOf(u)
+    plan: business.planOf(u), deactivatedAt: u.deactivated_at || null
   } : null;
 }
 
@@ -327,6 +328,7 @@ const ops = require('./lib/ops')({ route, db, h: helpers, mailer, codesOn, root:
   deviceCheck: process.env.ADMIN_DEVICE_CHECK !== '0' });
 opsApi = ops;
 helpers.business = business;
+helpers.account = require('./lib/account')({ route, db, h: { ...helpers, secureCookies: SECURE_COOKIES }, deleteListingFiles, auth }); // удаление профиля (1.39)
 
 // Поисковики и Метрика: коды подтверждения Вебмастера и Search Console, номер счётчика — «Модерация → Поиск и статистика».
 // ИИ по фото: Яндекс AI Studio (ключ и каталог — в модерации, «Настройки → ИИ по фото» или YANDEX_AI_KEY/YANDEX_FOLDER_ID),
@@ -637,7 +639,7 @@ route('GET', '/api/listings/:id', (ctx) => {
   const seller = db.prepare('SELECT * FROM users WHERE id = ?').get(l.user_id);
   const isOwner = ctx.user && ctx.user.id === l.user_id;
   const isAdmin = ctx.user && ctx.user.is_admin;
-  if ((l.status !== 'active' && l.status !== 'sold') || seller.is_blocked) {
+  if ((l.status !== 'active' && l.status !== 'sold') || seller.is_blocked || seller.deactivated_at || seller.deleted_at) {
     if (!isOwner && !isAdmin) throw new HttpError(404, 'Объявление снято с публикации');
   }
   const photos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(id).map((r) => photoUrl(r.file));
@@ -1036,6 +1038,8 @@ route('POST', '/api/conversations/:id/messages', async (ctx) => {
   const body = str(input.body, 2000);
   const photo = chatPhoto(u, input.photo);
   if (!body && !photo) throw new HttpError(400, 'Пустое сообщение');
+  const other = db.prepare('SELECT deactivated_at, deleted_at FROM users WHERE id = ?').get(c.buyer_id === u.id ? c.seller_id : c.buyer_id);
+  if (other && (other.deactivated_at || other.deleted_at)) throw new HttpError(400, 'Собеседник удалил профиль — сообщения не доставляются');
   const t = now();
   const info = db.prepare('INSERT INTO messages (conversation_id, sender_id, body, photo, created_at) VALUES (?, ?, ?, ?, ?)').run(c.id, u.id, body, photo, t);
   db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(t, c.id);
@@ -1047,7 +1051,7 @@ route('POST', '/api/conversations/:id/messages', async (ctx) => {
 route('GET', '/api/users/:id', (ctx) => {
   const id = parseInt(ctx.params.id, 10);
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-  if (!u || u.is_blocked) throw new HttpError(404, 'Пользователь не найден');
+  if (!u || u.is_blocked || u.deactivated_at || u.deleted_at) throw new HttpError(404, 'Пользователь не найден');
   const uid = ctx.user ? ctx.user.id : 0;
   const items = db.prepare(`${CARD_SELECT} WHERE l.user_id = ? AND l.status = 'active' ORDER BY l.created_at DESC LIMIT 60`).all(uid, id)
     .map((r) => ({ ...cardFromRow(r), seller: null })); // в профиле продавца все объявления его — строка продавца не нужна

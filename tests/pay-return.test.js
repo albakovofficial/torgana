@@ -73,4 +73,13 @@ test('не вернулся и уведомления нет — услуга в
   for (let i = 0; i < 40 && !own.length; i++) { await new Promise((ok) => setTimeout(ok, 100)); own = (await anna.get(`/api/listings/${id}`)).data.boost; }
   assert.equal(own.length, 1, 'продвижение включилось без возврата на сайт');
   assert.deepEqual(own[0].kinds, ['frame']);
+
+  // 1.39.0: модератор отключает оплаченное продвижение — с причиной.
+  const sv = (await admin.get(`/api/admin/users/${anna.user.id}`)).data.services;
+  const b = sv.boosts.find((x) => x.listingId === id);
+  assert.deepEqual(b.kinds, ['рамка']);
+  assert.equal((await anna.post(`/api/admin/boosts/${b.id}/stop`, { reason: 'Нарушение правил' })).status, 403);
+  assert.equal((await admin.post(`/api/admin/boosts/${b.id}/stop`, { reason: 'Нарушение правил' })).status, 200);
+  assert.equal((await anna.get(`/api/listings/${id}`)).data.boost.length, 0, 'продвижение отключено');
+  assert.ok(!(await admin.get(`/api/admin/users/${anna.user.id}`)).data.services.boosts.some((x) => x.id === b.id));
 });
