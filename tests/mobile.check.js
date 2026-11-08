@@ -16,6 +16,21 @@ const VIEWPORTS = {
   desktop: { viewport: { width: 1280, height: 860 } }
 };
 
+// Заглушка API Яндекс Карт для проверки: тот же интерфейс, что использует рамка (Map, ObjectManager), без сети.
+const YMAPS_STUB = `window.ymaps = {
+  ready: (cb) => cb(),
+  Map: function (id) { this.geoObjects = { add() {} }; this.setBounds = () => Promise.resolve(); this.getZoom = () => 12; this.setZoom = () => {}; this.setCenter = () => {};
+    document.getElementById(id).style.cssText += ';overflow:auto;padding:12px;box-sizing:border-box;background:#e9eee9'; },
+  ObjectManager: function () {
+    const box = () => document.getElementById('map'); const opt = { set() {} };
+    this.objects = { options: opt }; this.clusters = { options: opt };
+    this.removeAll = () => { box().innerHTML = ''; };
+    this.add = (fc) => { for (const f of fc.features) { const d = document.createElement('div'); d.style.cssText = 'background:#fff;border-radius:14px;padding:10px;margin:0 0 10px;box-shadow:0 2px 10px rgba(0,0,0,.1)'; d.innerHTML = f.properties.balloonContentBody; box().appendChild(d); } };
+    this.getBounds = () => [[55, 37], [56, 38]];
+  }
+};
+setTimeout(() => window.__mapReady && window.__mapReady(), 0);`;
+
 async function seed(base, browser) {
   const seller = await registerUser(base, { name: 'Анна Смирнова', email: 'anna@test.local' });
   const buyer = await registerUser(base, { name: 'Борис', email: 'boris@test.local' });
@@ -174,6 +189,7 @@ async function seed(base, browser) {
   await admin.post(`/api/admin/boosts/${(await admin.get('/api/admin/boost-tags')).data.items[0].id}/tags`, { ok: true });
   await pay(await seller.post(`/api/listings/${ids[0]}/boost`, { frame: true }));
   await pay(await seller.post(`/api/listings/${ids[1]}/boost`, { tags: ['Есть гарантия', 'С чеком'] }));
+  await admin.put('/api/admin/seo', { mapsKey: 'test-maps-key' }); // 1.38: карта объявлений включается ключом
   return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay, scheduled, boostPay };
 }
 
@@ -202,6 +218,8 @@ function pages(d) {
     ['category-city', '/c/personal/kazan', null],
     ['category', '/c/personal', null],
     ['section-sub', '/c/transport/cars', null],
+    // 1.38: объявления на карте — рамка-песочница, точки сообщением, клик открывает объявление
+    ['search-map', '/search?view=map', null, 'map'],
     ['search-city', '/search?category=transport', null, 'city'],
     ['search-filters', '/search?category=transport&sub=cars', null, 'filters'],
     ['section-sub-city', '/c/transport/cars/moskva', null],
@@ -225,6 +243,8 @@ function pages(d) {
     ['favorites', '/favorites', d.buyer],
     ['messages', '/messages', d.buyer],
     ['chat', `/messages/${d.conv}`, d.buyer],
+    // 1.38: быстрые вопросы покупателя — нажал, и вопрос ушёл продавцу
+    ['chat-ask', `/messages/${d.conv}`, d.buyer, 'ask'],
     ['admin', '/admin', d.admin],
     ['admin-mail', '/admin?status=mail', d.admin],
     ['admin-site', '/admin?status=site', d.admin],
@@ -233,6 +253,7 @@ function pages(d) {
     ['admin-biz', '/admin?status=biz', d.admin],
     ['admin-oauth', '/admin?status=oauth', d.admin],
     ['admin-ai', '/admin?status=ai', d.admin],
+    ['admin-sources', '/admin?status=sources', d.admin],
     ['admin-user', `/admin/u/${d.seller.user.id}`, d.admin],
     ['admin-log', '/admin?status=log', d.admin],
     ['admin-notify', '/admin?status=notify', d.admin],
@@ -382,6 +403,8 @@ async function main() {
         }
         // Внешние ресурсы (шрифты и т. п.) в проверке не грузим — тест не должен зависеть от интернета.
         await ctx.route((u) => !u.href.startsWith(srv.base), (r) => r.fulfill({ status: 200, body: '' }));
+        // Скрипт Яндекс Карт подменяем заглушкой: рисует точки простыми блоками с той же карточкой, что в балуне.
+        await ctx.route(/api-maps\.yandex\.ru/, (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: YMAPS_STUB }));
         // Плашку cookie показываем только на своей странице проверки, на остальных — выбор уже сделан.
         if (name !== 'cookie') await ctx.addInitScript(() => { try { localStorage.setItem('tg_cookie', 'necessary'); } catch { /* нет */ } });
         // Разовый вопрос про уведомления — только на своей странице проверки.
@@ -481,6 +504,23 @@ async function main() {
           await page.waitForTimeout(200);
           if (!(await page.$('#preview .card.is-xl .b-tag'))) errors.push('превью без XL и метки');
           if (!/128 ₽/.test(await page.textContent('[data-submit] >> visible=true'))) errors.push('на кнопке нет цены продвижения');
+        } else if (open === 'map') {
+          await page.waitForSelector('.map-state.hidden', { state: 'attached', timeout: 5000 }).catch(() => errors.push('карта не сообщила, что готова'));
+          const fr = page.frames().find((f) => f.url().includes('/map-frame'));
+          const n = fr ? await fr.$$eval('.mc[data-id]', (x) => x.length).catch(() => 0) : 0;
+          if (n < 2) errors.push(`на карте ${n} точек`);
+          if (!/на карте/.test(await page.textContent('#count'))) errors.push('нет счётчика «на карте»');
+          if (!(await page.$('.view-sw a.on[href*="view=map"]'))) errors.push('переключатель «Карта» не выбран');
+          if (fr && await fr.evaluate(() => { try { return !!window.parent.document; } catch { return false; } })) errors.push('рамка видит страницу сайта');
+          await page.screenshot({ path: path.join(SHOTS, `${vpName}-search-map-open.png`) });
+          if (fr && n) { await fr.click('.mc[data-id] >> nth=0'); await page.waitForURL(/\/l\/\d+/, { timeout: 3000 }).catch(() => errors.push('клик по точке не открыл объявление')); }
+        } else if (open === 'ask') {
+          const n0 = await page.$$eval('.msg.out', (x) => x.length);
+          await page.click('.chat-asks .chip >> nth=0');
+          await page.waitForTimeout(300);
+          if (!/актуально/.test(await page.inputValue('#chat-body'))) errors.push('быстрый вопрос не попал в поле');
+          if (await page.$('.chat-asks')) errors.push('остальные вопросы не убрались');
+          if ((await page.$$eval('.msg.out', (x) => x.length)) !== n0) errors.push('вопрос ушёл без отправки');
         } else if (open === 'pv-slide') {
           await page.click('.g-img');
           await page.waitForTimeout(300);

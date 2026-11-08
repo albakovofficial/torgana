@@ -1153,6 +1153,7 @@
     }
     if (params.metro) activeChips.push([`м. ${params.metro}`, without('metro')]);
     const subChips = category && !sub ? subsOf(category) : [];
+    const onMap = S.config.maps && params.view === 'map';
     const nFilters = ['category', 'city', 'min', 'max', 'delivery', 'bargain', 'exchange', 'metro'].filter((k) => params[k]).length + (sub ? 1 : 0) + Object.keys(params).filter((k) => k.startsWith('a_') && params[k]).length;
     app.innerHTML = String(html`<div class="wrap search-page">
       <aside class="filters collapsed" id="filters">
@@ -1179,9 +1180,10 @@
       <section class="results">
         <div class="results-head">
           <div><h1>${title}</h1><div class="muted" id="count">&nbsp;</div></div>
+          ${S.config.maps ? html`<nav class="seg view-sw" aria-label="Вид">${[['', 'Список'], ['map', 'Карта']].map(([v, t]) => html`<a href="/search?${new URLSearchParams(Object.entries({ ...params, view: v }).filter(([, x]) => x))}" class="${(params.view === 'map') === (v === 'map') ? 'on' : ''}" ${(params.view === 'map') === (v === 'map') ? raw('aria-current="page"') : ''}>${t}</a>`)}</nav>` : ''}
           <button type="button" class="btn btn-soft save-search" id="save-search">${ic('bell', 18, 2)}<span>Сохранить поиск</span></button>
           <label class="sr" for="sort">Сортировка</label>
-          <select id="sort" class="select" style="width:auto;min-width:200px;height:44px;border-radius:999px">
+          <select id="sort" ${onMap ? raw('hidden') : ''} class="select" style="width:auto;min-width:200px;height:44px;border-radius:999px">
             <option value="">Сначала новые</option>
             <option value="cheap" ${params.sort === 'cheap' ? raw('selected') : ''}>Сначала дешевле</option>
             <option value="expensive" ${params.sort === 'expensive' ? raw('selected') : ''}>Сначала дороже</option>
@@ -1253,6 +1255,7 @@
         if (t) next[k] = t;
       }
       if (params.sort) next.sort = params.sort;
+      if (params.view) next.view = params.view;
       next.city = next.city || '';
       return next;
     };
@@ -1291,6 +1294,7 @@
     $('#sort').onchange = (e) => { const p = { ...params, sort: e.target.value }; go(`/search?${new URLSearchParams(Object.entries(p).filter(([, v]) => v))}`); };
     bindSaveSearch($('#save-search'), params);
 
+    if (onMap) { await mountMap($('#results'), params); return; }
     await listingFeed($('#results'), params, {
       empty: html`<div class="empty"><h3>Ничего не нашлось</h3><p>Попробуйте другие слова, уберите часть фильтров или поищите по всей России.</p><a href="/search" class="btn btn-dark">Все объявления</a></div>`,
       onFirst: (data) => {
@@ -1307,6 +1311,44 @@
       }
     }).first;
     await adRow($('#results'), params, '', 'подобрано по запросу и фильтрам');
+  }
+
+  // ---------- объявления на карте ----------
+  // Карта Яндекса — в отдельной рамке-песочнице (/map-frame): у неё нет доступа к сайту, входу и cookie.
+  // Точки отдаём ей сообщением; в ответ рамка говорит только «открой объявление №…».
+  // Точка стоит у станции метро или в центре города — точный адрес на карте не показываем.
+  async function mountMap(box, params) {
+    box.innerHTML = String(html`<div class="map-box"><iframe class="map-frame" src="/map-frame" title="Объявления на карте"
+        sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+        <div class="map-state" id="map-state">${ic('pin', 22, 2)}<span>Загружаем карту…</span></div></div>
+      <p class="map-note">${ic('shield', 16, 2)}<span>Точка — у станции метро или в центре города. Точный адрес продавец сообщает в чате.</span></p>`);
+    const fr = $('.map-frame', box);
+    const state = $('#map-state', box);
+    const q = Object.fromEntries(Object.entries(params).filter(([k, v]) => v && k !== 'view' && k !== 'sort' && k !== 'ss'));
+    let items = null;
+    const send = () => { if (items && fr.contentWindow) fr.contentWindow.postMessage({ type: 'points', items, origin: location.origin }, '*'); };
+    const onMsg = (e) => {
+      if (!fr.isConnected) { window.removeEventListener('message', onMsg); return; }
+      if (e.source !== fr.contentWindow || !e.data || typeof e.data !== 'object') return;
+      const t = e.data.type;
+      if (t === 'hello' || t === 'ready') { send(); if (t === 'ready') state.classList.add('hidden'); }
+      else if (t === 'open') { const id = Number(e.data.id); if (Number.isInteger(id) && id > 0) go(`/l/${id}`); }
+      else if (t === 'error') {
+        state.classList.remove('hidden');
+        state.innerHTML = String(html`${ic('warn', 22, 2)}<span>Карта сейчас не загрузилась</span><a class="btn btn-soft btn-sm" href="/search?${new URLSearchParams(q)}">Показать списком</a>`);
+      }
+    };
+    window.addEventListener('message', onMsg);
+    try {
+      const d = await api('GET', `/api/listings/map?${new URLSearchParams(q)}`);
+      if (!fr.isConnected) return;
+      items = d.items.map((x) => ({ id: x.id, lat: x.lat, lng: x.lng, title: x.title, place: x.place, priceText: price(x.price, x.priceUnit), photo: x.photo ? location.origin + x.photo : '' }));
+      const n = d.total;
+      $('#count').textContent = !n ? 'Ничего не найдено'
+        : d.shown < n ? `${NF.format(n)} ${plural(n, 'объявление', 'объявления', 'объявлений')} · на карте ${NF.format(items.length)} самых свежих`
+          : `${NF.format(n)} ${plural(n, 'объявление', 'объявления', 'объявлений')} на карте`;
+      send();
+    } catch (ex) { state.innerHTML = String(html`${ic('warn', 22, 2)}<span>${ex.message}</span>`); }
   }
 
   // ---------- сохранённые поиски ----------
@@ -2550,7 +2592,7 @@
       <p class="alt">Уже есть аккаунт? <a href="/login${q.get('next') ? `?next=${encodeURIComponent(q.get('next'))}` : ''}">Войти</a></p>
     </div></div>`);
     bindAuthForm('/api/auth/register', q.get('next'), {
-      extra: () => ({ consent: $('#f').consent.checked }),
+      extra: () => ({ consent: $('#f').consent.checked, src: srcOf() }),
       check: () => ($('#f').consent.checked ? '' : 'Отметьте согласие на обработку персональных данных — без него зарегистрироваться нельзя')
     });
     bindOauth(app, q.get('next'));
@@ -2568,7 +2610,7 @@
       <div class="or"><span>или по email</span></div></div>` : '');
   // Начать вход или привязку: сервер даёт адрес страницы сервиса, туда и уходим.
   async function oauthGo(provider, { next = '/', link = false } = {}) {
-    try { const { url } = await api('POST', `/api/auth/oauth/${provider}/start`, { next, link, consent: !link }); location.href = url; } catch (e) { toast(e.message, true); }
+    try { const { url } = await api('POST', `/api/auth/oauth/${provider}/start`, { next, link, consent: !link, src: srcOf() }); location.href = url; } catch (e) { toast(e.message, true); }
   }
   function bindOauth(root, next) { $$('[data-oauth]', root).forEach((b) => { b.onclick = () => oauthGo(b.dataset.oauth, { next: next || '/profile' }); }); }
 
@@ -2745,7 +2787,14 @@
       } catch (ex) { toast(ex.message, true); } finally { attach.classList.remove('busy'); }
     };
     // Быстрые темы в приветствии: подставляют текст в поле.
-    box.addEventListener('click', (e) => { const b = e.target.closest('[data-topic]'); if (b) { ta.value = b.dataset.topic; ta.focus(); ta.oninput(); } });
+    box.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-topic]');
+      if (!b) return;
+      ta.value = b.dataset.topic;
+      // Быстрый вопрос покупателя: текст — в поле (можно дописать и отправить), остальные вопросы убираем.
+      const asks = b.closest('.chat-asks'); if (asks) asks.remove();
+      ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); ta.oninput();
+    });
     const timer = setInterval(() => poll().catch(() => {}), 4000);
     (async () => {
       const r = await load(0);
@@ -2837,6 +2886,9 @@
       };
     });
   }
+  // Быстрые вопросы покупателя — под это объявление: торг — если продавец разрешил, доставка — если отправляет.
+  const buyerAsks = (l) => ['Здравствуйте! Ещё актуально?', 'Где и когда можно посмотреть?',
+    ...(l.price && l.bargain ? ['Торг возможен?'] : []), ...(l.delivery ? ['Отправите по России?'] : []), 'Пришлёте ещё фото?'];
   const repliesRow = (items) => html`${items.map((t) => html`<button type="button" class="chip" data-topic="${t}" title="${t}">${t.length > 42 ? `${t.slice(0, 40)}…` : t}</button>`)}<button type="button" class="chip qr-edit" data-qr-edit>${ic('edit', 15, 2)}${items.length ? 'Шаблоны' : 'Добавить шаблон'}</button>`;
 
   // ---------- подписка на продавца ----------
@@ -2967,7 +3019,8 @@
       send: async (msg) => { const r = await api('POST', `/api/conversations/${convId}/messages`, msg); loadList().catch(() => {}); return r.message; },
       decorate: (m) => (m.kind === 'offer' ? { cls: 'offer-msg', body: offerCard(null, m) } : m.kind === 'offer-reply' ? { cls: 'offer-reply', body: html`${m.body}` } : null),
       onData: (r) => paintOffers($('#chat'), r.offers, role),
-      tools: role === 'seller' ? html`<div class="chat-tools" data-replies></div>` : '',
+      tools: role === 'seller' ? html`<div class="chat-tools" data-replies></div>`
+        : l.status === 'active' ? html`<div class="chat-tools chat-asks" aria-label="Быстрые вопросы">${buyerAsks(l).map((t) => html`<button type="button" class="chip" data-topic="${t}">${t}</button>`)}</div>` : '',
       left: canOffer ? html`<button type="button" class="icon-btn chat-offer" data-make-offer title="Предложить цену" aria-label="Предложить цену">₽</button>` : '',
       scam: true,
       empty: html`<div class="chat-day">Напишите первое сообщение — например, уточните состояние или договоритесь о встрече.${canOffer && l.price ? ' Или предложите свою цену кнопкой ₽.' : ''}</div>`,
@@ -3835,7 +3888,8 @@
       </section>
       ${S.user && !biz ? html`<div class="banner warn biz-banner">${ic('shield', 20, 2)}<span><strong>Тарифы и «Реклама над поиском» — для ИП и компаний.</strong> Отправьте название, ИНН и ОГРН(ИП) на проверку — это бесплатно. <a href="/profile/settings#s-biz" style="text-decoration:underline">Подтвердить бизнес</a></span></div>` : ''}
       ${!ready ? html`<div class="banner soft biz-banner">${ic('clock', 20, 2)}<span><strong>Приём оплаты подключается.</strong> Цены на этой странице действуют, но оплатить пока нельзя — напишите в <a href="/messages/support" style="text-decoration:underline">поддержку</a>, если хотите подключиться первыми.</span></div>` : ''}
-      ${plan ? html`<div class="banner ok biz-banner">${ic('check', 20, 2.2)}<span>Сейчас у вас тариф <strong>«${plan.name}»</strong> до ${dateLong(plan.until)} <a href="/profile/business" style="text-decoration:underline">Открыть «Для бизнеса»</a></span></div>` : ''}
+      ${plan ? html`<div class="banner ok biz-banner">${ic('check', 20, 2.2)}<span>Сейчас у вас ${plan.trial ? 'пробный тариф' : 'тариф'} <strong>«${plan.name}»</strong> до ${dateLong(plan.until)} <a href="/profile/business" style="text-decoration:underline">Открыть «Для бизнеса»</a></span></div>`
+    : S.config.billing.starter ? html`<div class="bz-gift"><span class="bz-gift-ic">${ic('store', 22, 2)}</span><div><b>Первым ${S.config.billing.starter.limit} магазинам — «${S.config.billing.starter.name}» на ${S.config.billing.starter.days} дней бесплатно</b><span>Подтвердите бизнес — тариф включится сам, без оплаты. Осталось ${S.config.billing.starter.left} ${plural(S.config.billing.starter.left, 'место', 'места', 'мест')}.</span></div>${biz ? '' : html`<a class="btn btn-accent btn-sm" href="${S.user ? '/profile/settings#s-biz' : '/login?next=/profile/settings%23s-biz'}">Подтвердить бизнес</a>`}</div>` : ''}
 
       <section class="biz-sec">
         <div class="biz-sec-head"><div><span class="bz-label">Бесплатно для всех</span><h2>Всё для продаж — без тарифа</h2>
@@ -3946,7 +4000,7 @@
         b.onclick = () => {
           const key = b.dataset.buy;
           payModal({ title: `Тариф «${PLAN_NAME[key]}»`, amount: pr[key][months], url: '/api/my/plan/pay', body: { plan: key, months },
-            lines: [['Срок', `${months} мес. (${months * 30} дней)`], ...(plan && plan.id !== key ? [['Остаток «' + plan.name + '»', 'пересчитаем по цене месяца']] : plan ? [['Продление', `с ${dateShort(plan.until)}`]] : [])] });
+            lines: [['Срок', `${months} мес. (${months * 30} дней)`], ...(plan && plan.id !== key ? [[plan.trial ? `Пробный «${plan.name}»` : `Остаток «${plan.name}»`, plan.trial ? 'закончится, новый тариф — с сегодня' : 'пересчитаем по цене месяца']] : plan ? [['Начало', `с ${dateShort(plan.until)}${plan.trial ? ', после пробного' : ''}`]] : [])] });
         };
       });
     };
@@ -4029,7 +4083,7 @@
     box.innerHTML = String(html`<div class="bizhub">
       ${!biz ? html`<div class="biz-gate">${ic('shield', 26, 1.8)}<div><b>Подтвердите бизнес</b><span>Тарифы и продвижение — для ИП и компаний. Отправьте название, ИНН и ОГРН(ИП) — модератор сверит их с ЕГРЮЛ/ЕГРИП, обычно за день.</span></div><a class="btn btn-dark" href="/profile/settings#s-biz">Подтвердить</a></div>` : ''}
       <div class="plan-now ${d.plan ? d.plan.id : 'none'}">
-        <div class="pn-txt"><span class="pn-k">Тариф</span><b>${d.plan ? `«${d.plan.name}»` : 'Не подключён'}</b>
+        <div class="pn-txt"><span class="pn-k">${d.plan && d.plan.trial ? 'Пробный тариф' : 'Тариф'}</span><b>${d.plan ? `«${d.plan.name}»` : 'Не подключён'}</b>
           <span>${d.plan ? `до ${dateLong(d.plan.until)} · осталось ${daysLeft(d.plan.until)} ${plural(daysLeft(d.plan.until), 'день', 'дня', 'дней')}` : `Витрина, статистика магазина и автозагрузка — от ${rub(d.prices.shop[1])} в месяц. Размещение объявлений бесплатно всегда.`}</span></div>
         <a class="btn ${d.plan ? 'btn-light' : 'btn-dark'}" href="/business">${d.plan ? 'Продлить или сменить' : 'Выбрать тариф'}</a>
       </div>
@@ -4258,7 +4312,7 @@
     ['', [['dash', 'chart', 'Сводка']]],
     ['Проверка', [['pending', 'inbox', 'На проверке', 'pending'], ['reports', 'flag', 'Жалобы', 'reports'], ['appeals', 'reply', 'Апелляции', 'appeals'], ['reviews', 'star', 'Отзывы', 'reviews'], ['tags', 'tag', 'Метки на фото', 'tags'], ['support', 'headset', 'Поддержка', 'support'], ['biz', 'shield', 'Бизнес', 'biz']]],
     ['Объявления', [['active', 'tag', 'Опубликованные'], ['rejected', 'close', 'Отклонённые'], ['sold', 'check', 'Проданные'], ['archived', 'pause', 'Снятые']]],
-    ['Люди', [['users', 'users', 'Пользователи'], ['log', 'list', 'Журнал действий']]],
+    ['Люди', [['users', 'users', 'Пользователи'], ['sources', 'chart', 'Откуда приходят'], ['log', 'list', 'Журнал действий']]],
     ['Деньги', [['payments', 'card', 'Платежи'], ['ads', 'megaphone', 'Реклама', 'ads'], ['billing', 'tag', 'Оплата и цены']]],
     ['Настройки', [['notify', 'bell', 'Мои уведомления'], ['mail', 'mail', 'Почта'], ['oauth', 'lock', 'Вход через сервисы'], ['ai', 'sparkle', 'ИИ по фото'], ['seo', 'search', 'Поиск и статистика'], ['backup', 'shield', 'Копии и безопасность'], ['site', 'refresh', 'Версия сайта']]]
   ];
@@ -4306,6 +4360,7 @@
       biz: () => renderUsersAdmin(box, new URLSearchParams({ f: 'biz' }), 'Проверка бизнеса'),
       oauth: () => renderOauthAdmin(box),
       ai: () => renderAiAdmin(box),
+      sources: () => renderSourcesAdmin(box, q),
       seo: () => renderSeoAdmin(box),
       backup: () => renderBackupAdmin(box),
       payments: () => renderPaymentsAdmin(box, q),
@@ -4484,10 +4539,11 @@
             <a class="btn btn-soft btn-sm" href="https://egrul.nalog.ru/index.html" target="_blank" rel="noopener">${ic('search', 16)}Проверить в ЕГРЮЛ/ЕГРИП</a>
             ${u.business.status !== 'verified' ? html`<button class="btn btn-accent btn-sm" data-biz-ok="${u.id}">Подтвердить</button>` : ''}
             ${u.business.status !== 'rejected' ? html`<button class="btn btn-line btn-sm" data-biz-no="${u.id}">${u.business.status === 'verified' ? 'Снять подтверждение' : 'Отказать'}</button>` : ''}
+            ${u.business.status === 'verified' ? html`<button class="btn btn-soft btn-sm" data-gift>${ic('store', 16)}Подарить тариф</button>` : ''}
           </div>
           <p class="muted" style="margin:0;font-size:13px">Найдите ИНН в выписке ФНС и сверьте название, ОГРН(ИП) и что организация или ИП действуют.</p>
         </div>` : ''}
-        ${u.plan ? html`<div class="adm-biz is-verified"><div class="adm-biz-head"><b>Тариф «${u.plan.name}»</b><span class="pf-badge ok">до ${dateLong(u.plan.until)}</span></div>
+        ${u.plan ? html`<div class="adm-biz is-verified"><div class="adm-biz-head"><b>${u.plan.trial ? 'Пробный ' : 'Тариф '}«${u.plan.name}»</b><span class="pf-badge ok">до ${dateLong(u.plan.until)}</span></div>
           ${u.shop && (u.shop.about || u.shop.cover || u.shop.site) ? html`<div class="muted" style="font-size:14px">Витрина: ${u.shop.about ? `«${u.shop.about.slice(0, 140)}${u.shop.about.length > 140 ? '…' : ''}»` : 'без описания'}${u.shop.site ? ` · ${u.shop.site}` : ''}</div>
           <div class="adm-person-act"><a class="btn btn-soft btn-sm" href="/u/${u.id}" target="_blank">${ic('store', 16)}Витрина</a><button class="btn btn-line btn-sm" data-shop-clear="${u.id}">Очистить витрину</button></div>` : html`<div class="muted" style="font-size:14px">Витрина не заполнена.</div>`}
           <a href="/admin?status=payments" class="muted" style="font-size:13px;text-decoration:underline">Платежи и возвраты</a></div>` : ''}
@@ -4520,6 +4576,16 @@
     $('[data-support]').onclick = async () => {
       try { const r = await api('POST', `/api/admin/users/${u.id}/support`); go(`/admin?status=support&t=${r.thread}`); } catch (e) { toast(e.message, true); }
     };
+    const gift = $('[data-gift]');
+    if (gift) gift.onclick = () => openModal(String(html`<h2>Подарить тариф</h2><p class="muted" style="margin:0">Бесплатно, без оплаты. Если такой тариф уже есть — продлим на эти дни.</p>
+        <div class="field"><label for="g-plan">Тариф</label><select id="g-plan" class="select"><option value="pro">«Магазин Про»</option><option value="shop">«Магазин»</option></select></div>
+        <div class="field"><label for="g-days">Дней</label><input id="g-days" class="input" inputmode="numeric" value="90"></div>
+        <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-dark" data-ok>Подарить</button></div>`), (m, close) => {
+      $('[data-x]', m).onclick = close;
+      $('[data-ok]', m).onclick = async () => {
+        try { await api('POST', `/api/admin/users/${u.id}/plan`, { plan: $('#g-plan', m).value, days: $('#g-days', m).value }); close(); toast('Тариф подарен — продавец получил уведомление'); render(); } catch (e) { toast(e.message, true); }
+      };
+    });
     const sc = $('[data-shop-clear]');
     if (sc) sc.onclick = () => reasonModal({ title: 'Очистить витрину', hint: 'Уберём описание, обложку, часы, адрес и сайт. Тариф продолжит действовать. Причину увидит продавец.', url: `/api/admin/users/${u.id}/shop/clear`, okLabel: 'Очистить', reasons: ['Контакты и мессенджеры в описании', 'Оскорбительное или недостоверное содержание', 'Ссылка на подозрительный сайт', 'Чужое фото на обложке'], placeholder: 'Что не так — для продавца' });
     bindModActions(app);
@@ -4599,6 +4665,33 @@
       for (const [k, v] of new FormData(e.target).entries()) { const [pr, f] = k.split('.'); (body[pr] = body[pr] || {})[f] = v.trim(); }
       try { const r = await api('PUT', '/api/admin/oauth', body); S.config.oauth = r.enabled; toast('Сохранено'); renderOauthAdmin(box); } catch (ex) { toast(ex.message, true); }
     };
+  }
+
+  // ---------- откуда приходят люди ----------
+  const SRC_NAME = { vk: 'ВКонтакте', instagram: 'Instagram', telegram: 'Telegram', max: 'MAX', yandex: 'Яндекс', 'yandex-direct': 'Яндекс Директ', google: 'Google', dzen: 'Дзен', ok: 'Одноклассники', avito: 'Авито', direct: 'Прямые заходы', unknown: 'До начала учёта' };
+  async function renderSourcesAdmin(box, q) {
+    const days = ['7', '30', '90', '365'].includes(q.get('days')) ? q.get('days') : '30';
+    const d = await api('GET', `/api/admin/sources?days=${days}`);
+    const pct = (a, b) => (b ? `${Math.round((a / b) * 1000) / 10}`.replace('.', ',') + '%' : '—');
+    const max = Math.max(1, ...d.items.map((r) => r.signups));
+    box.innerHTML = String(html`<div class="adm-head"><h1>Откуда приходят</h1></div>
+      <div class="pf-status">${[['7', '7 дней'], ['30', '30 дней'], ['90', '90 дней'], ['365', 'Год']].map(([k, t]) => html`<a class="chip ${k === days ? 'active' : ''}" href="/admin?status=sources&days=${k}">${t}</a>`)}</div>
+      <div class="stats">${[['заходов', d.total.visits], ['регистраций', d.total.signups], ['стали продавцами', d.total.sellers], ['объявлений от них', d.total.listings]].map(([k, n]) => html`<div class="stat"><div class="n">${NF.format(n)}</div><div class="k">${k}</div></div>`)}</div>
+      ${d.items.length ? html`<div class="src-tbl" role="table">
+        <div class="src-row src-h" role="row"><span>Источник</span><span>Заходы</span><span>Регистрации</span><span>Конверсия</span><span>Продавцы</span><span>Объявления</span></div>
+        ${d.items.map((r) => html`<div class="src-row" role="row"><span class="src-name"><b>${SRC_NAME[r.src] || r.src}</b>${r.campaign ? html`<small>${r.campaign}</small>` : ''}<i style="width:${Math.round((r.signups / max) * 100)}%"></i></span>
+          <span>${NF.format(r.visits)}</span><span><b>${NF.format(r.signups)}</b></span><span>${pct(r.signups, r.visits)}</span><span>${NF.format(r.sellers)}</span><span>${NF.format(r.listings)}</span></div>`)}</div>`
+    : html`<div class="empty"><h3>Пока пусто</h3><p>Заходы начнут считаться с этой версии сайта.</p></div>`}
+      <section class="panel src-link"><h2 class="h2" style="margin:0">Ссылка с меткой</h2>
+        <p class="muted" style="margin:0;font-size:14px">Ставьте такие ссылки в посты, рекламу и сторис — и здесь будет видно, сколько людей пришло и сколько из них стали продавцами.</p>
+        <div class="row stack-m"><div class="field" style="flex:1"><label for="sl-src">Где разместите</label><select id="sl-src" class="select">${['vk', 'max', 'telegram', 'instagram', 'yandex-direct', 'dzen', 'ok'].map((k) => html`<option value="${k}">${SRC_NAME[k]}</option>`)}</select></div>
+          <div class="field" style="flex:1"><label for="sl-c">Метка кампании <small class="muted">— по желанию</small></label><input id="sl-c" class="input" placeholder="например, post-velosiped" autocomplete="off"></div></div>
+        <div class="oa-copy"><code id="sl-url"></code><button type="button" class="btn btn-soft btn-sm" id="sl-copy">Скопировать</button></div>
+        <p class="muted" style="margin:0;font-size:13px">Без метки тоже считаем: если человек перешёл из ВКонтакте, Яндекса или Google, источник определится по сайту, с которого он пришёл. «Прямые заходы» — набрали адрес сами или открыли из закладок и мессенджеров, которые не сообщают источник.</p>
+      </section>`);
+    const upd = () => { const c = $('#sl-c').value.trim().toLowerCase().replace(/[^a-z0-9а-яё_.-]+/gi, '-'); $('#sl-url').textContent = `${location.origin}/?utm_source=${$('#sl-src').value}${c ? `&utm_campaign=${encodeURIComponent(c)}` : ''}`; };
+    $('#sl-src').onchange = upd; $('#sl-c').oninput = upd; upd();
+    $('#sl-copy').onclick = async () => { const t = $('#sl-url').textContent; try { await navigator.clipboard.writeText(t); toast('Скопировано'); } catch { toast(t); } };
   }
 
   // ---------- ИИ по фото: Яндекс AI Studio ----------
@@ -4748,7 +4841,7 @@
 
   // ---------- оплата: подключение ЮKassa и цены ----------
   async function renderBillingAdmin(box) {
-    const d = await api('GET', '/api/admin/billing');
+    const [d, stt] = await Promise.all([api('GET', '/api/admin/billing'), api('GET', '/api/admin/starter')]);
     const c = d.config; const pr = d.prices;
     const opt = (map, cur) => Object.entries(map).map(([k, t]) => html`<option value="${k}" ${String(cur) === k ? raw('selected') : ''}>${t}</option>`);
     const priceIn = (name, v, label) => html`<label class="price-in"><span>${label}</span><input class="input" name="${name}" inputmode="numeric" value="${v}"><em>₽</em></label>`;
@@ -4777,7 +4870,23 @@
           <div class="field"><label for="pd">Скидка на продвижение для «Магазин Про», %</label><input id="pd" name="proDiscount" class="input" inputmode="numeric" value="${pr.proDiscount}"></div>
           <div class="set-btns"><button class="btn btn-dark" type="submit">Сохранить цены</button><button type="button" class="btn btn-soft" data-defaults>Цены по умолчанию</button></div>
         </form>
+        <form class="panel settings" id="starter" style="max-width:none">
+          <div class="adm-head" style="margin:0"><h2 class="h2" style="margin:0">Пробный тариф первым магазинам</h2><span class="pf-badge ${stt.on ? 'ok' : ''}">${stt.on ? `выдано ${stt.used} из ${stt.limit}` : 'выключено'}</span></div>
+          <p class="muted" style="margin:0;font-size:14px">Тариф включается сам, когда модератор подтверждает бизнес, — и сразу всем уже подтверждённым магазинам без тарифа. Один раз на компанию (по ИНН). Оплата не нужна. На странице «Для бизнеса» видно, сколько мест осталось.</p>
+          <label class="switch"><span>Дарить тариф первым магазинам<small>Выключите — новые подарки прекратятся, выданные продолжат действовать</small></span><input type="checkbox" name="on" ${stt.on ? raw('checked') : ''}><span class="track"></span></label>
+          <div class="row stack-m">
+            <div class="field" style="flex:2"><label for="st-plan">Тариф</label><select id="st-plan" name="plan" class="select"><option value="pro" ${stt.plan === 'pro' ? raw('selected') : ''}>«Магазин Про»</option><option value="shop" ${stt.plan === 'shop' ? raw('selected') : ''}>«Магазин»</option></select></div>
+            <div class="field" style="flex:1"><label for="st-days">Дней</label><input id="st-days" name="days" class="input" inputmode="numeric" value="${stt.days}"></div>
+            <div class="field" style="flex:1"><label for="st-limit">Мест</label><input id="st-limit" name="limit" class="input" inputmode="numeric" value="${stt.limit}"></div>
+          </div>
+          <div class="set-btns"><button class="btn btn-dark" type="submit">Сохранить</button></div>
+        </form>
       </div>`);
+    $('#starter', box).onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      try { const r = await api('PUT', '/api/admin/starter', { on: f.on.checked, plan: f.plan.value, days: f.days.value, limit: f.limit.value }); await after(r.granted ? `Сохранено. Подарили тариф ${r.granted} ${plural(r.granted, 'магазину', 'магазинам', 'магазинам')}` : 'Сохранено'); } catch (ex) { toast(ex.message, true); }
+    };
     $$('[data-copy]', box).forEach((b) => { b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Скопировано'); } catch { toast(b.dataset.copy); } }; });
     const after = async (msg) => { S.config = await api('GET', '/api/config'); toast(msg); render(); };
     $('#yk', box).onsubmit = async (e) => {
@@ -4804,6 +4913,7 @@
           <div class="field"><label for="sy">Яндекс.Вебмастер — код подтверждения</label><input id="sy" name="yandex" class="input" value="${s.yandex}" placeholder="например 1a2b3c4d5e6f7a8b" autocomplete="off"><span class="help">Можно вставить весь тег &lt;meta name="yandex-verification" …&gt; — возьмём код сами.</span></div>
           <div class="field"><label for="sg">Google Search Console — код подтверждения</label><input id="sg" name="google" class="input" value="${s.google}" placeholder="необязательно" autocomplete="off"></div>
           <div class="field"><label for="sm">Яндекс.Метрика — номер счётчика</label><input id="sm" name="metrika" class="input" inputmode="numeric" value="${s.metrika}" placeholder="например 98765432" autocomplete="off"><span class="help">Счётчик включается только у тех, кто нажал «Хорошо» в плашке cookie. Вебвизор выключен.</span></div>
+          <div class="field"><label for="smk">Яндекс Карты — ключ JavaScript API</label><input id="smk" name="mapsKey" class="input" value="${s.mapsKey}" placeholder="например 0a1b2c3d-…" autocomplete="off"><span class="help">С ключом в поиске появляется переключатель «Список | Карта». Без ключа карты нет.</span></div>
           <div class="set-btns"><button class="btn btn-dark" type="submit">Сохранить</button></div>
         </form>
         <section class="panel settings" style="max-width:none">
@@ -4813,6 +4923,7 @@
             ${step(2, 'Карта сайта', html`В Вебмастере: «Индексирование → Файлы Sitemap» → добавьте <code>${d.sitemap}</code>. Она обновляется сама.`)}
             ${step(3, 'Метрика', html`На <a href="https://metrika.yandex.ru" target="_blank" rel="noopener" style="text-decoration:underline">metrika.yandex.ru</a> создайте счётчик для torgana.ru без Вебвизора → номер счётчика — сюда.`)}
             ${step(4, 'Google', 'По желанию: Search Console → «Тег HTML» → код сюда, затем добавьте ту же карту сайта.')}
+            ${step(5, 'Карта объявлений', html`В <a href="https://developer.tech.yandex.ru" target="_blank" rel="noopener" style="text-decoration:underline">Кабинете разработчика Яндекса</a> → «Подключить API» → «JavaScript API и HTTP Геокодер» → в ограничениях укажите сайт torgana.ru → ключ сюда.`)}
           </ol>
           <div class="oa-copy"><code>${d.robots}</code><a class="btn btn-soft btn-sm" href="${d.robots}" target="_blank" rel="noopener">Открыть</a></div>
         </section>
@@ -5510,7 +5621,32 @@
     asking = false;
   }
 
+  // Откуда пришёл человек (первый заход браузера): метка utm_source или сайт, с которого перешли.
+  // Храним только в браузере (localStorage, без cookie), один раз сообщаем о заходе; при регистрации передаём серверу.
+  const srcOf = () => { try { return localStorage.getItem('tg_src') || ''; } catch { return ''; } };
+  const SRC_HOSTS = [[/(^|\.)vk\.(com|ru)$|^vk\.cc$/, 'vk'], [/instagram\.com$/, 'instagram'], [/(^|\.)t\.me$|telegram\.(org|me)$/, 'telegram'], [/(^|\.)max\.ru$/, 'max'],
+    [/(^|\.)(yandex\.[a-z.]+|ya\.ru)$/, 'yandex'], [/(^|\.)google\.[a-z.]+$/, 'google'], [/(^|\.)dzen\.ru$/, 'dzen'], [/(^|\.)ok\.ru$/, 'ok'], [/(^|\.)avito\.ru$/, 'avito']];
+  const SRC_ALIAS = { ig: 'instagram', insta: 'instagram', tg: 'telegram', vkontakte: 'vk', yd: 'yandex', direct: 'yandex-direct' };
+  function trackSource() {
+    try {
+      if (localStorage.getItem('tg_src')) return;
+      const q = new URLSearchParams(location.search);
+      let src = (q.get('utm_source') || '').toLowerCase().trim();
+      const campaign = (q.get('utm_campaign') || '').toLowerCase().trim();
+      if (src) src = SRC_ALIAS[src] || src;
+      else if (document.referrer) {
+        const host = new URL(document.referrer).hostname.replace(/^www\./, '');
+        if (host !== location.hostname) src = (SRC_HOSTS.find(([re]) => re.test(host)) || [null, host])[1];
+      }
+      src = (src || 'direct').replace(/[^a-z0-9а-яё_.-]+/gi, '-').slice(0, 40);
+      const val = `${src}|${campaign.replace(/[^a-z0-9а-яё_.-]+/gi, '-').slice(0, 60)}`;
+      localStorage.setItem('tg_src', val);
+      api('POST', '/api/visit', { src, campaign }).catch(() => {});
+    } catch { /* приватный режим — не считаем */ }
+  }
+
   async function boot() {
+    trackSource();
     try {
       const [config, me] = await Promise.all([api('GET', '/api/config'), api('GET', '/api/me')]);
       S.config = config;

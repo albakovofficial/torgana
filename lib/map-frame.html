@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Карта объявлений</title>
+<style>
+  html, body, #map { margin: 0; height: 100%; width: 100%; background: #EEF0EC; font: 14px/1.35 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #141414; }
+  .st { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #6B6F6A; text-align: center; padding: 24px; }
+  .mc { display: flex; gap: 12px; width: 260px; text-decoration: none; color: inherit; cursor: pointer; }
+  .mc img, .mc .ni { width: 72px; height: 72px; border-radius: 12px; object-fit: cover; background: #EEF0EC; flex: none; }
+  .mc b { display: block; font-size: 16px; margin-bottom: 2px; }
+  .mc span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .mc small { display: block; color: #6B6F6A; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="st" id="st">Загружаем карту…</div>
+<script nonce="__NONCE__">
+// Рамка в песочнице: у неё «пустой» адрес, поэтому хранилище и cookie браузер ей не даёт.
+// Скрипты карт иногда к ним обращаются — подставляем пустые заглушки, чтобы карта не падала.
+(function () {
+  try { window.localStorage.getItem('x'); } catch (e) {
+    const mem = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), clear: () => m.clear(), key: (i) => [...m.keys()][i] || null, get length() { return m.size; } }; };
+    try { Object.defineProperty(window, 'localStorage', { value: mem(), configurable: true }); } catch (_) {}
+    try { Object.defineProperty(window, 'sessionStorage', { value: mem(), configurable: true }); } catch (_) {}
+  }
+  try { void document.cookie; } catch (e) {
+    try { Object.defineProperty(document, 'cookie', { get: () => '', set: () => {}, configurable: true }); } catch (_) {}
+  }
+})();
+
+(function () {
+  const parent = window.parent;
+  const st = document.getElementById('st');
+  const say = (m) => parent.postMessage(m, '*');
+  const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const price = (p) => String(p.priceText || '');
+  // Фото — только с нашего сайта (адрес начинается с нашего origin, который прислала страница).
+  let origin = '';
+  const img = (p) => (p.photo && origin && p.photo.startsWith(origin + '/uploads/') ? `<img src="${esc(p.photo)}" alt="">` : '<i class="ni"></i>');
+  const card = (p) => `<a class="mc" data-id="${Number(p.id)}">${img(p)}<div><b>${esc(price(p))}</b><span>${esc(p.title)}</span><small>${esc(p.place)}</small></div></a>`;
+
+  let map = null; let om = null; let pending = null;
+  const fail = (why) => { st.textContent = 'Карта сейчас не загрузилась. Попробуйте позже или посмотрите списком.'; st.style.display = 'flex'; say({ type: 'error', why: String(why || '') }); };
+  const timer = setTimeout(() => { if (!map) fail('timeout'); }, 15000);
+
+  function show(items, center) {
+    if (!map) { pending = [items, center]; return; }
+    om.removeAll();
+    om.add({ type: 'FeatureCollection', features: items.map((p) => ({
+      type: 'Feature', id: Number(p.id), geometry: { type: 'Point', coordinates: [Number(p.lat), Number(p.lng)] },
+      properties: { balloonContentBody: card(p), clusterCaption: esc(price(p)), hintContent: esc(p.title) }
+    })) });
+    if (items.length) {
+      const b = om.getBounds();
+      if (b) map.setBounds(b, { checkZoomRange: true, zoomMargin: 40 }).then(() => { if (map.getZoom() > 15) map.setZoom(15); });
+    } else if (center) map.setCenter(center, 10);
+  }
+
+  window.addEventListener('message', (e) => {
+    if (e.source !== parent || !e.data || e.data.type !== 'points') return;
+    origin = typeof e.data.origin === 'string' ? e.data.origin : '';
+    show(Array.isArray(e.data.items) ? e.data.items.slice(0, 1000) : [], Array.isArray(e.data.center) ? e.data.center : null);
+  });
+  // Клик по карточке в балуне — открываем объявление на сайте (страница сама проверит номер).
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('.mc[data-id]');
+    if (a) { e.preventDefault(); say({ type: 'open', id: Number(a.dataset.id) }); }
+  });
+
+  window.__mapReady = function () {
+    ymaps.ready(() => {
+      try {
+        map = new ymaps.Map('map', { center: [55.7558, 37.6173], zoom: 10, controls: ['zoomControl', 'geolocationControl'] }, { suppressMapOpenBlock: true, yandexMapDisablePoiInteractivity: true });
+        om = new ymaps.ObjectManager({ clusterize: true, gridSize: 64, clusterDisableClickZoom: false, clusterOpenBalloonOnClick: true });
+        om.objects.options.set({ preset: 'islands#circleDotIcon', iconColor: '#1F5E4A', balloonMaxWidth: 300 });
+        om.clusters.options.set({ preset: 'islands#darkGreenClusterIcons', clusterBalloonContentLayout: 'cluster#balloonCarousel', clusterBalloonContentLayoutWidth: 290, clusterBalloonContentLayoutHeight: 100, clusterBalloonPagerSize: 6 });
+        map.geoObjects.add(om);
+        clearTimeout(timer);
+        st.style.display = 'none';
+        if (pending) { show(pending[0], pending[1]); pending = null; }
+        say({ type: 'ready' });
+      } catch (err) { fail(err && err.message); }
+    }, (err) => fail(err && err.message));
+  };
+  say({ type: 'hello' });
+})();
+</script>
+<script nonce="__NONCE__" src="https://api-maps.yandex.ru/2.1/?apikey=__KEY__&lang=ru_RU&onload=__mapReady"></script>
+</body>
+</html>

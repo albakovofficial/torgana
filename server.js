@@ -302,12 +302,13 @@ const stats = require('./lib/stats')({ route, db, h: helpers });
 const reviews = require('./lib/reviews')({ route, db, mailer, h: helpers });
 const trust = require('./lib/trust')({ route, db, h: helpers, mailer }); // «Телефон подтверждён», проверенный бизнес
 require('./lib/admin')({ route, db, h: helpers, reviews, trust }); // сводка, пользователи, журнал, письма модератору
+helpers.sources = require('./lib/sources')({ route, db, h: helpers }); // откуда пришли люди (1.38)
 const oauth = require('./lib/oauth')({ route, db, h: helpers, auth, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, secureCookies: SECURE_COOKIES, adminEmails: ADMIN_EMAILS, testBase: process.env.OAUTH_TEST_BASE || '' });
 // Платные услуги для бизнеса: оплата через ЮKassa, тарифы «Магазин» и «Магазин Про», продвижение, автозагрузка из фида.
 helpers.logEvent = logEvent;
 helpers.categoryIds = CATEGORY_IDS;
 const billing = require('./lib/billing')({ route, db, h: helpers, mailer, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, testBase: process.env.YOOKASSA_TEST_BASE || '' });
-const business = require('./lib/business')({ route, db, h: helpers, billing, mailer, stats });
+const business = require('./lib/business')({ route, db, h: helpers, billing, mailer, stats, trust });
 const promo = require('./lib/promo')({ route, db, h: helpers, billing, business, stats, mailer, searchSpec, specSql, categoryIds: CATEGORY_IDS });
 // Продвижение в ленте и поиске для всех продавцов: XL-карточка, рамка, метки на фото (1.21.0).
 const boost = require('./lib/boost')({ route, db, h: helpers, billing });
@@ -346,14 +347,15 @@ const seo = require('./lib/seo')({ db, base: PUBLIC_URL || `http://localhost:${P
 route('GET', '/api/admin/seo', (ctx) => {
   requireAdmin(ctx);
   const base = PUBLIC_URL || `http://localhost:${PORT}`;
-  return { seo: { yandex: '', google: '', metrika: '', ...(seoSetting('seo') || {}) }, sitemap: `${base}/sitemap.xml`, robots: `${base}/robots.txt` };
+  return { seo: { yandex: '', google: '', metrika: '', mapsKey: '', ...(seoSetting('seo') || {}) }, sitemap: `${base}/sitemap.xml`, robots: `${base}/robots.txt` };
 });
 route('PUT', '/api/admin/seo', async (ctx) => {
   const admin = requireAdmin(ctx);
   const b = await readJson(ctx.req);
   const code = (v) => str(v, 120).replace(/^.*content=["']?([\w-]+)["']?.*$/s, '$1').replace(/[^\w-]/g, ''); // можно вставить весь <meta …>
   const metrika = str(b.metrika, 20).replace(/\D/g, '');
-  const next = { yandex: code(b.yandex), google: code(b.google), metrika };
+  const mapsKey = str(b.mapsKey, 80).trim().replace(/[^\w-]/g, ''); // ключ JavaScript API Яндекс Карт
+  const next = { yandex: code(b.yandex), google: code(b.google), metrika, mapsKey };
   db.prepare('INSERT INTO settings (key, value) VALUES (\'seo\', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(JSON.stringify(next));
   audit(admin, 'seo-settings', {}, next);
   return { seo: next };
@@ -391,8 +393,9 @@ route('GET', '/api/config', () => ({
   supportEmail: SUPPORT_EMAIL,
   supportFaq: SUPPORT_FAQ,
   oauth: oauth.enabled(),
-  billing: { ready: billing.ready(), prices: billing.prices(), boostTags: boost.TAGS, boostDays: boost.BOOST_DAYS },
+  billing: { ready: billing.ready(), prices: billing.prices(), boostTags: boost.TAGS, boostDays: boost.BOOST_DAYS, starter: business.starterPublic() },
   metrika: (seoSetting('seo') || {}).metrika || '',
+  maps: !!(seoSetting('seo') || {}).mapsKey,
   operator: (({ name, inn, ogrnip }) => ({ name, inn, ogrnip }))(legal.operator())
 }));
 
@@ -419,6 +422,7 @@ route('POST', '/api/auth/register', async (ctx) => {
   const isAdmin = ADMIN_EMAILS.includes(email) ? 1 : 0;
   const info = db.prepare('INSERT INTO users (email, name, password_hash, is_admin, created_at, consent_at) VALUES (?, ?, ?, ?, ?, ?)')
     .run(email, name, auth.hashPassword(password), isAdmin, now(), now());
+  helpers.sources.tag(info.lastInsertRowid, body.src);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
   // Почта подключена — войти можно только после кода из письма (6 цифр). Без почты код не отправить — входим сразу.
   if (codesOn()) { mailer.sendCode(user); return { needCode: true, email: user.email }; }
@@ -605,6 +609,27 @@ route('GET', '/api/listings', (ctx) => {
   };
 });
 
+// Объявления на карте: те же фильтры, что в поиске. Точка — станция метро или центр города,
+// точный адрес не показываем никогда (его продавец сообщает в чате).
+const cityCenter = require('./lib/geo').cityCenter;
+route('GET', '/api/listings/map', (ctx) => {
+  const spec = searchSpec(Object.fromEntries(ctx.query.entries()), CATEGORY_IDS);
+  const f = specSql(spec);
+  const whereSql = ['l.status = \'active\'', 'u.is_blocked = 0', ...f.where].join(' AND ');
+  const total = db.prepare(`SELECT COUNT(*) AS n FROM listings l JOIN users u ON u.id = l.user_id WHERE ${whereSql}`).get(...f.args).n;
+  const rows = db.prepare(`SELECT l.id, l.title, l.price, l.price_unit, l.city, l.metro,
+      (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo
+    FROM listings l JOIN users u ON u.id = l.user_id WHERE ${whereSql} ORDER BY l.created_at DESC, l.id DESC LIMIT 1000`).all(...f.args);
+  const items = [];
+  for (const r of rows) {
+    const st = r.metro ? metro.geo(r.city, r.metro) : null;
+    const at = st || cityCenter(r.city);
+    if (!at) continue;
+    items.push({ id: r.id, lat: at.lat, lng: at.lng, title: r.title, price: r.price, priceUnit: r.price_unit, photo: photoUrl(r.photo), place: st ? `м. ${r.metro}` : r.city });
+  }
+  return { items, total, shown: rows.length };
+});
+
 route('GET', '/api/listings/:id', (ctx) => {
   const id = parseInt(ctx.params.id, 10);
   const l = loadListing(id);
@@ -625,7 +650,7 @@ route('GET', '/api/listings/:id', (ctx) => {
     ORDER BY (l.subcategory = ? AND l.subcategory != '') DESC, l.created_at DESC LIMIT 4`)
     .all(uid, l.category, id, l.subcategory).map(cardFromRow);
   const attrs = attrsOf(l);
-  const station = l.metro ? (metro.stations(l.city).find((s) => s.name === l.metro) || { name: l.metro, line: '', color: '' }) : null;
+  const station = l.metro ? (({ name, line, color }) => ({ name, line, color }))(metro.stations(l.city).find((s) => s.name === l.metro) || { name: l.metro, line: '', color: '' }) : null;
   let market = null;
   if (l.price) {
     const est = marketEstimate({ id, category: l.category, title: l.title, priceUnit: l.price_unit });
@@ -995,7 +1020,7 @@ route('GET', '/api/conversations/:id', (ctx) => {
   return {
     conversation: { id: c.id, role: c.buyer_id === u.id ? 'buyer' : 'seller' },
     review: reviews.chatState(u.id, c),
-    listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, bargain: !!l.bargain, city: l.city, metro: l.metro || '', photo: photoUrl(photo && photo.file) },
+    listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, bargain: !!l.bargain, delivery: !!l.delivery, city: l.city, metro: l.metro || '', photo: photoUrl(photo && photo.file) },
     // 1.27: оценка собеседника — для колонки «Объявление и продавец» справа от чата
     other: { id: other.id, name: other.name, avatar: photoUrl(other.avatar), createdAt: other.created_at, rating: reviews.ratingOf(other.id) },
     offers: deals.offersOf(c.id), // состояния всех предложений — обновляются при каждом опросе
@@ -1087,6 +1112,25 @@ const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob: https://mc.yandex.ru https://mc.yandex.com; style-src 'self' 'unsafe-inline'; font-src 'self'; media-src 'self' blob:; connect-src 'self' https://mc.yandex.ru https://mc.yandex.com; script-src 'self' https://mc.yandex.ru; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 };
 
+// Карта Яндекса живёт в отдельной странице-рамке со своей политикой безопасности:
+// основной сайт не пускает чужие скрипты, а скрипты карт работают только внутри рамки.
+// Рамка открывается в песочнице (без доступа к сайту, cookie и входу); точки получает сообщением от страницы поиска.
+const MAP_FRAME = fs.readFileSync(path.join(__dirname, 'lib/map-frame.html'), 'utf8');
+function serveMapFrame(res) {
+  const key = (seoSetting('seo') || {}).mapsKey || '';
+  const nonce = crypto.randomBytes(16).toString('base64');
+  const Y = 'https://*.yandex.ru https://*.yandex.net https://yandex.ru https://yastatic.net https://*.yastatic.net';
+  res.writeHead(key ? 200 : 404, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}' 'unsafe-eval' ${Y}; style-src 'unsafe-inline' blob: ${Y}; img-src 'self' data: blob: ${Y}; connect-src ${Y}; frame-src ${Y}; font-src ${Y}; worker-src blob:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'`
+  });
+  if (!key) { res.end('Карта не подключена'); return; }
+  res.end(MAP_FRAME.replace(/__NONCE__/g, nonce).replace('__KEY__', encodeURIComponent(key)));
+}
+
 function serveFile(res, filePath, cache) {
   fs.stat(filePath, (err, st) => {
     if (err || !st.isFile()) {
@@ -1171,6 +1215,7 @@ function serveStatic(req, res, pathname, search) {
       return;
     }
   }
+  if (pathname === '/map-frame') { serveMapFrame(res); return; }
   if (pathname === '/sitemap.xml') { serveText(res, 'application/xml; charset=utf-8', seo.sitemap()); return; }
   if (pathname === '/robots.txt') { serveText(res, 'text/plain; charset=utf-8', seo.robots()); return; }
   // Все остальные пути — страницы приложения.
