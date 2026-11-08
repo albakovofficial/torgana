@@ -2009,7 +2009,7 @@
       const slot = $('#ai-slot');
       if (!S.config.ai) { slot.innerHTML = ''; return; }
       const ready = st.photos.some((p) => p.file && !p.loading);
-      slot.innerHTML = String(html`<div class="ed-ai ${st.aiBusy ? 'busy' : ''}"><span class="ed-ai-ic">${ic('sparkle', 20)}</span><p>${st.aiBusy ? 'Смотрим на фото и заполняем объявление…' : st.aiDone ? 'Заполнили по фото — проверьте на следующем шаге.' : ready ? 'Заполним название, категорию, характеристики и описание по первому фото.' : 'Добавьте фото — и мы заполним объявление за вас.'}</p>
+      slot.innerHTML = String(html`<div class="ed-ai ${st.aiBusy ? 'busy' : ''}"><span class="ed-ai-ic">${ic('sparkle', 20)}</span><p>${st.aiBusy ? (S.config.aiBy === 'yandex' ? 'Алиса AI смотрит на фото и заполняет объявление…' : 'Смотрим на фото и заполняем объявление…') : st.aiDone ? 'Заполнили по фото — проверьте на следующем шаге.' : ready ? 'Заполним название, категорию, характеристики и описание по первому фото.' : 'Добавьте фото — и мы заполним объявление за вас.'}</p>
         ${st.aiBusy ? '' : html`<button type="button" class="btn ${st.aiDone ? 'btn-soft' : 'btn-accent'} btn-sm" id="ai-btn" ${ready ? '' : raw('disabled')}>${st.aiDone ? 'Ещё раз' : 'Заполнить по фото'}</button>`}</div>`);
       const b = $('#ai-btn');
       if (b) b.onclick = () => aiFill(true);
@@ -4260,7 +4260,7 @@
     ['Объявления', [['active', 'tag', 'Опубликованные'], ['rejected', 'close', 'Отклонённые'], ['sold', 'check', 'Проданные'], ['archived', 'pause', 'Снятые']]],
     ['Люди', [['users', 'users', 'Пользователи'], ['log', 'list', 'Журнал действий']]],
     ['Деньги', [['payments', 'card', 'Платежи'], ['ads', 'megaphone', 'Реклама', 'ads'], ['billing', 'tag', 'Оплата и цены']]],
-    ['Настройки', [['notify', 'bell', 'Мои уведомления'], ['mail', 'mail', 'Почта'], ['oauth', 'lock', 'Вход через сервисы'], ['seo', 'search', 'Поиск и статистика'], ['backup', 'shield', 'Копии и безопасность'], ['site', 'refresh', 'Версия сайта']]]
+    ['Настройки', [['notify', 'bell', 'Мои уведомления'], ['mail', 'mail', 'Почта'], ['oauth', 'lock', 'Вход через сервисы'], ['ai', 'sparkle', 'ИИ по фото'], ['seo', 'search', 'Поиск и статистика'], ['backup', 'shield', 'Копии и безопасность'], ['site', 'refresh', 'Версия сайта']]]
   ];
   const LISTING_TABS = ['pending', 'reports', 'appeals', 'active', 'rejected', 'sold', 'archived'];
   function adminShell(active, stats, body) {
@@ -4305,6 +4305,7 @@
       users: () => renderUsersAdmin(box, q),
       biz: () => renderUsersAdmin(box, new URLSearchParams({ f: 'biz' }), 'Проверка бизнеса'),
       oauth: () => renderOauthAdmin(box),
+      ai: () => renderAiAdmin(box),
       seo: () => renderSeoAdmin(box),
       backup: () => renderBackupAdmin(box),
       payments: () => renderPaymentsAdmin(box, q),
@@ -4597,6 +4598,46 @@
       const body = {};
       for (const [k, v] of new FormData(e.target).entries()) { const [pr, f] = k.split('.'); (body[pr] = body[pr] || {})[f] = v.trim(); }
       try { const r = await api('PUT', '/api/admin/oauth', body); S.config.oauth = r.enabled; toast('Сохранено'); renderOauthAdmin(box); } catch (ex) { toast(ex.message, true); }
+    };
+  }
+
+  // ---------- ИИ по фото: Яндекс AI Studio ----------
+  async function renderAiAdmin(box) {
+    const a = await api('GET', '/api/admin/ai');
+    const state = a.off ? ['', 'выключено'] : a.provider === 'yandex' ? ['ok', 'подключено'] : a.provider ? ['ok', 'работает через Claude'] : ['', 'не подключено'];
+    box.innerHTML = String(html`<div class="adm-head"><h1>ИИ по фото</h1></div>
+      <p class="muted" style="margin:0;max-width:720px">Продавец загружает первое фото — и Торгана сама заполняет название, категорию, раздел, главные характеристики и описание. Фото распознаёт модель ${a.defaults.vision} в Яндекс AI Studio, текст пишет Алиса AI. Серверы — в России.</p>
+      <form id="ai-f" class="oa-grid"><section class="panel oa-card">
+        <div class="oa-head"><h2 class="h2">Яндекс AI Studio</h2><span class="pf-badge ${state[0]}">${state[1]}</span></div>
+        <ol class="ai-steps">
+          <li>Откройте <a href="https://console.yandex.cloud" target="_blank" rel="noopener">консоль Yandex Cloud</a> и выберите каталог. Его идентификатор (начинается с b1g…) — в адресной строке и на странице каталога.</li>
+          <li>«Сервисные аккаунты» → создайте аккаунт с ролью <code>ai.languageModels.user</code>.</li>
+          <li>В аккаунте: «Создать новый ключ» → «API-ключ». Скопируйте секрет — он показывается один раз.</li>
+        </ol>
+        <div class="field"><label for="ai-key">API-ключ</label><input id="ai-key" name="key" class="input" type="password" autocomplete="new-password" placeholder="${a.hasKey ? 'сохранён — оставьте пустым, чтобы не менять' : a.fromEnv ? 'задан на сервере' : 'AQVN…'}"></div>
+        <div class="field"><label for="ai-folder">Идентификатор каталога</label><input id="ai-folder" name="folder" class="input" value="${a.folder}" autocomplete="off" placeholder="b1g…"></div>
+        <details class="ai-more"><summary>Модели</summary>
+          <div class="field"><label for="ai-vision">Распознавание фото</label><input id="ai-vision" name="vision" class="input" value="${a.vision}" autocomplete="off"></div>
+          <div class="field"><label for="ai-text">Текст объявления <small class="muted">— пусто, чтобы не переписывать</small></label><input id="ai-text" name="text" class="input" value="${a.text}" autocomplete="off"></div>
+        </details>
+        <label class="switch"><span>Выключить ИИ по фото<small>Продавцы будут заполнять объявление сами</small></span><input type="checkbox" name="off" ${a.off ? raw('checked') : ''}><span class="track"></span></label>
+        <div class="ai-act"><button class="btn btn-dark" type="submit">Сохранить</button><button class="btn btn-soft" type="button" id="ai-test" ${a.provider === 'yandex' ? '' : raw('disabled')}>Проверить</button></div>
+        <p class="ai-res hidden" id="ai-res" role="status"></p>
+      </section></form>`);
+    $('#ai-f').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      try {
+        await api('PUT', '/api/admin/ai', { key: f.key.value.trim(), folder: f.folder.value.trim(), vision: f.vision.value.trim(), text: f.text.value.trim(), off: f.off.checked });
+        S.config = await api('GET', '/api/config').catch(() => S.config);
+        toast('Сохранено'); renderAiAdmin(box);
+      } catch (ex) { toast(ex.message, true); }
+    };
+    $('#ai-test').onclick = async (e) => {
+      const b = e.currentTarget; const res = $('#ai-res');
+      b.disabled = true; b.textContent = 'Проверяем…';
+      try { const r = await api('POST', '/api/admin/ai/test'); res.className = 'ai-res ok'; res.textContent = `Работает — Алиса ответила: «${r.answer}»`; } catch (ex) { res.className = 'ai-res bad'; res.textContent = ex.message; }
+      b.disabled = false; b.textContent = 'Проверить';
     };
   }
 

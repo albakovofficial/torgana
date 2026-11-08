@@ -2847,3 +2847,14 @@ body.pv-open { overflow: hidden; }
 .ed-draft svg { flex: none; }
 .ed-draft button { flex: none; height: 32px; padding: 0 14px; border: 0; border-radius: 999px; background: #fff; color: var(--text); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
 .ed-draft button:hover { background: #f4f4f1; }
+
+/* 1.37.0: модерация — ИИ по фото (Яндекс AI Studio) */
+.ai-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--text-2); }
+.ai-steps a { text-decoration: underline; }
+.ai-steps code { font-size: 13px; padding: 1px 6px; border-radius: 6px; background: var(--surface); }
+.ai-more summary { cursor: pointer; font-size: 14px; font-weight: 650; color: var(--text-2); margin-bottom: 10px; }
+.ai-more .field + .field { margin-top: 12px; }
+.ai-act { display: flex; gap: 10px; flex-wrap: wrap; }
+.ai-res { margin: 0; padding: 12px 14px; border-radius: 14px; font-size: 14px; }
+.ai-res.ok { background: var(--accent-soft); color: var(--accent); }
+.ai-res.bad { background: #FDECEC; color: #A32D2D; }

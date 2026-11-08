@@ -232,6 +232,7 @@ function pages(d) {
     ['admin-users', '/admin?status=users', d.admin],
     ['admin-biz', '/admin?status=biz', d.admin],
     ['admin-oauth', '/admin?status=oauth', d.admin],
+    ['admin-ai', '/admin?status=ai', d.admin],
     ['admin-user', `/admin/u/${d.seller.user.id}`, d.admin],
     ['admin-log', '/admin?status=log', d.admin],
     ['admin-notify', '/admin?status=notify', d.admin],

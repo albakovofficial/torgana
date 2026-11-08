@@ -13,7 +13,7 @@ const { HttpError, sendJson, readJson, parseCookies, rateLimit } = require('./li
 const auth = require('./lib/auth');
 const { CATEGORIES, CATEGORY_IDS, CITIES, PRICE_UNITS, CONDITIONS, SUPPORT_FAQ } = require('./lib/constants');
 const { norm, parseQuery, searchSpec, specSql, brandAliases } = require('./lib/search');
-const { suggestFromPhoto } = require('./lib/ai');
+const { suggestFromPhoto, pingYandex } = require('./lib/ai');
 const { createMailer } = require('./lib/mailer');
 const { createPush } = require('./lib/push');
 const { checkProhibited } = require('./lib/prohibited');
@@ -328,6 +328,19 @@ opsApi = ops;
 helpers.business = business;
 
 // Поисковики и Метрика: коды подтверждения Вебмастера и Search Console, номер счётчика — «Модерация → Поиск и статистика».
+// ИИ по фото: Яндекс AI Studio (ключ и каталог — в модерации, «Настройки → ИИ по фото» или YANDEX_AI_KEY/YANDEX_FOLDER_ID),
+// иначе Claude (ANTHROPIC_API_KEY). Нет ни того, ни другого — подсказки выключены.
+const YA_VISION = 'qwen3.6-35b-a3b';
+const YA_TEXT = 'aliceai-llm';
+function aiCfg() {
+  const s = seoSetting('ai') || {};
+  if (s.off) return null;
+  const key = s.key || process.env.YANDEX_AI_KEY || '';
+  const folder = s.folder || process.env.YANDEX_FOLDER_ID || '';
+  if (key && folder) return { provider: 'yandex', key, folder, vision: s.vision || process.env.YANDEX_VISION_MODEL || YA_VISION, text: s.text === '' ? '' : (s.text || process.env.YANDEX_TEXT_MODEL || YA_TEXT) };
+  if (AI_KEY) return { provider: 'anthropic', key: AI_KEY, model: AI_MODEL };
+  return null;
+}
 const seoSetting = (key) => { const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(key); try { return r ? JSON.parse(r.value) : null; } catch { return null; } };
 const seo = require('./lib/seo')({ db, base: PUBLIC_URL || `http://localhost:${PORT}`, getSetting: seoSetting });
 route('GET', '/api/admin/seo', (ctx) => {
@@ -371,7 +384,8 @@ route('GET', '/api/config', () => ({
   priceUnits: PRICE_UNITS,
   subcategories: taxonomy.publicTaxonomy(),
   metroCities: metro.cities(),
-  ai: !!AI_KEY,
+  ai: !!aiCfg(),
+  aiBy: (aiCfg() || {}).provider || '',
   payments: PAYMENTS_ENABLED,
   mail: mailer.ready(),
   supportEmail: SUPPORT_EMAIL,
@@ -825,14 +839,15 @@ const AI_SUBS = Object.entries(taxonomy.SUBCATS).map(([cat, list]) => list.map((
 
 route('POST', '/api/ai/suggest', async (ctx) => {
   const u = requireUser(ctx);
-  if (!AI_KEY) throw new HttpError(501, 'ИИ-подсказки не подключены');
+  const cfg = aiCfg();
+  if (!cfg) throw new HttpError(501, 'ИИ-подсказки не подключены');
   rateLimit(`ai:${u.id}`, 30, 60 * 60 * 1000);
   const { file } = await readJson(ctx.req);
   const row = db.prepare('SELECT file FROM uploads WHERE file = ? AND user_id = ?').get(String(file || ''), u.id);
   if (!row) throw new HttpError(400, 'Сначала загрузите фото');
   const type = IMAGE_TYPES.find((t) => row.file.endsWith(`.${t.ext}`));
   try {
-    const s = await suggestFromPhoto({ apiKey: AI_KEY, model: AI_MODEL, filePath: path.join(UPLOAD_DIR, row.file), mime: type.mime, subs: AI_SUBS });
+    const s = await suggestFromPhoto({ cfg, filePath: path.join(UPLOAD_DIR, row.file), mime: type.mime, subs: AI_SUBS });
     // Раздел — только из разделов угаданной категории; характеристики — по одной, неверные отбрасываем.
     s.subcategory = s.category && (taxonomy.SUBCATS[s.category] || []).some((x) => x.id === s.subcategory) ? s.subcategory : '';
     const attrs = {};
@@ -844,6 +859,39 @@ route('POST', '/api/ai/suggest', async (ctx) => {
     console.error('AI suggest failed:', e.message);
     throw new HttpError(502, 'Не получилось распознать фото. Заполните поля вручную.');
   }
+});
+
+// ---------- модерация: ИИ по фото (Яндекс AI Studio) ----------
+const aiAdminView = () => {
+  const s = seoSetting('ai') || {};
+  const c = aiCfg();
+  return { provider: c ? c.provider : '', on: !!c, off: !!s.off, folder: s.folder || '', hasKey: !!s.key, fromEnv: !s.key && !!process.env.YANDEX_AI_KEY,
+    vision: s.vision || YA_VISION, text: s.text === '' ? '' : (s.text || YA_TEXT), defaults: { vision: YA_VISION, text: YA_TEXT } };
+};
+route('GET', '/api/admin/ai', (ctx) => { requireAdmin(ctx); return aiAdminView(); });
+route('PUT', '/api/admin/ai', async (ctx) => {
+  const admin = requireAdmin(ctx);
+  const b = await readJson(ctx.req);
+  const cur = seoSetting('ai') || {};
+  const model = (v, d) => { const t = String(v === undefined ? d : v).trim(); if (t && !/^[\w.\-/@]{2,80}$/.test(t)) throw new HttpError(400, 'Имя модели — латиница, цифры, точки и дефисы, например aliceai-llm'); return t; };
+  const next = {
+    key: b.clear ? '' : (b.key ? String(b.key).trim().slice(0, 300) : cur.key || ''),
+    folder: b.clear ? '' : String(b.folder === undefined ? cur.folder || '' : b.folder).trim().slice(0, 60),
+    vision: model(b.vision, cur.vision || YA_VISION) || YA_VISION,
+    text: model(b.text, cur.text === undefined ? YA_TEXT : cur.text),
+    off: !!b.off
+  };
+  if (next.folder && !/^[a-z0-9]{10,40}$/.test(next.folder)) throw new HttpError(400, 'Идентификатор каталога — строка вида b1g… из консоли Yandex Cloud');
+  if (next.key && !next.folder) throw new HttpError(400, 'Укажите идентификатор каталога Yandex Cloud');
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run('ai', JSON.stringify(next));
+  audit(admin, 'ai-settings', {}, { folder: next.folder, vision: next.vision, text: next.text, off: next.off });
+  return aiAdminView();
+});
+route('POST', '/api/admin/ai/test', async (ctx) => {
+  requireAdmin(ctx);
+  const c = aiCfg();
+  if (!c || c.provider !== 'yandex') throw new HttpError(400, 'Сначала сохраните ключ и каталог Яндекс AI Studio');
+  try { return { ok: true, answer: await pingYandex(c) }; } catch (e) { throw new HttpError(502, e.status === 401 || e.status === 403 ? 'Ключ не подошёл: проверьте API-ключ и что у сервисного аккаунта есть роль ai.languageModels.user' : e.message); }
 });
 
 route('GET', '/api/price-hint', (ctx) => {
@@ -985,7 +1033,7 @@ route('GET', '/api/users/:id', (ctx) => {
 
 // Юридические документы (реквизиты и раздел «Запрещено» подставляются на сервере).
 route('GET', '/api/pages/:slug', (ctx) => {
-  const d = legal.docs({ ai: !!AI_KEY, metrika: !!(seoSetting('seo') || {}).metrika })[ctx.params.slug];
+  const d = legal.docs({ ai: (aiCfg() || {}).provider || false, metrika: !!(seoSetting('seo') || {}).metrika })[ctx.params.slug];
   if (!d) throw new HttpError(404, 'Страница не найдена');
   return { title: d[0], html: d[1] };
 });
@@ -1223,5 +1271,5 @@ for (const { id } of db.prepare('SELECT id FROM listings WHERE status = \'pendin
 server.listen(PORT, HOST, () => {
   console.log(`Торгана запущена: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   if (!ADMIN_EMAILS.length) console.log('Подсказка: задайте ADMIN_EMAIL в .env, чтобы получить доступ к модерации.');
-  if (!AI_KEY) console.log('ИИ-подсказки по фото выключены (нет ANTHROPIC_API_KEY).');
+  if (!aiCfg()) console.log('ИИ-подсказки по фото выключены: подключите Яндекс AI Studio в модерации («Настройки → ИИ по фото»).');
 });
