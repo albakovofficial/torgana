@@ -23,7 +23,8 @@ test('«лада», «айфон», «самсунг» находят Lada, iPho
   assert.deepEqual(await find('айфон'), [phone]);
   assert.deepEqual(await find('самсунг'), [sams]);
   assert.deepEqual(await find('Lada'), [lada], 'латиницей — как раньше');
-  assert.deepEqual(await find('ладан'), [], 'не по части другого слова');
+  const ladan = (await client(srv.base).get(`/api/listings?q=${encodeURIComponent('ладан')}&exact=1`)).data;
+  assert.deepEqual(ladan.items, [], 'не по части другого слова (как написано; без exact 1.43.0 предложит «лада»)');
 });
 
 test('несуществующий адрес — код 404, известные адреса — 200', async () => {

@@ -742,13 +742,19 @@
     const xl = !!(bo && bo.xl);
     const tags = bo && bo.tags && bo.tags.length ? bo.tags : null;
     const side = xl ? [...(bo.photos || [])] : [];
+    // 1.43: «Продвигается» — значком на фото: у XL сверху с метками (внизу цена), у обычной — внизу слева,
+    // под «Новое» / «Цена упала», где ему не мешает сердечко и он виден целиком даже в узкой карточке.
+    const mark = bo ? html`<span class="b-tag mark">${ic('bolt', 12, 2.4)}Продвигается</span>` : '';
+    const low = tags || ad || it.status === 'sold' ? '' : it.fresh ? html`<span class="tag drop-badge">Новое</span>`
+      : it.priceWas ? html`<span class="tag drop-badge is-drop" title="Цена упала, было ${price(it.priceWas, it.priceUnit)}">Цена упала</span>` : '';
     return html`<div class="card${ad ? ' is-ad' : ''}${xl ? ' is-xl' : ''}${bo && bo.frame ? ' is-frame' : ''}">
       <a href="${lpath(it)}" class="card-link"${ad ? raw(` data-adid="${Number(ad.id)}"`) : ''}>
         <div class="card-img${xl ? ' xl-img' : it.photo ? ' ph' : ''}"${!xl && it.photo ? raw(` style="--ph:url('${esc(it.photo)}')"`) : ''}>
           ${xl ? boostImg(it.photo, 'main') : it.photo ? html`<img src="${it.photo}" alt="" loading="lazy">` : svg(P.image, 40, 1.2)}
           ${xl ? html`<span class="xl-side">${boostImg(side[0])}${boostImg(side[1], '', bo.more ? html`<em>+${bo.more} фото</em>` : '')}</span>` : ''}
-          ${tags ? html`<span class="b-tags">${tags.map((t, i) => html`<span class="b-tag${i ? ' alt' : ''}">${t}</span>`)}</span>`
-    : ad ? '' : it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : it.fresh ? html`<span class="tag drop-badge">Новое</span>` : it.priceWas ? html`<span class="tag drop-badge is-drop" title="Цена упала, было ${price(it.priceWas, it.priceUnit)}">Цена упала</span>` : ''}
+          ${xl || tags ? html`<span class="b-tags">${xl ? mark : ''}${(tags || []).map((t, i) => html`<span class="b-tag${i ? ' alt' : ''}" title="${t}"><span>${t}</span></span>`)}</span>` : ''}
+          ${!ad && it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : ''}
+          ${low || (mark && !xl) ? html`<span class="b-low">${low}${xl ? '' : mark}</span>` : ''}
           ${xl ? html`<span class="price-pill">${price(it.price, it.priceUnit)}</span>` : ''}
           ${it.hasVideo ? html`<span class="vid-badge" title="Есть видео">${ic('play', 14, 0)}<span class="sr">Есть видео</span></span>` : ''}
         </div>
@@ -756,7 +762,7 @@
           ${xl ? '' : html`<span class="card-price">${price(it.price, it.priceUnit)}</span>`}
           <span class="card-title">${it.title}</span>
           ${xl && (bo.desc || it.summary) ? html`<span class="card-desc">${[it.summary, bo.desc].filter(Boolean).join('. ')}</span>` : it.summary ? html`<span class="card-sum">${it.summary}</span>` : ''}
-          <span class="card-meta">${meta}${it.delivery ? html` · <span class="ok">Доставка</span>` : ''}${it.exchange ? html` · <span class="ok">Обмен</span>` : ''}${bo ? html` · <span class="b-mark">Продвигается</span>` : ''}</span>
+          <span class="card-meta">${meta}${it.delivery ? html` · <span class="ok">Доставка</span>` : ''}${it.exchange ? html` · <span class="ok">Обмен</span>` : ''}</span>
           ${it.seller ? cardSeller(it.seller) : ''}
         </div>
       </a>
@@ -1330,7 +1336,10 @@
           if (u.max && !params.max) chips.push(html`<span class="tag">до ${NF.format(u.max)} ₽</span>`);
           if (u.delivery && !params.delivery) chips.push(html`<span class="tag">с доставкой</span>`);
         }
-        $('#understood').innerHTML = chips.length ? String(html`<span class="muted" style="font-size:14px;align-self:center">Поняли запрос:</span>${chips}`) : '';
+        // 1.43.0: по запросу с опечаткой сервер нашёл исправленный вариант — говорим об этом и даём искать как написано.
+        const fixed = data.corrected ? html`<div class="q-fixed">${ic('check', 16, 2.4)}<span>Показаны результаты по запросу <b>«${data.corrected}»</b>
+          <a href="/search?${new URLSearchParams({ ...Object.fromEntries(Object.entries(params).filter(([, v]) => v)), exact: '1' })}">Искать «${params.q}», как написано</a></span></div>` : '';
+        $('#understood').innerHTML = String(html`${fixed}${chips.length ? html`<span class="muted" style="font-size:14px;align-self:center">Поняли запрос:</span>${chips}` : ''}`);
       }
     }).first;
     await adRow($('#results'), params, '', 'подобрано по запросу и фильтрам');
@@ -1375,7 +1384,7 @@
   }
 
   // Параметры поиска для блока «Реклама»: только эти поля, без пустых.
-  const SEARCH_KEYS = ['q', 'category', 'sub', 'city', 'metro', 'min', 'max', 'delivery', 'bargain', 'exchange'];
+  const SEARCH_KEYS = ['q', 'category', 'sub', 'city', 'metro', 'min', 'max', 'delivery', 'bargain', 'exchange', 'exact'];
   const searchParams = (p) => {
     const x = subOf(p.sub);
     const attrs = x ? Object.keys(p).filter((k) => /^a_[A-Za-z]+(_min|_max)?$/.test(k) && x.fields.some((f) => k.replace(/^a_|_min$|_max$/g, '') === f.key)).sort() : [];
@@ -1545,6 +1554,10 @@
             ${seller.badges && (seller.badges.phone || seller.badges.biz) ? html`<span class="pf-badges" style="margin-top:8px">${trustBadges(seller.badges)}</span>` : ''}</span>
             ${ic('right', 20)}
           </a>
+          ${seller.reply ? html`<div class="reply-tiles">
+            ${seller.reply.time ? html`<div class="reply-tile">${ic('clock', 16, 2.2)}<b>${{ hour: 'Отвечает за час', hours: 'Отвечает за 1–3 часа', day: 'Отвечает в течение дня', days: 'Отвечает за 1–2 дня' }[seller.reply.time]}</b><span>обычно, за последние 30 дней</span></div>` : ''}
+            <div class="reply-tile">${ic('chat', 16, 2.2)}<b>${seller.reply.rate} из 10 чатов</b><span>получают ответ</span></div>
+          </div>` : ''}
           ${l.isOwner ? '' : html`<div class="seller-follow">${followBtn(seller.id, seller.following)}<span class="muted"><b data-followers>${NF.format(seller.followers || 0)}</b> ${plural(seller.followers || 0, 'подписчик', 'подписчика', 'подписчиков')} · узнают о новых объявлениях первыми</span></div>`}
           <div class="banner soft" style="font-size:14px"><strong style="color:var(--text)">Мы никогда не просим</strong> переходить в мессенджеры, называть код из СМС или платить по ссылке. Если вас об этом просят — это мошенники.</div>
         </aside>
@@ -1696,7 +1709,8 @@
     return bits.match(/.{4}/g).map((b) => parseInt(b, 2).toString(16)).join('');
   }
   // Уменьшает фото в браузере → { data: JPEG data-URL, hash: отпечаток }.
-  function resizeImage(file, max = 1600, square = false) {
+  // thumb — ширина лёгкой копии для ленты (1.43.0): WebP, где браузер умеет, иначе JPEG.
+  function resizeImage(file, max = 1600, square = false, thumb = 0) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
       const img = new Image();
@@ -1713,7 +1727,16 @@
         ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, w, h);
         URL.revokeObjectURL(url);
-        resolve({ data: c.toDataURL('image/jpeg', 0.85), hash: photoHash(c) });
+        const out = { data: c.toDataURL('image/jpeg', 0.85), hash: photoHash(c) };
+        if (thumb && Math.max(w, h) > thumb) {
+          const k = thumb / Math.max(w, h);
+          const t = document.createElement('canvas');
+          t.width = Math.round(w * k); t.height = Math.round(h * k);
+          t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
+          const webp = t.toDataURL('image/webp', 0.8);
+          out.thumb = webp.startsWith('data:image/webp') ? webp : t.toDataURL('image/jpeg', 0.8);
+        }
+        resolve(out);
       };
       img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Не удалось открыть фото. Попробуйте JPG или PNG.')); };
       img.src = url;
@@ -2047,7 +2070,7 @@
       await Promise.all(imgs.map(async (f, i) => {
         const slot = slots[i];
         try {
-          const img = await resizeImage(f);
+          const img = await resizeImage(f, 1600, false, 640);
           slot.url = img.data;
           renderPhotos();
           const r = await api('POST', '/api/uploads', img);
@@ -5441,6 +5464,7 @@
         <ul><li><b>Цену</b> со словами «до» и «от»: числом, с «тыс», «к» или «млн» — например, «до 20к» или «от 2 млн».</li>
           <li><b>Доставку</b> — слова «с доставкой» оставят только объявления, где продавец её предлагает.</li>
           <li><b>Город</b> — если назвать крупный город («в Казани»), поиск покажет объявления оттуда. Город также можно выбрать кнопкой в строке поиска.</li>
+          <li><b>Опечатки</b> — если по запросу ничего нет, Торгана поищет похожее слово из объявлений («айфн» → «айфон») и скажет об этом над выдачей. Там же — ссылка «Искать как написано».</li>
           <li>Слова вроде «купить», «продам» или «б/у» поиск пропускает — они не сужают выдачу.</li></ul>
         <h2>Как уточнить выдачу</h2>
         <p>В выдаче есть фильтры: категория и раздел, характеристики раздела (например, марка, год или размер), город и метро, цена, доставка, «Торг уместен» и «Возможен обмен». Сортировка — сначала новые, дешевле или дороже.</p>

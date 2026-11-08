@@ -1054,7 +1054,7 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
 
 /* ---------- уведомления, фото в чате (1.10) ---------- */
 .icon-btn.sm { width: 38px; height: 38px; }
-.drop-badge { position: absolute; top: 12px; left: 12px; gap: 4px; background: var(--accent); color: #fff; }
+.drop-badge { gap: 4px; background: var(--accent); color: #fff; } /* стоит в .b-low внизу фото */
 .price-was { margin-left: 8px; font-size: 0.55em; font-weight: 600; color: var(--muted); }
 
 .ss-new { flex: none; height: 26px; padding: 0 10px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 700; display: inline-flex; align-items: center; }
@@ -1086,9 +1086,8 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
 
 @media (max-width: 600px) {
   .ss-new { height: 22px; padding: 0 8px; font-size: 11.5px; }
-  .feed .drop-badge { height: 20px; padding: 0 7px; font-size: 11px; gap: 0; }
+  .feed .drop-badge { gap: 0; }
   .feed .drop-badge svg { width: 12px; height: 12px; }
-  .drop-badge { top: 8px; left: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { .chat-attach.busy { animation: none; } }
 
@@ -1780,12 +1779,15 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
 .xl-ph em { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(16, 16, 16, .32); color: #fff; font-style: normal; font-size: 14px; font-weight: 700; }
 .is-xl .card-title { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; -webkit-line-clamp: 1; }
 .card-desc { font-size: 14px; line-height: 1.45; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.card .b-mark { color: var(--accent); font-weight: 600; }
 .card.is-frame .card-link { margin: -8px; padding: 6px 6px 12px; border: 2px solid var(--accent); border-radius: calc(var(--r-card) + 6px); }
 .card.is-frame .fav-btn { top: 12px; right: 12px; }
 .b-tags { position: absolute; top: 12px; left: 12px; z-index: 1; display: flex; flex-wrap: wrap; gap: 5px; max-width: calc(100% - 70px); pointer-events: none; }
 .b-tag { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 999px; background: var(--text); color: #fff; font-size: 12px; font-weight: 650; white-space: nowrap; }
 .b-tag.alt { background: #fff; color: var(--text); }
+.b-tag { max-width: 100%; } .b-tag > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; } /* длинная метка в узкой карточке — с многоточием, не под сердечком */
+.b-tag.mark { gap: 4px; padding-left: 7px; background: var(--accent); } /* 1.43.0: «Продвигается» — значком на фото, не обрезается */
+.b-low { position: absolute; left: 10px; bottom: 10px; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: calc(100% - 20px); pointer-events: none; } /* низ фото: «Новое» / «Цена упала» и «Продвигается» */
+@media (max-width: 600px) { .feed .b-low { left: 6px; bottom: 6px; gap: 3px; } }
 .is-xl .b-tags { max-width: calc(66% - 24px); }
 @media (max-width: 900px) {
   .grid { --g: 12px; }
@@ -2224,6 +2226,14 @@ body.pv-open { overflow: hidden; }
 .chs-meta b { font-size: 12px; color: var(--text); }
 .chs-star svg { vertical-align: -2px; }
 .chs-safe { display: flex; gap: 10px; margin: 0; padding: 12px; border-radius: 14px; background: #fff; border: 1px solid var(--line); font-size: 12px; line-height: 1.45; color: var(--text-2); }
+.q-fixed { flex-basis: 100%; display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 16px; background: var(--accent-soft); font-size: 14.5px; line-height: 1.4; } /* 1.43.0: исправленный запрос */
+.q-fixed > svg { flex: none; margin-top: 2px; color: var(--accent); }
+.q-fixed a { display: block; margin-top: 2px; font-weight: 600; }
+.reply-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; } /* 1.43.0: как быстро отвечает продавец */
+.reply-tile { display: grid; gap: 3px; padding: 12px 14px; border-radius: 16px; background: var(--surface); }
+.reply-tile svg { color: var(--accent); margin-bottom: 2px; }
+.reply-tile b { font-size: 15px; }
+.reply-tile span { font-size: 12.5px; color: var(--text-2); }
 .chs-gone { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 10px 12px; border-radius: 14px; background: var(--surface); font-size: 13.5px; color: var(--text-2); } /* 1.42.0 */
 .chs-gone svg { flex: none; margin-top: 2px; color: var(--muted); }
 .chs-safe svg { flex: none; color: var(--accent); }
@@ -2563,24 +2573,20 @@ body.pv-open { overflow: hidden; }
 .sp-tiles { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
 
 /* ---------- 1.35.2: сердечко и «Цена упала» ---------- */
-/* Сердечко крупнее и красным градиентом: контур — когда не в избранном, заливка — когда в избранном. */
-.fav-btn { width: 48px; height: 48px; }
-.fav-btn svg { width: 24px; height: 24px; }
+/* Сердечко красным градиентом: заливка — когда в избранном (размер и контур — ниже, 1.35.3). */
 .fav-btn svg path { stroke: url(#tg-heart); }
 .fav-btn.on svg, .fav-btn.on svg path { fill: url(#tg-heart); stroke: url(#tg-heart); }
 .fav-btn:hover svg { transform: scale(1.08); }
 .fav-btn svg { transition: transform .15s; }
-@media (max-width: 900px) { .fav-btn { width: 40px; height: 40px; } .fav-btn svg { width: 22px; height: 22px; } }
-@media (max-width: 600px) { .feed .fav-btn { top: 6px; right: 6px; width: 34px; height: 34px; } .feed .fav-btn svg { width: 19px; height: 19px; } }
-/* «Цена упала» и «Новое» — внизу слева на фото: не спорят с сердечком, помещаются на любой ширине. */
-.card .drop-badge { top: auto; bottom: 10px; left: 10px; height: 26px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
-@media (max-width: 600px) { .feed .card .drop-badge { bottom: 6px; left: 6px; height: 20px; padding: 0 7px; font-size: 10.5px; } }
+/* «Цена упала» и «Новое» — внизу слева на фото (.b-low): не спорят с сердечком, помещаются на любой ширине. */
+.card .drop-badge { height: 26px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
+@media (max-width: 600px) { .feed .card .drop-badge { height: 20px; padding: 0 7px; font-size: 10.5px; } }
 /* 1.35.3: сердечко ещё крупнее; не в избранном — чёрный контур, в избранном — красный градиент. */
 .fav-btn { width: 52px; height: 52px; }
 .fav-btn svg { width: 28px; height: 28px; }
 .fav-btn:not(.on) svg, .fav-btn:not(.on) svg path { fill: none; stroke: var(--text); }
 @media (max-width: 900px) { .fav-btn { width: 46px; height: 46px; } .fav-btn svg { width: 25px; height: 25px; } }
-@media (max-width: 600px) { .feed .fav-btn { width: 38px; height: 38px; } .feed .fav-btn svg { width: 22px; height: 22px; } }
+@media (max-width: 600px) { .feed .fav-btn { top: 6px; right: 6px; width: 38px; height: 38px; } .feed .fav-btn svg { width: 22px; height: 22px; } }
 
 /* 1.35.4: «Продвинуть» под объявлением в «Моих объявлениях»; подписи столбцов в статистике магазина */
 .ml-boost { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 4px; padding: 7px 12px 7px 7px; border: 0; border-radius: 16px; background: var(--accent-soft); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: background .15s; }
