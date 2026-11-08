@@ -56,3 +56,34 @@ test('не больше 30 новых диалогов в час, в уже на
     assert.equal((await buyer.post('/api/conversations', { listingId: ids[0] })).status, 200, 'существующий диалог открывается');
   } finally { s2.stop(); }
 });
+
+// 1.42.0: удалённое объявление пропадает с сайта, но переписка по нему остаётся — с пометкой «Объявление удалено».
+test('удалил объявление — переписка покупателя осталась, объявления на сайте нет', async () => {
+  const s3 = await startServer();
+  try {
+    const admin = await registerUser(s3.base, { name: 'Модератор', email: 'admin@test.local' });
+    const seller = await registerUser(s3.base, { name: 'Продавец', email: 'seller@test.local' });
+    const buyer = await registerUser(s3.base, { name: 'Покупатель', email: 'buyer@test.local' });
+    const id = await publish(seller, admin, { title: 'Велосипед', category: 'hobby', city: 'Казань', price: 9000 });
+    const conv = (await buyer.post('/api/conversations', { listingId: id })).data.id;
+    await buyer.post(`/api/conversations/${conv}/messages`, { body: 'Ещё продаёте?' });
+    assert.equal((await seller.del(`/api/listings/${id}`)).status, 200);
+
+    const page = await buyer.get(`/api/listings/${id}`);
+    assert.equal(page.status, 404);
+    assert.equal(page.data.error, 'Объявление удалено');
+    assert.equal((await seller.get(`/api/listings/${id}`)).status, 404, 'и автору его больше нет');
+    assert.ok(!(await seller.get('/api/my/listings')).data.items.some((i) => i.id === id), 'в «Моих объявлениях» нет');
+    assert.equal((await buyer.get('/api/listings?q=велосипед')).data.total, 0, 'в поиске нет');
+
+    const chat = (await buyer.get(`/api/conversations/${conv}`)).data;
+    assert.equal(chat.listing.status, 'deleted');
+    assert.equal(chat.listing.title, 'Велосипед');
+    assert.equal(chat.messages[0].body, 'Ещё продаёте?');
+    assert.equal((await buyer.get('/api/conversations')).data.items[0].status, 'deleted');
+    assert.equal((await seller.post(`/api/conversations/${conv}/messages`, { body: 'Уже продал' })).status, 200, 'переписка продолжается');
+    assert.equal((await buyer.post('/api/conversations', { listingId: id })).status, 404, 'новую переписку не начать');
+    assert.equal((await seller.patch(`/api/listings/${id}`, { status: 'active' })).status, 404, 'вернуть нельзя');
+    assert.equal((await admin.get(`/api/admin/listings/${id}`)).data.listing.status, 'deleted', 'модератор видит с историей');
+  } finally { s3.stop(); }
+});

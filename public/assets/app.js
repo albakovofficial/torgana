@@ -663,11 +663,6 @@
           <span class="nt-t"><b>${n.title}</b>${n.body ? html`<span>${n.body}</span>` : ''}<small>${hm(n.at)}</small></span></a>`; })}`)}`
         : html`<div class="nt-empty"><span class="nt-empty-ic">${ic('bell', 30, 1.6)}</span><b>Здесь будут уведомления</b><p>Напишем, когда объявление опубликуют, придёт отзыв или подешевеет товар из избранного.</p></div>`);
       if (d.unread) { api('POST', '/api/notices/read', {}).then((r) => setNotices(r.unread)).catch(() => {}); }
-      if (S.user && 'Notification' in window && Notification.permission === 'default') {
-        const box = $('#nt-body', m);
-        box.insertAdjacentHTML('afterbegin', String(html`<div class="nt-push">${ic('bell', 18, 2)}<span>Включите push — узнаете о публикации сразу, даже когда сайт закрыт.</span><button type="button" class="btn btn-dark btn-sm" data-push-on>Включить</button></div>`));
-        $('[data-push-on]', box).onclick = async (e) => { e.currentTarget.disabled = true; try { await pushOn(); toast('Push включены'); $('.nt-push', box).remove(); } catch (ex) { toast(ex.message, true); e.currentTarget.disabled = false; } };
-      }
     });
   }
 
@@ -1657,10 +1652,7 @@
     });
     const del = $('[data-delete]');
     if (del) {
-      del.onclick = async () => {
-        if (!(await confirmModal('Удалить объявление?', 'Объявление и фото удалятся без возможности восстановления.', 'Удалить', true))) return;
-        try { await api('DELETE', `/api/listings/${l.id}`); toast('Объявление удалено'); go('/profile', true); } catch (e) { toast(e.message, true); }
-      };
+      del.onclick = async () => { if (await deleteListing(l.id)) go('/profile', true); };
     }
     const ap = $('[data-appeal]');
     if (ap) ap.onclick = () => appealModal(l.id, () => render());
@@ -1736,6 +1728,11 @@
   const UNIT_LABEL = { '': 'за всё', мес: 'в месяц', сутки: 'за сутки', час: 'за час', 'м²': 'за м²', шт: 'за штуку' };
   const DESC_TIPS = ['Состояние', 'Комплектация', 'Причина продажи', 'Дефекты', 'Где можно посмотреть'];
   const DRAFT_KEY = 'tg_draft';
+  // Удаление объявления — одно для страницы объявления и «Моих объявлений». С сайта пропадает, переписки остаются (1.42.0).
+  async function deleteListing(id) {
+    if (!(await confirmModal('Удалить объявление?', 'Объявление пропадёт с сайта, вернуть его нельзя. Переписки с покупателями сохранятся — в них будет пометка «Объявление удалено».', 'Удалить', true))) return false;
+    try { await api('DELETE', `/api/listings/${id}`); toast('Объявление удалено'); return true; } catch (e) { toast(e.message, true); return false; }
+  }
   // ================= продвижение в ленте (1.21) =================
   // Один выбор для формы объявления и окна «Продвинуть»: XL-карточка, рамка, метки (до двух) и пакет «Всё в одном».
   // Цена считается так же, как на сервере (lib/boost.js): все три — по цене пакета, если он дешевле суммы.
@@ -2939,10 +2936,11 @@
   const chatSide = (l, o, role) => {
     const r = o.rating || { count: 0, avg: 0 };
     const since = o.createdAt ? `на Торгане с ${new Date(o.createdAt).getFullYear()}` : '';
+    const gone = l.status === 'deleted';
     return html`<aside class="chat-side" aria-label="Объявление и ${role === 'buyer' ? 'продавец' : 'покупатель'}">
       <a href="/l/${l.id}" class="chs-photo${l.photo ? ' ph' : ''}"${l.photo ? raw(` style="--ph:url('${esc(l.photo)}')"`) : ''} tabindex="-1" aria-hidden="true">${l.photo ? html`<img src="${l.photo}" alt="" loading="lazy">` : svg(P.image, 32, 1.3)}</a>
-      <div class="chs-item"><b class="chs-price">${price(l.price, l.priceUnit)}</b><a href="/l/${l.id}" class="chs-title">${l.title}</a><span class="chs-place">${l.metro ? `м. ${l.metro}` : l.city}${l.status === 'sold' ? ' · продано' : ''}</span></div>
-      <a href="/l/${l.id}" class="btn btn-line btn-block btn-sm">Открыть объявление</a>
+      <div class="chs-item"><b class="chs-price">${price(l.price, l.priceUnit)}</b>${gone ? html`<span class="chs-title">${l.title}</span>` : html`<a href="/l/${l.id}" class="chs-title">${l.title}</a>`}<span class="chs-place">${l.metro ? `м. ${l.metro}` : l.city}${l.status === 'sold' ? ' · продано' : ''}</span></div>
+      ${gone ? html`<p class="chs-gone">${ic('info', 16, 2)}Объявление удалено продавцом — переписка сохранена.</p>` : html`<a href="/l/${l.id}" class="btn btn-line btn-block btn-sm">Открыть объявление</a>`}
       <hr>
       <a href="/u/${o.id}" class="chs-person">${ava(o, 'sm')}<span><b>${o.name}</b><span class="chs-meta">${r.count ? html`<span class="chs-star">${starSvg(true, 13)}</span><b>${fmtAvg(r)}</b> · ${r.count} ${reviewsWord(r.count)}` : 'Пока нет отзывов'}${since ? ` · ${since}` : ''}</span></span></a>
       <p class="chs-safe">${ic('shield', 18)}<span>${role === 'buyer' ? 'Не переходите в мессенджеры и не вносите предоплату — общайтесь здесь.' : 'Не называйте коды из СМС и не переходите по ссылкам «для получения оплаты».'}</span></p>
@@ -2975,7 +2973,7 @@
           <span class="conv-img">${c.photo ? html`<img src="${c.photo}" alt="" loading="lazy">` : svg(P.image, 22, 1.4)}${ava(c.other, 'xs conv-ava')}</span>
           <span class="conv-body">
             <span class="conv-top"><span class="conv-name">${c.other.name}${c.role === 'seller' ? html` <span class="conv-role">· покупатель</span>` : ''}</span><span class="conv-when">${shortWhen(c.updatedAt)}</span></span>
-            <span class="conv-title" style="display:block">${c.title} · ${price(c.price, c.priceUnit)}</span>
+            <span class="conv-title" style="display:block">${c.title} · ${c.status === 'deleted' ? 'объявление удалено' : price(c.price, c.priceUnit)}</span>
             <span class="conv-last" style="display:block">${c.lastBody || 'Нет сообщений'}</span>
           </span>
           ${c.unread ? html`<span class="badge">${c.unread}</span>` : ''}
@@ -3021,7 +3019,7 @@
       head: html`<a href="/l/${l.id}" class="conv-img" aria-hidden="true" tabindex="-1">${l.photo ? html`<img src="${l.photo}" alt="">` : svg(P.image, 20, 1.4)}</a>
         <div style="flex:1;min-width:0"><a href="/l/${l.id}" style="display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.title}</a>
           <span class="muted" style="font-size:14px">${price(l.price, l.priceUnit)} · ${other.name}</span></div>
-        ${l.status === 'sold' ? html`<span class="tag dark">Продано</span>` : ''}`,
+        ${l.status === 'sold' ? html`<span class="tag dark">Продано</span>` : l.status === 'deleted' ? html`<span class="tag">Объявление удалено</span>` : ''}`,
       below: html`<div data-review-slot></div>`,
       load: async (after) => {
         const r = await api('GET', `/api/conversations/${convId}?after=${after}`);
@@ -3458,10 +3456,7 @@
         if (i.status === 'rejected' && !i.appealAt && !i.appealReply) acts.push({ icon: 'chat', label: 'Подать апелляцию', run: () => appealModal(i.id, reload) });
         if (['active', 'pending', 'scheduled'].includes(i.status) && (boostOn() || i.promo || (i.boost || []).length)) acts.splice(1, 0, { icon: 'trend', label: 'Продвинуть', run: () => boostModal(i.id, i.title, i.promo) });
         if (i.status === 'active') acts.push({ icon: 'share', label: 'Поделиться', run: () => shareLink(`${location.origin}${lpath(i)}`, i.title) });
-        acts.push({ icon: 'trash', label: 'Удалить', danger: true, run: async () => {
-          if (!(await confirmModal('Удалить объявление?', 'Объявление и фото удалятся без возможности восстановления.', 'Удалить', true))) return;
-          try { await api('DELETE', `/api/listings/${i.id}`); toast('Удалено'); reload(); } catch (e) { toast(e.message, true); }
-        } });
+        acts.push({ icon: 'trash', label: 'Удалить', danger: true, run: async () => { if (await deleteListing(i.id)) reload(); } });
         actionSheet(i.title, acts);
       };
     });
@@ -4405,7 +4400,7 @@
     ${i.appealAt ? html`<button class="btn btn-line btn-sm" data-deny="${i.id}">Отказать по апелляции</button>` : ''}
     ${['active', 'sold', 'archived'].includes(i.status) ? html`<button class="btn btn-danger btn-sm" data-reject="${i.id}">Снять с публикации</button>` : ''}
     ${i.reports ? html`<button class="btn btn-soft btn-sm" data-dismiss="${i.id}">Закрыть жалобы</button>` : ''}`;
-  const STATUS_LABEL = { pending: 'На проверке', scheduled: 'Запланировано', active: 'Опубликовано', rejected: 'Отклонено', sold: 'Продано', archived: 'Снято' };
+  const STATUS_LABEL = { pending: 'На проверке', scheduled: 'Запланировано', active: 'Опубликовано', rejected: 'Отклонено', sold: 'Продано', archived: 'Снято', deleted: 'Удалено автором' };
 
   // ---------- оболочка модерации: меню слева (на телефоне — лента сверху) ----------
   const ADMIN_NAV = [
@@ -5177,7 +5172,7 @@
     switch (e.kind) {
       case 'created': return html`Создано${d.flags ? html` · <span class="warn-t">похоже на: ${d.flags}</span>` : ''}`;
       case 'edited': return html`Изменено и отправлено на проверку${Object.keys(d.changes || {}).length ? html`<ul class="tl-changes">${Object.entries(d.changes).map(([k, [a, b]]) => html`<li><strong>${FIELD[k] || k}:</strong> ${k === 'description' ? 'текст изменён' : k === 'photos' ? `${a} → ${b}` : html`${fieldVal(k, a)} → ${fieldVal(k, b)}`}</li>`)}</ul>` : ''}`;
-      case 'status': return html`Автор: ${{ active: 'снова опубликовал', sold: 'отметил «продано»', archived: 'снял с публикации' }[d.status] || d.status}`;
+      case 'status': return html`Автор: ${{ active: 'снова опубликовал', sold: 'отметил «продано»', archived: 'снял с публикации', deleted: 'удалил объявление (переписки сохранены)' }[d.status] || d.status}`;
       case 'approved': return 'Опубликовано после проверки';
       case 'published': return 'Опубликовано в выбранное автором время';
       case 'expired': return 'Снято: прошло 30 дней';

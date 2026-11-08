@@ -263,15 +263,24 @@ function attachPhotos(userId, listingId, files) {
   valid.forEach((f, i) => upd.run(listingId, i, f));
 }
 
-function deleteListingFiles(listingId) {
-  const files = db.prepare('SELECT file FROM uploads WHERE listing_id = ?').all(listingId);
-  for (const { file } of files) fs.rm(path.join(UPLOAD_DIR, file), { force: true }, () => {});
-  const l = db.prepare('SELECT video FROM listings WHERE id = ?').get(listingId);
-  if (l && l.video) video.remove(l.video);
+// 1.42.0: удалённое объявление остаётся в базе со статусом deleted — переписки покупателей по нему сохраняются,
+// в чате пометка «Объявление удалено». Для всего остального его нет: loadListing его не отдаёт, чаты и модерация
+// берут его с { deleted: true }.
+function loadListing(id, { deleted = false } = {}) {
+  const l = db.prepare('SELECT * FROM listings WHERE id = ?').get(id);
+  return l && (deleted || l.status !== 'deleted') ? l : null;
 }
-
-function loadListing(id) {
-  return db.prepare('SELECT * FROM listings WHERE id = ?').get(id);
+// Удалить объявление: пропадает с сайта, запись остаётся для переписок. wipe — при удалении профиля навсегда:
+// фото, видео, описание и характеристики стираются, остаются название и цена — их видят собеседники в чатах.
+function removeListing(id, { wipe = false } = {}) {
+  if (wipe) {
+    for (const { file } of db.prepare('SELECT file FROM uploads WHERE listing_id = ?').all(id)) fs.rm(path.join(UPLOAD_DIR, file), { force: true }, () => {});
+    const v = db.prepare('SELECT video FROM listings WHERE id = ?').get(id);
+    if (v && v.video) video.remove(v.video);
+    db.prepare('DELETE FROM uploads WHERE listing_id = ?').run(id);
+    db.prepare('UPDATE listings SET description = \'\', attrs = \'{}\', video = \'\', search_text = \'\' WHERE id = ?').run(id);
+  }
+  db.prepare('UPDATE listings SET status = \'deleted\', updated_at = ? WHERE id = ?').run(now(), id);
 }
 
 // ---------- обработчики API ----------
@@ -332,7 +341,7 @@ const ops = require('./lib/ops')({ route, db, h: helpers, mailer, codesOn, root:
   deviceCheck: process.env.ADMIN_DEVICE_CHECK !== '0' });
 opsApi = ops;
 helpers.business = business;
-helpers.account = require('./lib/account')({ route, db, h: { ...helpers, secureCookies: SECURE_COOKIES }, deleteListingFiles, auth }); // удаление профиля (1.39)
+helpers.account = require('./lib/account')({ route, db, h: { ...helpers, secureCookies: SECURE_COOKIES }, removeListing, auth }); // удаление профиля (1.39)
 
 // Поисковики и Метрика: коды подтверждения Вебмастера и Search Console, номер счётчика — «Модерация → Поиск и статистика».
 // ИИ по фото: Яндекс AI Studio (ключ и каталог — в модерации, «Настройки → ИИ по фото» или YANDEX_AI_KEY/YANDEX_FOLDER_ID),
@@ -639,11 +648,11 @@ route('GET', '/api/listings/map', (ctx) => {
 
 route('GET', '/api/listings/:id', (ctx) => {
   const id = parseInt(ctx.params.id, 10);
-  const l = loadListing(id);
-  if (!l) throw new HttpError(404, 'Объявление не найдено');
+  const l = loadListing(id, { deleted: true });
+  const isAdmin = ctx.user && ctx.user.is_admin;
+  if (!l || (l.status === 'deleted' && !isAdmin)) throw new HttpError(404, l ? 'Объявление удалено' : 'Объявление не найдено');
   const seller = db.prepare('SELECT * FROM users WHERE id = ?').get(l.user_id);
   const isOwner = ctx.user && ctx.user.id === l.user_id;
-  const isAdmin = ctx.user && ctx.user.is_admin;
   if ((l.status !== 'active' && l.status !== 'sold') || seller.is_blocked || seller.deactivated_at || seller.deleted_at) {
     if (!isOwner && !isAdmin) throw new HttpError(404, 'Объявление снято с публикации');
   }
@@ -802,8 +811,8 @@ route('DELETE', '/api/listings/:id', (ctx) => {
   const id = parseInt(ctx.params.id, 10);
   const l = loadListing(id);
   if (!l || l.user_id !== u.id) throw new HttpError(404, 'Объявление не найдено');
-  deleteListingFiles(id);
-  db.prepare('DELETE FROM listings WHERE id = ?').run(id);
+  removeListing(id);
+  logEvent(id, u.id, 'status', { status: 'deleted' });
   return { ok: true };
 });
 
@@ -826,7 +835,7 @@ route('GET', '/api/my/listings', (ctx) => {
   const rows = db.prepare(`
     SELECT l.*, (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
       (SELECT COUNT(*) FROM favorites f WHERE f.listing_id = l.id) AS fav_count
-    FROM listings l WHERE l.user_id = ? ORDER BY l.created_at DESC`).all(u.id);
+    FROM listings l WHERE l.user_id = ? AND l.status != 'deleted' ORDER BY l.created_at DESC`).all(u.id);
   return {
     items: rows.map((r) => ({
       ...cardFromRow(r), views: r.views, favCount: r.fav_count, rejectReason: r.reject_reason, publishAt: r.publish_at, expiresAt: r.expires_at,
@@ -1022,7 +1031,7 @@ route('GET', '/api/conversations/:id', (ctx) => {
   db.prepare('UPDATE messages SET read_at = ? WHERE conversation_id = ? AND sender_id != ? AND read_at IS NULL').run(now(), c.id, u.id);
   const messages = db.prepare('SELECT id, sender_id, body, photo, kind, offer_id, created_at, read_at FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id LIMIT 500')
     .all(c.id, after).map((m) => ({ id: m.id, mine: m.sender_id === u.id, body: m.body, photo: photoUrl(m.photo), kind: m.kind, offerId: m.offer_id, createdAt: m.created_at, read: !!m.read_at }));
-  const l = loadListing(c.listing_id);
+  const l = loadListing(c.listing_id, { deleted: true });
   const otherId = c.buyer_id === u.id ? c.seller_id : c.buyer_id;
   const other = db.prepare('SELECT id, name, avatar, created_at FROM users WHERE id = ?').get(otherId);
   const photo = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position LIMIT 1').get(c.listing_id);
@@ -1050,7 +1059,7 @@ route('POST', '/api/conversations/:id/messages', async (ctx) => {
   const t = now();
   const info = db.prepare('INSERT INTO messages (conversation_id, sender_id, body, photo, created_at) VALUES (?, ?, ?, ?, ?)').run(c.id, u.id, body, photo, t);
   db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(t, c.id);
-  const l = loadListing(c.listing_id);
+  const l = loadListing(c.listing_id, { deleted: true });
   alerts.notify(c.buyer_id === u.id ? c.seller_id : c.buyer_id, 'messages', { title: `${u.name} · ${l.title}`, body: msgPreview(body, photo).slice(0, 180), url: `/messages/${c.id}`, tag: `chat-${c.id}`, urgent: true });
   return { message: { id: Number(info.lastInsertRowid), mine: true, body, photo: photoUrl(photo), createdAt: t, read: false } };
 });

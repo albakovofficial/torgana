@@ -190,13 +190,20 @@ async function seed(base, browser) {
   await pay(await seller.post(`/api/listings/${ids[0]}/boost`, { frame: true }));
   await pay(await seller.post(`/api/listings/${ids[1]}/boost`, { tags: ['Есть гарантия', 'С чеком'] }));
   await admin.put('/api/admin/seo', { mapsKey: 'test-maps-key' }); // 1.38: карта объявлений включается ключом
+  // 1.42: продавец удалил объявление — переписка покупателя остаётся с пометкой «Объявление удалено».
+  const scooter = (await seller.post('/api/listings', { title: 'Самокат Xiaomi Pro 2', category: 'hobby', city: 'Москва', price: '18000' })).data.id;
+  await admin.post(`/api/admin/listings/${scooter}/restore`);
+  const convGone = (await buyer.post('/api/conversations', { listingId: scooter })).data.id;
+  await buyer.post(`/api/conversations/${convGone}/messages`, { body: 'Добрый день! Самокат ещё продаёте?' });
+  await seller.post(`/api/conversations/${convGone}/messages`, { body: 'Уже продал, извините' });
+  await seller.del(`/api/listings/${scooter}`);
   // 1.39: временно удалённый профиль — после входа экран «Восстановить»; второй — для карточки в модерации.
   const gone = await registerUser(base, { name: 'Глеб', email: 'gleb@test.local' });
   await gone.post('/api/me/deactivate');
   const gone2 = client(base);
   await gone2.post('/api/auth/login', { email: 'gleb@test.local', password: 'password123' });
   gone2.user = gone.user;
-  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay, scheduled, boostPay, gone: gone2 };
+  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay, scheduled, boostPay, gone: gone2, convGone };
 }
 
 function pages(d) {
@@ -251,6 +258,7 @@ function pages(d) {
     ['favorites', '/favorites', d.buyer],
     ['messages', '/messages', d.buyer],
     ['chat', `/messages/${d.conv}`, d.buyer],
+    ['chat-deleted', `/messages/${d.convGone}`, d.buyer],
     // 1.38: быстрые вопросы покупателя — нажал, и вопрос ушёл продавцу
     ['chat-ask', `/messages/${d.conv}`, d.buyer, 'ask'],
     ['admin', '/admin', d.admin],
