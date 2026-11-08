@@ -453,7 +453,8 @@ async function main() {
           if (!(await page.$('.pick .pick-it'))) errors.push('список не открылся');
         } else if (open === 'city') {
           // Подсказки города — красивым списком (1.34), а не системным datalist; набор текста сужает список.
-          if (kind === 'mobile') { const t = await page.$('#filters-toggle'); if (t && await t.isVisible()) { await t.click(); await page.waitForTimeout(200); } }
+          // фильтры за кнопкой — до 900 px (телефон и планшет)
+          { const t = await page.$('#filters-toggle'); if (t && await t.isVisible()) { await t.click(); await page.waitForTimeout(200); } }
           await page.click('#f-city');
           await page.waitForTimeout(200);
           if (!(await page.$('.city-sug .pick-it'))) errors.push('список городов не открылся');
@@ -464,14 +465,15 @@ async function main() {
           if (!/Воронеж/.test(first || '')) errors.push(`первым должен быть Воронеж, а не «${first}»`);
         } else if (open === 'filters') {
           // 1.35: компьютер — выбор в фильтрах применяется сразу, без «Показать»; телефон — «Показать N» с числом и видна на экране.
-          if (kind === 'mobile') {
-            await page.click('#filters-toggle'); await page.waitForTimeout(200);
+          const toggle = await page.$('#filters-toggle');
+          if (toggle && await toggle.isVisible()) {
+            await toggle.click(); await page.waitForTimeout(200);
             await page.click('#f-extra [data-field="gearbox"] [data-av="Автомат"]');
             await page.waitForFunction(() => /\d/.test(document.querySelector('#f-show').textContent), null, { timeout: 5000 }).catch(() => {}); // число приходит с сервера
             const t = await page.textContent('#f-show');
             if (!/^Показать 1 объявление$/.test(t)) errors.push(`кнопка «Показать» без числа: «${t}»`);
             const r = await page.$eval('#f-show', (el) => el.getBoundingClientRect().bottom);
-            if (r > 812) errors.push('кнопка «Показать» за краем экрана');
+            if (r > vp.viewport.height) errors.push('кнопка «Показать» за краем экрана');
             await page.screenshot({ path: path.join(SHOTS, `${vpName}-search-filters-open.png`) });
             await page.click('#f-show'); await page.waitForTimeout(500);
           } else {

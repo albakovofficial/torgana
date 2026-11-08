@@ -271,7 +271,6 @@ button { cursor: pointer; }
 .pf-status::-webkit-scrollbar { display: none; }
 .pf-status .chip { flex: none; }
 .pf-status .chip .cnt { font-size: 12px; font-weight: 700; opacity: .7; }
-.pf-status .chip.zero:not(.active) { color: #A2A29E; }
 .ml-list { display: flex; flex-direction: column; gap: 12px; }
 .ml-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 18px; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 26px; background: #fff; transition: box-shadow .15s, border-color .15s; }
 .ml-card:hover { border-color: #DCDCD8; box-shadow: var(--shadow); }
@@ -2545,7 +2544,7 @@ body.pv-open { overflow: hidden; }
 .msg.offer-reply.out .t { color: rgba(255, 255, 255, .72); }
 /* Контраст: подписи, которые надо прочитать (счётчики, «обязательно», время), — не светлее --muted. */
 .ed-req, .ed-count, .bs-n, .nt-t small { color: var(--muted); }
-.pf-status .chip.zero:not(.active) { color: #7C7C78; }
+.pf-status .chip.zero:not(.active), .pf-status .chip.zero:not(.active) .cnt { color: #6E6E6A; opacity: 1; } /* контраст 5:1 */
 .ml-tag.wait { color: #8A5A00; }
 /* Миниатюры объявления на телефоне — одной строкой с прокруткой, а не переносом на вторую. */
 @media (max-width: 760px) {
