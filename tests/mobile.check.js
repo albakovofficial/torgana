@@ -525,6 +525,7 @@ async function main() {
           if (n < 2) errors.push(`на карте ${n} точек`);
           if (!/на карте/.test(await page.textContent('#count'))) errors.push('нет счётчика «на карте»');
           if (!(await page.$('.view-sw a.on[href*="view=map"]'))) errors.push('переключатель «Карта» не выбран');
+          if (await page.$('.results-head .pick-btn:not([hidden])')) errors.push('сортировка видна на карте');
           if (fr && await fr.evaluate(() => { try { return !!window.parent.document; } catch { return false; } })) errors.push('рамка видит страницу сайта');
           await page.screenshot({ path: path.join(SHOTS, `${vpName}-search-map-open.png`) });
           if (fr && n) { await fr.click('.mc[data-id] >> nth=0'); await page.waitForURL(/\/l\/\d+/, { timeout: 3000 }).catch(() => errors.push('клик по точке не открыл объявление')); }

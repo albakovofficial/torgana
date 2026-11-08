@@ -277,6 +277,7 @@
     b.type = 'button';
     b.className = `pick-btn${sel.classList.contains('adm-select') ? ' sm' : ''}`;
     if (sel.getAttribute('style')) b.setAttribute('style', sel.getAttribute('style'));
+    if (sel.hidden) b.hidden = true; // скрытый список (сортировка в режиме карты) — скрыта и кнопка
     const lab = sel.id ? document.querySelector(`label[for="${sel.id}"]`) : null;
     if (lab) { b.setAttribute('aria-label', lab.textContent.trim()); lab.addEventListener('click', (e) => { e.preventDefault(); b.click(); }); }
     sel.classList.add('pick-native');
