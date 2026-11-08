@@ -11,10 +11,15 @@ const { chromium } = require('playwright');
 const { startServer, registerUser, client, fakeS3 } = require('./helpers');
 
 const SHOTS = path.join(__dirname, 'screenshots');
-const VIEWPORTS = {
-  mobile: { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 },
-  desktop: { viewport: { width: 1280, height: 860 } }
-};
+// UI_WIDTHS=320,390,768,1440 — проверить на других ширинах (до 430 — телефон, до 1024 — планшет, шире — компьютер).
+const VIEWPORTS = process.env.UI_WIDTHS
+  ? Object.fromEntries(process.env.UI_WIDTHS.split(',').map(Number).map((w) => [`w${w}`, w <= 430
+    ? { kind: 'mobile', viewport: { width: w, height: 812 }, isMobile: true, hasTouch: true }
+    : { kind: w <= 1024 ? 'tablet' : 'desktop', viewport: { width: w, height: w <= 1024 ? 1024 : 900 }, hasTouch: w <= 1024 }]))
+  : {
+    mobile: { kind: 'mobile', viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 },
+    desktop: { kind: 'desktop', viewport: { width: 1280, height: 860 } }
+  };
 
 // Заглушка API Яндекс Карт для проверки: тот же интерфейс, что использует рамка (Map, ObjectManager), без сети.
 const YMAPS_STUB = `window.ymaps = {
@@ -185,13 +190,20 @@ async function seed(base, browser) {
   await pay(await seller.post(`/api/listings/${ids[0]}/boost`, { frame: true }));
   await pay(await seller.post(`/api/listings/${ids[1]}/boost`, { tags: ['Есть гарантия', 'С чеком'] }));
   await admin.put('/api/admin/seo', { mapsKey: 'test-maps-key' }); // 1.38: карта объявлений включается ключом
+  // 1.42: продавец удалил объявление — переписка покупателя остаётся с пометкой «Объявление удалено».
+  const scooter = (await seller.post('/api/listings', { title: 'Самокат Xiaomi Pro 2', category: 'hobby', city: 'Москва', price: '18000' })).data.id;
+  await admin.post(`/api/admin/listings/${scooter}/restore`);
+  const convGone = (await buyer.post('/api/conversations', { listingId: scooter })).data.id;
+  await buyer.post(`/api/conversations/${convGone}/messages`, { body: 'Добрый день! Самокат ещё продаёте?' });
+  await seller.post(`/api/conversations/${convGone}/messages`, { body: 'Уже продал, извините' });
+  await seller.del(`/api/listings/${scooter}`);
   // 1.39: временно удалённый профиль — после входа экран «Восстановить»; второй — для карточки в модерации.
   const gone = await registerUser(base, { name: 'Глеб', email: 'gleb@test.local' });
   await gone.post('/api/me/deactivate');
   const gone2 = client(base);
   await gone2.post('/api/auth/login', { email: 'gleb@test.local', password: 'password123' });
   gone2.user = gone.user;
-  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay, scheduled, boostPay, gone: gone2 };
+  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay, scheduled, boostPay, gone: gone2, convGone };
 }
 
 function pages(d) {
@@ -246,6 +258,7 @@ function pages(d) {
     ['favorites', '/favorites', d.buyer],
     ['messages', '/messages', d.buyer],
     ['chat', `/messages/${d.conv}`, d.buyer],
+    ['chat-deleted', `/messages/${d.convGone}`, d.buyer],
     // 1.38: быстрые вопросы покупателя — нажал, и вопрос ушёл продавцу
     ['chat-ask', `/messages/${d.conv}`, d.buyer, 'ask'],
     ['admin', '/admin', d.admin],
@@ -398,7 +411,7 @@ async function main() {
   try {
     const d = await seed(srv.base, browser);
     seeded = d;
-    for (const [vpName, vp] of Object.entries(VIEWPORTS)) {
+    for (const [vpName, { kind, ...vp }] of Object.entries(VIEWPORTS)) {
       // UI_ONLY=home,boost-modal — проверить только эти страницы (быстрее при правке вёрстки).
       const only = process.env.UI_ONLY ? process.env.UI_ONLY.split(',') : null;
       for (const [name, url, who, open] of pages(d).filter(([n]) => !only || only.includes(n))) {
@@ -448,7 +461,8 @@ async function main() {
           if (!(await page.$('.pick .pick-it'))) errors.push('список не открылся');
         } else if (open === 'city') {
           // Подсказки города — красивым списком (1.34), а не системным datalist; набор текста сужает список.
-          if (vpName === 'mobile') { const t = await page.$('#filters-toggle'); if (t && await t.isVisible()) { await t.click(); await page.waitForTimeout(200); } }
+          // фильтры за кнопкой — до 900 px (телефон и планшет)
+          { const t = await page.$('#filters-toggle'); if (t && await t.isVisible()) { await t.click(); await page.waitForTimeout(200); } }
           await page.click('#f-city');
           await page.waitForTimeout(200);
           if (!(await page.$('.city-sug .pick-it'))) errors.push('список городов не открылся');
@@ -459,14 +473,15 @@ async function main() {
           if (!/Воронеж/.test(first || '')) errors.push(`первым должен быть Воронеж, а не «${first}»`);
         } else if (open === 'filters') {
           // 1.35: компьютер — выбор в фильтрах применяется сразу, без «Показать»; телефон — «Показать N» с числом и видна на экране.
-          if (vpName === 'mobile') {
-            await page.click('#filters-toggle'); await page.waitForTimeout(200);
+          const toggle = await page.$('#filters-toggle');
+          if (toggle && await toggle.isVisible()) {
+            await toggle.click(); await page.waitForTimeout(200);
             await page.click('#f-extra [data-field="gearbox"] [data-av="Автомат"]');
             await page.waitForFunction(() => /\d/.test(document.querySelector('#f-show').textContent), null, { timeout: 5000 }).catch(() => {}); // число приходит с сервера
             const t = await page.textContent('#f-show');
             if (!/^Показать 1 объявление$/.test(t)) errors.push(`кнопка «Показать» без числа: «${t}»`);
             const r = await page.$eval('#f-show', (el) => el.getBoundingClientRect().bottom);
-            if (r > 812) errors.push('кнопка «Показать» за краем экрана');
+            if (r > vp.viewport.height) errors.push('кнопка «Показать» за краем экрана');
             await page.screenshot({ path: path.join(SHOTS, `${vpName}-search-filters-open.png`) });
             await page.click('#f-show'); await page.waitForTimeout(500);
           } else {
@@ -581,8 +596,15 @@ async function main() {
           const st = nav ? getComputedStyle(nav) : null;
           const wide = [...document.querySelectorAll('body *')].filter((el) => {
             const r = el.getBoundingClientRect();
-            return r.width > 0 && r.right > document.documentElement.clientWidth + 1 && getComputedStyle(el).position !== 'fixed';
-          }).slice(0, 3).map((el) => el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : ''));
+            if (!(r.width > 0 && r.right > document.documentElement.clientWidth + 1 && getComputedStyle(el).position !== 'fixed')) return false;
+            // внутри ленты с прокруткой (меню-капсулы, вкладки) — не виновник: вылезает сама лента или её родитель
+            for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) if (getComputedStyle(p).overflowX !== 'visible') return false;
+            return true;
+          }).slice(0, 3).map((el) => {
+            const own = el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '');
+            const box = el.parentElement && el.parentElement.closest('[class]'); // где искать: ближайший блок с классом
+            return box && typeof box.className === 'string' ? `${own} в .${box.className.split(' ')[0]}` : own;
+          });
           return {
             scrollW: document.documentElement.scrollWidth,
             clientW: document.documentElement.clientWidth,
@@ -596,10 +618,10 @@ async function main() {
         });
         if (m.scrollW > m.clientW + 1) errors.push(`горизонтальная прокрутка: ${m.scrollW}px при ширине ${m.clientW}px (${m.wide.join(', ')})`);
         // На форме объявления на телефоне вместо нижнего меню — закреплённая кнопка отправки.
-        if (vpName === 'mobile' && m.editor && (m.navVisible || !m.dockVisible)) errors.push('на форме объявления должна быть закреплённая кнопка вместо нижнего меню');
-        if (vpName === 'mobile' && !m.editor && !m.navVisible) errors.push('нет нижнего меню на телефоне');
-        if (vpName === 'desktop' && m.dockVisible) errors.push('закреплённая кнопка формы видна на компьютере');
-        if (vpName === 'desktop' && m.navVisible) errors.push('нижнее меню видно на компьютере');
+        if (kind === 'mobile' && m.editor && (m.navVisible || !m.dockVisible)) errors.push('на форме объявления должна быть закреплённая кнопка вместо нижнего меню');
+        if (kind === 'mobile' && !m.editor && !m.navVisible) errors.push('нет нижнего меню на телефоне');
+        if (kind === 'desktop' && m.dockVisible) errors.push('закреплённая кнопка формы видна на компьютере');
+        if (kind === 'desktop' && m.navVisible) errors.push('нижнее меню видно на компьютере');
         if (m.appText < 20) errors.push('страница пустая');
         if (!m.onest) errors.push('шрифт Onest не загрузился');
         // UI_AUDIT=1 — подробный разбор страницы (не валит проверку, пишет tests/screenshots/audit.json):

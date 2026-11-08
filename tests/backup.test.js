@@ -49,10 +49,10 @@ test('копия и восстановление базы, фото и наст�
   assert.match(tarList, /var\/www\/torgana\/\.env/);
   assert.match(tarList, /nginx/);
 
-  // 3. Беда: объявление и фото удалены, настройки испорчены
+  // 3. Беда: объявление удалено, файл фото пропал с диска, настройки испорчены
+  // (с 1.42.0 удаление объявления фото не стирает — его видят собеседники в переписке, поэтому файл убираем сами)
   await anna.del(`/api/listings/${id}`);
-  await new Promise((r) => setTimeout(r, 200));
-  assert.equal(fs.existsSync(path.join(data, 'uploads', photo)), false);
+  fs.rmSync(path.join(data, 'uploads', photo));
   fs.writeFileSync(path.join(fakeFs, 'var/www/torgana/.env'), 'BROKEN\n');
   await srv.stop();
 

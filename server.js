@@ -159,6 +159,10 @@ function sellerOfCard(r) {
   return { id: r.seller_id, name: name || 'Продавец', avatar: photoUrl(r.seller_avatar), rating: n ? avg : 0, reviews: n || 0, shop };
 }
 
+// Сколько объявлений подходит под условие выдачи — из памяти, пока объявления не менялись (db.memo в lib/db.js).
+const countListings = (whereSql, params) => db.memo(`count|${whereSql}|${JSON.stringify(params)}`,
+  () => db.prepare(`SELECT COUNT(*) AS n FROM listings l JOIN users u ON u.id = l.user_id WHERE ${whereSql}`).get(...params).n);
+
 const CARD_SELECT = `
   SELECT l.id, l.title, l.price, l.price_unit, l.city, l.category, l.delivery, l.exchange, l.status, l.created_at, l.price_was, l.price_drop_at,
     l.subcategory, l.attrs, l.metro, l.video,
@@ -259,15 +263,24 @@ function attachPhotos(userId, listingId, files) {
   valid.forEach((f, i) => upd.run(listingId, i, f));
 }
 
-function deleteListingFiles(listingId) {
-  const files = db.prepare('SELECT file FROM uploads WHERE listing_id = ?').all(listingId);
-  for (const { file } of files) fs.rm(path.join(UPLOAD_DIR, file), { force: true }, () => {});
-  const l = db.prepare('SELECT video FROM listings WHERE id = ?').get(listingId);
-  if (l && l.video) video.remove(l.video);
+// 1.42.0: удалённое объявление остаётся в базе со статусом deleted — переписки покупателей по нему сохраняются,
+// в чате пометка «Объявление удалено». Для всего остального его нет: loadListing его не отдаёт, чаты и модерация
+// берут его с { deleted: true }.
+function loadListing(id, { deleted = false } = {}) {
+  const l = db.prepare('SELECT * FROM listings WHERE id = ?').get(id);
+  return l && (deleted || l.status !== 'deleted') ? l : null;
 }
-
-function loadListing(id) {
-  return db.prepare('SELECT * FROM listings WHERE id = ?').get(id);
+// Удалить объявление: пропадает с сайта, запись остаётся для переписок. wipe — при удалении профиля навсегда:
+// фото, видео, описание и характеристики стираются, остаются название и цена — их видят собеседники в чатах.
+function removeListing(id, { wipe = false } = {}) {
+  if (wipe) {
+    for (const { file } of db.prepare('SELECT file FROM uploads WHERE listing_id = ?').all(id)) fs.rm(path.join(UPLOAD_DIR, file), { force: true }, () => {});
+    const v = db.prepare('SELECT video FROM listings WHERE id = ?').get(id);
+    if (v && v.video) video.remove(v.video);
+    db.prepare('DELETE FROM uploads WHERE listing_id = ?').run(id);
+    db.prepare('UPDATE listings SET description = \'\', attrs = \'{}\', video = \'\', search_text = \'\' WHERE id = ?').run(id);
+  }
+  db.prepare('UPDATE listings SET status = \'deleted\', updated_at = ? WHERE id = ?').run(now(), id);
 }
 
 // ---------- обработчики API ----------
@@ -328,7 +341,7 @@ const ops = require('./lib/ops')({ route, db, h: helpers, mailer, codesOn, root:
   deviceCheck: process.env.ADMIN_DEVICE_CHECK !== '0' });
 opsApi = ops;
 helpers.business = business;
-helpers.account = require('./lib/account')({ route, db, h: { ...helpers, secureCookies: SECURE_COOKIES }, deleteListingFiles, auth }); // удаление профиля (1.39)
+helpers.account = require('./lib/account')({ route, db, h: { ...helpers, secureCookies: SECURE_COOKIES }, removeListing, auth }); // удаление профиля (1.39)
 
 // Поисковики и Метрика: коды подтверждения Вебмастера и Search Console, номер счётчика — «Модерация → Поиск и статистика».
 // ИИ по фото: Яндекс AI Studio (ключ и каталог — в модерации, «Настройки → ИИ по фото» или YANDEX_AI_KEY/YANDEX_FOLDER_ID),
@@ -595,13 +608,15 @@ route('GET', '/api/listings', (ctx) => {
   const where = ['l.status = \'active\'', 'u.is_blocked = 0', ...f.where];
   const params = f.args;
   const sort = q.get('sort');
-  const order = sort === 'cheap' ? 'l.price IS NULL, l.price ASC, l.id DESC'
-    : sort === 'expensive' ? 'l.price IS NULL, l.price DESC, l.id DESC'
+  // С фильтром цены «договорных» (NULL) в выдаче нет — сортируем прямо по индексу цены.
+  const nulls = Number.isFinite(spec.min) || Number.isFinite(spec.max) ? '' : 'l.price IS NULL, ';
+  const order = sort === 'cheap' ? `${nulls}l.price ASC, l.id DESC`
+    : sort === 'expensive' ? `${nulls}l.price DESC, l.id DESC`
       : 'l.created_at DESC, l.id DESC';
   const limit = Math.min(Math.max(parseInt(q.get('limit') || '24', 10) || 24, 1), 60);
   const offset = Math.max(parseInt(q.get('offset') || '0', 10) || 0, 0);
   const whereSql = where.join(' AND ');
-  const total = db.prepare(`SELECT COUNT(*) AS n FROM listings l JOIN users u ON u.id = l.user_id WHERE ${whereSql}`).get(...params).n;
+  const total = countListings(whereSql, params);
   const rows = db.prepare(`${CARD_SELECT} WHERE ${whereSql} ORDER BY ${order} LIMIT ? OFFSET ?`).all(uid, ...params, limit, offset);
   return {
     items: rows.map(cardFromRow),
@@ -617,7 +632,7 @@ route('GET', '/api/listings/map', (ctx) => {
   const spec = searchSpec(Object.fromEntries(ctx.query.entries()), CATEGORY_IDS);
   const f = specSql(spec);
   const whereSql = ['l.status = \'active\'', 'u.is_blocked = 0', ...f.where].join(' AND ');
-  const total = db.prepare(`SELECT COUNT(*) AS n FROM listings l JOIN users u ON u.id = l.user_id WHERE ${whereSql}`).get(...f.args).n;
+  const total = countListings(whereSql, f.args);
   const rows = db.prepare(`SELECT l.id, l.title, l.price, l.price_unit, l.city, l.metro,
       (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo
     FROM listings l JOIN users u ON u.id = l.user_id WHERE ${whereSql} ORDER BY l.created_at DESC, l.id DESC LIMIT 1000`).all(...f.args);
@@ -633,11 +648,11 @@ route('GET', '/api/listings/map', (ctx) => {
 
 route('GET', '/api/listings/:id', (ctx) => {
   const id = parseInt(ctx.params.id, 10);
-  const l = loadListing(id);
-  if (!l) throw new HttpError(404, 'Объявление не найдено');
+  const l = loadListing(id, { deleted: true });
+  const isAdmin = ctx.user && ctx.user.is_admin;
+  if (!l || (l.status === 'deleted' && !isAdmin)) throw new HttpError(404, l ? 'Объявление удалено' : 'Объявление не найдено');
   const seller = db.prepare('SELECT * FROM users WHERE id = ?').get(l.user_id);
   const isOwner = ctx.user && ctx.user.id === l.user_id;
-  const isAdmin = ctx.user && ctx.user.is_admin;
   if ((l.status !== 'active' && l.status !== 'sold') || seller.is_blocked || seller.deactivated_at || seller.deleted_at) {
     if (!isOwner && !isAdmin) throw new HttpError(404, 'Объявление снято с публикации');
   }
@@ -646,10 +661,11 @@ route('GET', '/api/listings/:id', (ctx) => {
   const isFav = ctx.user ? !!db.prepare('SELECT 1 FROM favorites WHERE user_id = ? AND listing_id = ?').get(ctx.user.id, id) : false;
   const favCount = db.prepare('SELECT COUNT(*) AS n FROM favorites WHERE listing_id = ?').get(id).n;
   const uid = ctx.user ? ctx.user.id : 0;
-  // Похожие: сначала из той же подкатегории, потом из категории.
-  const similar = db.prepare(`${CARD_SELECT} WHERE l.status = 'active' AND u.is_blocked = 0 AND l.category = ? AND l.id != ?
-    ORDER BY (l.subcategory = ? AND l.subcategory != '') DESC, l.created_at DESC LIMIT 4`)
-    .all(uid, l.category, id, l.subcategory).map(cardFromRow);
+  // Похожие: сначала свежие из той же подкатегории, недостающие — из категории (оба запроса идут по индексу с датой).
+  const similarIn = (col, val, not) => db.prepare(`${CARD_SELECT} WHERE l.${col} = ? AND l.status = 'active' AND u.is_blocked = 0 AND l.id != ?
+    ${not.length ? `AND l.id NOT IN (${not.map(() => '?').join(',')})` : ''} ORDER BY l.created_at DESC LIMIT ?`).all(uid, val, id, ...not, 4 - not.length);
+  const sameSub = l.subcategory ? similarIn('subcategory', l.subcategory, []) : [];
+  const similar = [...sameSub, ...(sameSub.length < 4 ? similarIn('category', l.category, sameSub.map((r) => r.id)) : [])].map(cardFromRow);
   const attrs = attrsOf(l);
   const station = l.metro ? (({ name, line, color }) => ({ name, line, color }))(metro.stations(l.city).find((s) => s.name === l.metro) || { name: l.metro, line: '', color: '' }) : null;
   let market = null;
@@ -732,7 +748,7 @@ function publishListing(id, fresh = false) {
     created_at = CASE WHEN ? OR (expires_at IS NOT NULL AND expires_at <= ?) THEN ? ELSE created_at END,
     expires_at = CASE WHEN ? OR expires_at IS NULL OR expires_at <= ? THEN ? ELSE expires_at END, updated_at = ? WHERE id = ?`)
     .run(fresh ? 1 : 0, t, t, fresh ? 1 : 0, t, t + LISTING_TTL, t, id);
-  alerts.onPublished(id); // сохранённые поиски, подписчики, снижение цены
+  alerts.onPublished(id); // подписчики продавца, снижение цены
   if (boostApi) boostApi.onPublished(id); // оплаченное продвижение начинается с публикации
 }
 helpers.publishListing = publishListing;
@@ -795,8 +811,8 @@ route('DELETE', '/api/listings/:id', (ctx) => {
   const id = parseInt(ctx.params.id, 10);
   const l = loadListing(id);
   if (!l || l.user_id !== u.id) throw new HttpError(404, 'Объявление не найдено');
-  deleteListingFiles(id);
-  db.prepare('DELETE FROM listings WHERE id = ?').run(id);
+  removeListing(id);
+  logEvent(id, u.id, 'status', { status: 'deleted' });
   return { ok: true };
 });
 
@@ -819,7 +835,7 @@ route('GET', '/api/my/listings', (ctx) => {
   const rows = db.prepare(`
     SELECT l.*, (SELECT file FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
       (SELECT COUNT(*) FROM favorites f WHERE f.listing_id = l.id) AS fav_count
-    FROM listings l WHERE l.user_id = ? ORDER BY l.created_at DESC`).all(u.id);
+    FROM listings l WHERE l.user_id = ? AND l.status != 'deleted' ORDER BY l.created_at DESC`).all(u.id);
   return {
     items: rows.map((r) => ({
       ...cardFromRow(r), views: r.views, favCount: r.fav_count, rejectReason: r.reject_reason, publishAt: r.publish_at, expiresAt: r.expires_at,
@@ -984,6 +1000,7 @@ route('POST', '/api/conversations', async (ctx) => {
   if (l.user_id === u.id) throw new HttpError(400, 'Это ваше объявление');
   const existing = db.prepare('SELECT id FROM conversations WHERE listing_id = ? AND buyer_id = ?').get(listingId, u.id);
   if (existing) return { id: existing.id };
+  rateLimit(`conv:${u.id}`, 30, 60 * 60 * 1000); // 1.41.0: защита от рассылки — не больше 30 новых диалогов в час
   const t = now();
   const info = db.prepare('INSERT INTO conversations (listing_id, buyer_id, seller_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
     .run(listingId, u.id, l.user_id, t, t);
@@ -1014,7 +1031,7 @@ route('GET', '/api/conversations/:id', (ctx) => {
   db.prepare('UPDATE messages SET read_at = ? WHERE conversation_id = ? AND sender_id != ? AND read_at IS NULL').run(now(), c.id, u.id);
   const messages = db.prepare('SELECT id, sender_id, body, photo, kind, offer_id, created_at, read_at FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id LIMIT 500')
     .all(c.id, after).map((m) => ({ id: m.id, mine: m.sender_id === u.id, body: m.body, photo: photoUrl(m.photo), kind: m.kind, offerId: m.offer_id, createdAt: m.created_at, read: !!m.read_at }));
-  const l = loadListing(c.listing_id);
+  const l = loadListing(c.listing_id, { deleted: true });
   const otherId = c.buyer_id === u.id ? c.seller_id : c.buyer_id;
   const other = db.prepare('SELECT id, name, avatar, created_at FROM users WHERE id = ?').get(otherId);
   const photo = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position LIMIT 1').get(c.listing_id);
@@ -1042,7 +1059,7 @@ route('POST', '/api/conversations/:id/messages', async (ctx) => {
   const t = now();
   const info = db.prepare('INSERT INTO messages (conversation_id, sender_id, body, photo, created_at) VALUES (?, ?, ?, ?, ?)').run(c.id, u.id, body, photo, t);
   db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(t, c.id);
-  const l = loadListing(c.listing_id);
+  const l = loadListing(c.listing_id, { deleted: true });
   alerts.notify(c.buyer_id === u.id ? c.seller_id : c.buyer_id, 'messages', { title: `${u.name} · ${l.title}`, body: msgPreview(body, photo).slice(0, 180), url: `/messages/${c.id}`, tag: `chat-${c.id}`, urgent: true });
   return { message: { id: Number(info.lastInsertRowid), mine: true, body, photo: photoUrl(photo), createdAt: t, read: false } };
 });
@@ -1111,6 +1128,9 @@ const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'X-Frame-Options': 'DENY',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()',
+  // HTTPS запоминается браузером на год (без поддоменов: stats.torgana.ru — отслеживание переходов SMTP.BZ по http).
+  ...(PUBLIC_URL.startsWith('https://') ? { 'Strict-Transport-Security': 'max-age=31536000' } : {}),
   // mc.yandex.ru — Яндекс.Метрика (загружается только после согласия на статистические cookie).
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob: https://mc.yandex.ru https://mc.yandex.com; style-src 'self' 'unsafe-inline'; font-src 'self'; media-src 'self' blob:; connect-src 'self' https://mc.yandex.ru https://mc.yandex.com; script-src 'self' https://mc.yandex.ru; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 };
@@ -1134,19 +1154,24 @@ function serveMapFrame(res) {
   res.end(MAP_FRAME.replace(/__NONCE__/g, nonce).replace('__KEY__', encodeURIComponent(key)));
 }
 
-function serveFile(res, filePath, cache) {
+// 1.41.0: ETag — браузер переспрашивает файл (иконки, манифест, sw.js) и получает 304 без повторной загрузки.
+function serveFile(res, filePath, cache, req = null) {
   fs.stat(filePath, (err, st) => {
     if (err || !st.isFile()) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('Не найдено');
       return;
     }
+    const etag = `W/"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+    if (req && req.headers['if-none-match'] === etag) { res.writeHead(304, { ETag: etag, 'Cache-Control': cache }); res.end(); return; }
     res.writeHead(200, {
       'Content-Type': MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
       'Content-Length': st.size,
       'Cache-Control': cache,
+      ETag: etag,
       ...SECURITY_HEADERS
     });
+    if (req && req.method === 'HEAD') { res.end(); return; }
     fs.createReadStream(filePath).pipe(res);
   });
 }
@@ -1205,7 +1230,7 @@ function serveStatic(req, res, pathname, search) {
     const name = pathname.slice('/uploads/'.length);
     if (video.NAME_RE.test(name)) { serveVideo(req, res, path.join(UPLOAD_DIR, name)); return; }
     if (!/^[a-f0-9]{32}\.(jpg|png|webp)$/.test(name)) { res.writeHead(404); res.end(); return; }
-    serveFile(res, path.join(UPLOAD_DIR, name), 'public, max-age=31536000, immutable');
+    serveFile(res, path.join(UPLOAD_DIR, name), 'public, max-age=31536000, immutable', req);
     return;
   }
   if (pathname !== '/' && pathname !== '/index.html' && !pathname.includes('..')) {
@@ -1214,7 +1239,7 @@ function serveStatic(req, res, pathname, search) {
       const versioned = search === `?v=${ASSET_VERSION}`;
       const cache = versioned ? 'public, max-age=31536000, immutable'
         : pathname.startsWith('/assets/fonts/') ? 'public, max-age=2592000' : 'no-cache';
-      serveFile(res, filePath, cache);
+      serveFile(res, filePath, cache, req);
       return;
     }
   }
@@ -1227,9 +1252,19 @@ function serveStatic(req, res, pathname, search) {
 
 // ---------- сервер ----------
 
+// 1.41.0: www.torgana.ru → torgana.ru одним адресом (301), чтобы не было дублей страниц.
+const CANON_HOST = PUBLIC_URL ? new URL(PUBLIC_URL).host : '';
+
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://localhost');
-  const pathname = decodeURIComponent(url.pathname);
+  let url; let pathname;
+  // Битая кодировка в адресе (%E0%A4%A) раньше роняла весь процесс — теперь просто 400.
+  try { url = new URL(req.url, 'http://localhost'); pathname = decodeURIComponent(url.pathname); } catch {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('Неверный адрес'); return;
+  }
+  const reqHost = req.headers['x-forwarded-host'] || req.headers.host || '';
+  if (CANON_HOST && reqHost === `www.${CANON_HOST}` && (req.method === 'GET' || req.method === 'HEAD')) {
+    res.writeHead(301, { Location: `${PUBLIC_URL.replace(/\/$/, '')}${req.url}`, 'Cache-Control': 'public, max-age=86400' }); res.end(); return;
+  }
 
   if (!pathname.startsWith('/api/')) {
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
@@ -1315,6 +1350,9 @@ alerts.start({ tickMs: Number(process.env.DIGEST_TICK_MS) || undefined, minAge: 
 setInterval(() => { try { listingTick(); } catch (e) { console.error('listings:', e.message); } }, Number(process.env.LISTING_TICK_MS) || 60 * 1000).unref();
 // Автопроверка объявлений, которые ждали проверки до появления автопроверок (один раз при запуске).
 for (const { id } of db.prepare('SELECT id FROM listings WHERE status = \'pending\' AND checks = \'\'').all()) autoChecks.run(id);
+
+// Страховка: необработанная ошибка в фоне пишется в журнал и владельцу, но не роняет сайт.
+process.on('unhandledRejection', (e) => { console.error('unhandledRejection:', e); try { ops.onError(e instanceof Error ? e : new Error(String(e))); } catch { /* нет */ } });
 
 server.listen(PORT, HOST, () => {
   console.log(`Торгана запущена: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);

@@ -1,6 +1,6 @@
 {
   "name": "torgana",
-  "version": "1.40.0",
+  "version": "1.42.0",
   "description": "Торгана — площадка объявлений по всей России",
   "private": true,
   "main": "server.js",
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
-    "test": "node --test tests/api.test.js tests/mail.test.js tests/legal.test.js tests/support.test.js tests/backup.test.js tests/update.test.js tests/profile.test.js tests/stats.test.js tests/reviews.test.js tests/admin.test.js tests/alerts.test.js tests/trust.test.js tests/billing.test.js tests/seo.test.js tests/catalog.test.js tests/deals.test.js tests/ops.test.js tests/publish.test.js tests/boost.test.js tests/notices.test.js tests/audit.test.js tests/ai.test.js tests/trial.test.js tests/sources.test.js tests/map.test.js tests/pay-return.test.js tests/account.test.js",
+    "test": "node --test tests/api.test.js tests/mail.test.js tests/legal.test.js tests/support.test.js tests/backup.test.js tests/update.test.js tests/profile.test.js tests/stats.test.js tests/reviews.test.js tests/admin.test.js tests/alerts.test.js tests/trust.test.js tests/billing.test.js tests/seo.test.js tests/catalog.test.js tests/deals.test.js tests/ops.test.js tests/publish.test.js tests/boost.test.js tests/notices.test.js tests/audit.test.js tests/ai.test.js tests/trial.test.js tests/sources.test.js tests/map.test.js tests/pay-return.test.js tests/account.test.js tests/hardening.test.js",
     "test:ui": "node tests/mobile.check.js",
     "check": "node --check server.js && node --check public/assets/app.js && npm test && npm run test:ui",
     "seed-demo": "node scripts/seed-demo.js http://localhost:3000"
