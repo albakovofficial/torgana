@@ -817,6 +817,12 @@ route('POST', '/api/uploads', async (ctx) => {
   return { file, url: photoUrl(file) };
 });
 
+// Разделы и их главные поля — для подсказки по фото (раздел и, например, размер или площадь).
+const AI_SUBS = Object.entries(taxonomy.SUBCATS).map(([cat, list]) => list.map((x) => {
+  const req = (x.fields || []).filter((f) => f.req).map((f) => (f.type === 'select' && (f.options || []).length <= 15 ? `${f.key}: ${f.options.join(' | ')}` : `${f.key} — ${f.label}${f.unit ? `, ${f.unit}` : ''}${f.type === 'select' ? ' (значение из списка)' : ', число'}`));
+  return `${cat}/${x.id} — ${x.name}${req.length ? ` (${req.join('; ')})` : ''}`;
+}).join('\n')).join('\n');
+
 route('POST', '/api/ai/suggest', async (ctx) => {
   const u = requireUser(ctx);
   if (!AI_KEY) throw new HttpError(501, 'ИИ-подсказки не подключены');
@@ -826,7 +832,12 @@ route('POST', '/api/ai/suggest', async (ctx) => {
   if (!row) throw new HttpError(400, 'Сначала загрузите фото');
   const type = IMAGE_TYPES.find((t) => row.file.endsWith(`.${t.ext}`));
   try {
-    const s = await suggestFromPhoto({ apiKey: AI_KEY, model: AI_MODEL, filePath: path.join(UPLOAD_DIR, row.file), mime: type.mime });
+    const s = await suggestFromPhoto({ apiKey: AI_KEY, model: AI_MODEL, filePath: path.join(UPLOAD_DIR, row.file), mime: type.mime, subs: AI_SUBS });
+    // Раздел — только из разделов угаданной категории; характеристики — по одной, неверные отбрасываем.
+    s.subcategory = s.category && (taxonomy.SUBCATS[s.category] || []).some((x) => x.id === s.subcategory) ? s.subcategory : '';
+    const attrs = {};
+    if (s.subcategory) for (const [k, v] of Object.entries(s.attrs)) { try { Object.assign(attrs, taxonomy.cleanAttrs(s.subcategory, { [k]: v })); } catch { /* не из списка или вне пределов */ } }
+    s.attrs = attrs;
     const est = s.category ? marketEstimate({ category: s.category, title: s.title, priceUnit: '' }) : null;
     return { ...s, priceHint: est ? est.median : null, priceHintCount: est ? est.count : 0 };
   } catch (e) {

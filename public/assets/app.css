@@ -2742,3 +2742,39 @@ body.pv-open { overflow: hidden; }
   .ed-seg span { width: 100%; justify-content: center; padding: 0 10px; }
   .ed-boost .bp-opt { display: flex; padding: 10px 12px; }
 }
+
+/* 1.36.0: подача в три шага — «Фото», «Что и сколько», «Отправка» */
+.ed-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ed-price { gap: 10px; }
+.ed-deal { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ed-deal .ed-opt { flex-direction: row; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 16px; }
+.ed-deal .ed-opt-top { display: contents; }
+.ed-deal .ed-opt-ic { width: 30px; height: 30px; border-radius: 9px; order: 0; display: grid; }
+.ed-deal .ed-opt b { order: 1; flex: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ed-deal .ed-opt input { order: 2; width: 20px; height: 20px; }
+.ed-deal .ed-opt small { display: none; }
+.ed-deal .ed-opt.hidden { display: none; }
+.ed-preview-m { display: none; }
+.ed-more { display: block; border: 1.5px solid var(--line); border-radius: 20px; background: #fff; }
+.ed-more summary { display: flex; align-items: center; gap: 12px; padding: 12px 16px 12px 12px; cursor: pointer; list-style: none; }
+.ed-more summary::-webkit-details-marker { display: none; }
+.ed-more summary > svg { flex: none; color: var(--muted); transition: transform .2s; }
+.ed-more[open] summary > svg { transform: rotate(180deg); }
+.ed-more .eb-ic { background: var(--surface); color: var(--text-2); }
+.ed-more-in { display: flex; flex-direction: column; gap: 16px; padding: 4px 14px 16px; animation: fade .2s; }
+.ed-more-in .ed-attrs { padding: 16px; }
+.ed-ai.busy .ed-ai-ic { animation: spin 1.2s linear infinite; }
+@media (max-width: 1024px) {
+  .ed-preview-m { display: block; width: min(62%, 260px); margin: 2px 0 4px; }
+}
+@media (max-width: 760px) {
+  .ed-deal { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ed-steps span { display: inline-flex; font-size: 12px; justify-content: center; }
+  .ed-steps button { min-height: 34px; text-align: center; align-items: stretch; }
+}
+@media (max-width: 760px) {
+  .ed-deal .ed-opt { padding: 10px 12px; }
+  .ed-deal .ed-opt-ic { display: none; }
+  .ed-deal .ed-opt b { font-size: 14.5px; }
+  .ed-preview-m { width: min(46%, 190px); }
+}

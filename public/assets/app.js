@@ -1785,7 +1785,8 @@
     });
   }
 
-  const ED_STEPS = [['s-photos', 'Фото'], ['s-what', 'Что продаёте'], ['s-price', 'Цена'], ['s-where', 'Где'], ['s-desc', 'Описание'], ['s-publish', 'Публикация']];
+  // 1.36: три шага — фото, «что и сколько» (главное), «проверьте и отправьте» (город, описание, остальное свёрнуто).
+  const ED_STEPS = [['s-photos', 'Фото'], ['s-what', 'Что и сколько'], ['s-publish', 'Отправка']];
   // Публикация в выбранное время: дни на 30 вперёд и время с шагом 30 минут — по Москве (UTC+3 круглый год).
   const MSK = 3 * 3600 * 1000;
   const mskDay = (ts) => new Date(ts + MSK).toISOString().slice(0, 10);
@@ -1847,9 +1848,8 @@
           ${step(1, 's-photos', 'Фото и видео', 'До 10 фото и одно видео до минуты. Первое фото — обложка в поиске.', html`<div id="photos"></div>
             <input type="file" id="file" accept="image/jpeg,image/png,image/webp" multiple class="sr" tabindex="-1">
             <div id="ai-slot"></div>
-            <div id="video-slot"></div>
             <input type="file" id="vfile" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" class="sr" tabindex="-1">`)}
-          ${step(2, 's-what', 'Что продаёте', '', html`
+          ${step(2, 's-what', 'Что и сколько', '', html`
             <div class="field"><label for="title">Название</label>
               <div class="ed-input"><input id="title" name="title" class="input" maxlength="80" placeholder="Например: iPhone 15 Pro, 256 ГБ" value="${src.title || ''}" autocomplete="off"><span class="ed-count" id="title-count"></span></div>
               <span class="help">Марка, модель и главное — так объявление легче найти.</span></div>
@@ -1858,30 +1858,37 @@
             <div class="field hidden" id="sub-field"><span class="label">Раздел</span><div class="ed-subs" id="subs" role="radiogroup" aria-label="Раздел"></div></div>
             <div class="ed-attrs hidden" id="attrs"></div>
             <div class="field hidden" id="cond-field"><span class="label">Состояние</span><div class="ed-seg" role="radiogroup" aria-label="Состояние">
-              ${[['new', 'Новое'], ['used', 'Б/у'], ['', 'Не указывать']].map(([v, t]) => html`<button type="button" role="radio" data-cond="${v}">${t}</button>`)}</div></div>`)}
-          ${step(3, 's-price', 'Сколько стоит?', 'Цена и условия сделки — покупатели видят их сразу', html`
+              ${[['new', 'Новое'], ['used', 'Б/у'], ['', 'Не указывать']].map(([v, t]) => html`<button type="button" role="radio" data-cond="${v}">${t}</button>`)}</div></div>
+            <div class="field ed-price"><label class="label" for="price">Цена</label>
             <div class="ed-money"><label class="sr" for="price">Цена в рублях</label><input id="price" name="price" class="input" inputmode="numeric" autocomplete="off" placeholder="0" value="${src.price !== null && src.price !== undefined && src.price !== '' ? NF.format(Number(String(src.price).replace(/\D/g, ''))) : ''}"><span>₽</span></div>
             ${units.length > 1 ? html`<div class="ed-seg ed-units" role="radiogroup" aria-label="За что цена">${units.map((u) => html`<button type="button" role="radio" data-unit="${u}">${UNIT_LABEL[u] || `за ${u}`}</button>`)}</div>` : ''}
             <div class="ed-hint hidden" id="price-hint"></div>
-            <div class="field"><span class="label">Условия сделки</span><div class="ed-opts">
-              ${opt('bargain', 'chat', 'Торг уместен', 'Покупатели смогут предложить свою цену — кнопкой «Предложить цену»', src.bargain !== false)}
-              ${opt('exchange', 'refresh', 'Возможен обмен', 'Покажем «Обмен» в объявлении и в фильтрах поиска', !!src.exchange)}
+            </div>
+            <div class="ed-opts ed-deal" role="group" aria-label="Условия сделки">
+              ${opt('bargain', 'chat', 'Торг', 'Покупатели смогут предложить свою цену', src.bargain !== false)}
+              ${opt('exchange', 'refresh', 'Обмен', 'Покажем «Обмен» в объявлении и фильтрах', !!src.exchange)}
+              ${opt('delivery', 'truck', 'Доставка', 'Отправлю по России', !!src.delivery)}
               ${opt('', 'info', 'Договорная', 'Цену не показываем — договоритесь в чате', st.negotiable, 'neg')}
-            </div></div>`)}
-          ${step(4, 's-where', 'Где', '', html`
+            </div>`)}
+          ${step(3, 's-publish', 'Проверьте и отправьте', l && l.status === 'active' && l.expiresAt ? `Опубликовано до ${dateShort(l.expiresAt)} · после проверки вернётся в поиск` : '30 дней бесплатно · сначала проверит модератор', html`
+            <div class="ed-preview ed-preview-m" id="preview-m" aria-hidden="true"></div>
             <div class="field"><label for="city">Город</label>
               <div class="ed-icon-input">${ic('pin', 18)}<input id="city" name="city" class="input" data-cities autocomplete="off" value="${src.city || S.user.city || S.city || ''}" placeholder="Начните вводить город"></div></div>
+            <div class="field"><label for="desc">Описание <small class="muted">— по желанию</small></label>
+            <div class="ed-tips" aria-label="Что написать">${DESC_TIPS.map((t) => html`<button type="button" class="chip" data-tip="${t}">${ic('plus', 14, 2.2)}${t}</button>`)}</div>
+            <div class="ed-input"><label for="desc" class="sr">Описание</label><textarea id="desc" name="description" class="textarea" maxlength="4000" placeholder="Состояние, комплектация, причина продажи, особенности">${src.description || ''}</textarea><span class="ed-count" id="desc-count"></span></div></div>
+            <details class="ed-more" id="ed-more"><summary><span class="eb-ic">${ic('plus', 18, 2.2)}</span><span class="eb-t"><b>Ещё по желанию</b><small id="more-sub">метро, район, характеристики, видео</small></span>${ic('down', 18, 2)}</summary>
+              <div class="ed-more-in">
             <div class="ed-where2">
               <div class="field hidden" id="metro-field"><label for="metro">Метро</label>
                 <select id="metro" name="metro" class="select"><option value="">Не указывать</option></select></div>
               <div class="field"><label for="district">Район <small class="muted">— по желанию</small></label>
                 <input id="district" name="district" class="input" maxlength="60" autocomplete="off" placeholder="Например: Центральный" value="${src.district || ''}"></div>
             </div>
-            <label class="switch"><span>Отправлю по России<small>Покупатели из других городов увидят «Доставка»</small></span><input type="checkbox" name="delivery" ${src.delivery ? raw('checked') : ''}><span class="track"></span></label>`)}
-          ${step(5, 's-desc', 'Описание', 'Честное описание экономит время и вам, и покупателю.', html`
-            <div class="ed-tips" aria-label="Что написать">${DESC_TIPS.map((t) => html`<button type="button" class="chip" data-tip="${t}">${ic('plus', 14, 2.2)}${t}</button>`)}</div>
-            <div class="ed-input"><label for="desc" class="sr">Описание</label><textarea id="desc" name="description" class="textarea" maxlength="4000" placeholder="Состояние, комплектация, причина продажи, особенности">${src.description || ''}</textarea><span class="ed-count" id="desc-count"></span></div>`)}
-          ${step(6, 's-publish', 'Публикация', l && l.status === 'active' && l.expiresAt ? `Опубликовано до ${dateShort(l.expiresAt)} · после проверки вернётся в поиск` : '30 дней бесплатно · сначала проверит модератор', html`
+                <div class="ed-attrs hidden" id="attrs-more"></div>
+                <div id="video-slot"></div>
+              </div>
+            </details>
             ${canSchedule ? html`<fieldset class="ed-when"><legend class="sr">Когда опубликовать</legend>
               <div class="ed-seg">
                 <label><input type="radio" name="pub-when" value="now" ${at0 ? '' : raw('checked')}><span>${ic('bolt', 16, 2)}Сразу</span></label>
@@ -1962,6 +1969,7 @@
           renderPhotos(); changed();
         }
       }));
+      if (!l && !st.aiDone && !form.title.value.trim()) aiFill();
     };
     fileInput.onchange = () => { addFiles([...fileInput.files]); fileInput.value = ''; };
 
@@ -1969,24 +1977,31 @@
       const slot = $('#ai-slot');
       if (!S.config.ai) { slot.innerHTML = ''; return; }
       const ready = st.photos.some((p) => p.file && !p.loading);
-      slot.innerHTML = String(html`<div class="ed-ai"><span class="ed-ai-ic">${ic('sparkle', 20)}</span><p>${ready ? 'Заполним название, категорию и описание по первому фото.' : 'Добавьте фото — и мы заполним объявление за вас.'}</p>
-        <button type="button" class="btn btn-accent btn-sm" id="ai-btn" ${ready ? '' : raw('disabled')}>Заполнить по фото</button></div>`);
+      slot.innerHTML = String(html`<div class="ed-ai ${st.aiBusy ? 'busy' : ''}"><span class="ed-ai-ic">${ic('sparkle', 20)}</span><p>${st.aiBusy ? 'Смотрим на фото и заполняем объявление…' : st.aiDone ? 'Заполнили по фото — проверьте на следующем шаге.' : ready ? 'Заполним название, категорию, характеристики и описание по первому фото.' : 'Добавьте фото — и мы заполним объявление за вас.'}</p>
+        ${st.aiBusy ? '' : html`<button type="button" class="btn ${st.aiDone ? 'btn-soft' : 'btn-accent'} btn-sm" id="ai-btn" ${ready ? '' : raw('disabled')}>${st.aiDone ? 'Ещё раз' : 'Заполнить по фото'}</button>`}</div>`);
       const b = $('#ai-btn');
-      if (b) b.onclick = async () => {
-        const first = st.photos.find((p) => p.file && !p.loading);
-        b.disabled = true; b.textContent = 'Смотрим на фото…';
-        try {
-          const s = await api('POST', '/api/ai/suggest', { file: first.file });
-          if (s.title) form.title.value = s.title;
-          if (s.description && !form.description.value.trim()) form.description.value = s.description;
-          if (s.category) setCat(s.category);
-          if (s.condition) setCond(s.condition);
-          if (s.priceHint) showHint(s.priceHint, s.priceHintCount); else fetchHint();
-          changed();
-          toast('Готово — проверьте и поправьте при необходимости');
-        } catch (e) { toast(e.message, true); }
-        b.disabled = false; b.textContent = 'Заполнить по фото';
-      };
+      if (b) b.onclick = () => aiFill(true);
+    };
+    // Заполнить по фото: название, категорию, раздел, главные характеристики, состояние, описание.
+    // Сам — один раз, когда загрузилось первое фото и название ещё пустое; кнопкой — когда угодно.
+    const aiFill = async (manual = false) => {
+      const first = st.photos.find((p) => p.file && !p.loading);
+      if (!S.config.ai || !first || st.aiBusy) return;
+      st.aiBusy = true; renderAi();
+      try {
+        const r = await api('POST', '/api/ai/suggest', { file: first.file });
+        if (r.title && (manual || !form.title.value.trim())) form.title.value = r.title;
+        if (r.description && !form.description.value.trim()) form.description.value = r.description;
+        if (r.category && (manual || !st.category)) setCat(r.category);
+        if (r.subcategory && (manual || !st.sub)) setSub(r.subcategory);
+        if (r.attrs && Object.keys(r.attrs).length) { for (const [k, v] of Object.entries(r.attrs)) if (manual || st.attrs[k] === undefined) st.attrs[k] = v; renderAttrs(); }
+        if (r.condition && (manual || !st.condition)) setCond(r.condition);
+        if (r.priceHint) showHint(r.priceHint, r.priceHintCount); else fetchHint();
+        st.aiDone = true;
+        changed();
+        if (manual) toast('Готово — проверьте и поправьте при необходимости');
+      } catch (e) { if (manual) toast(e.message, true); }
+      st.aiBusy = false; renderAi();
     };
 
     // ---------- видео: одно, до минуты, загрузка частями с продолжением после обрыва ----------
@@ -2076,17 +2091,16 @@
       $$('[data-sub]').forEach((b) => { b.onclick = () => setSub(b.dataset.sub); });
     };
     const fmtAttrInput = (f, v) => (v === undefined || v === null || v === '' ? '' : f.max >= 100000 ? NF.format(Number(v)) : String(v).replace('.', ','));
-    const renderAttrs = () => {
-      const x = subOf(st.sub);
-      const box = $('#attrs');
-      box.classList.toggle('hidden', !x || !x.fields.length);
-      if (!x || !x.fields.length) { box.innerHTML = ''; return; }
-      box.innerHTML = String(html`<div class="ed-attrs-h"><b>Характеристики</b><span>${x.fields.some((f) => f.req) ? html`<i class="rq">*</i> — главные, остальное по желанию. ` : ''}По ним покупатели находят объявление в фильтрах</span></div>
-        <div class="ed-attrs-grid">${[...x.fields].sort((a, b) => (b.req - a.req) || ((a.type !== 'select') - (b.type !== 'select'))).map((f) => {
-    const v = st.attrs[f.key];
-    if (f.type === 'select') return attrChoice(f, v);
-    return html`<div class="field"><label for="at-${f.key}">${f.label}${f.req ? html`<i class="rq">*</i>` : ''}</label><div class="ed-unit-input"><input id="at-${f.key}" class="input" inputmode="${f.key === 'area' || f.key === 'land' ? 'decimal' : 'numeric'}" autocomplete="off" data-akn="${f.key}" data-max="${f.max}" placeholder="${f.key === 'year' ? `например, ${new Date().getFullYear() - 5}` : '—'}" value="${fmtAttrInput(f, v)}">${f.unit ? html`<span>${f.unit}</span>` : ''}</div></div>`;
-  })}</div>`);
+    // Главные характеристики (req) — на шаге «Что и сколько», остальные — в «Ещё по желанию» на последнем шаге.
+    const attrField = (f) => {
+      const v = st.attrs[f.key];
+      if (f.type === 'select') return attrChoice(f, v);
+      return html`<div class="field"><label for="at-${f.key}">${f.label}${f.req ? html`<i class="rq">*</i>` : ''}</label><div class="ed-unit-input"><input id="at-${f.key}" class="input" inputmode="${f.key === 'area' || f.key === 'land' ? 'decimal' : 'numeric'}" autocomplete="off" data-akn="${f.key}" data-max="${f.max}" placeholder="${f.key === 'year' ? `например, ${new Date().getFullYear() - 5}` : '—'}" value="${fmtAttrInput(f, v)}">${f.unit ? html`<span>${f.unit}</span>` : ''}</div></div>`;
+    };
+    const paintAttrs = (box, fields, head) => {
+      box.classList.toggle('hidden', !fields.length);
+      if (!fields.length) { box.innerHTML = ''; return; }
+      box.innerHTML = String(html`${head}<div class="ed-attrs-grid">${[...fields].sort((a, b) => (a.type !== 'select') - (b.type !== 'select')).map(attrField)}</div>`);
       if (!box.dataset.bound) {
         box.dataset.bound = '1';
         bindAttrChoices(box, { find: (fn) => (subOf(st.sub) || { fields: [] }).fields.find(fn) }, (k) => st.attrs[k], (k, val) => { if (val === undefined) delete st.attrs[k]; else st.attrs[k] = val; changed(); });
@@ -2101,6 +2115,11 @@
           changed();
         };
       });
+    };
+    const renderAttrs = () => {
+      const fields = (subOf(st.sub) || { fields: [] }).fields;
+      paintAttrs($('#attrs'), fields.filter((f) => f.req), '');
+      paintAttrs($('#attrs-more'), fields.filter((f) => !f.req), html`<div class="ed-attrs-h"><b>Характеристики</b><span>По ним покупатели находят объявление в фильтрах</span></div>`);
     };
     const setSub = (id) => {
       if (st.sub !== id) {
@@ -2203,15 +2222,14 @@
       ['s-what', 'Категория', (b) => !!b.category, true],
       ['s-what', 'Раздел', (b) => !!b.subcategory || (!!b.category && !subsOf(b.category).length), true],
       ['s-what', 'Характеристики', (b) => !!b.subcategory && !attrsMissing(b).length && attrsDone(b), attrsReq],
-      ['s-price', 'Цена', (b) => !!b.price || st.negotiable, false],
-      ['s-where', 'Город', (b) => b.city.length >= 2, true],
-      ['s-desc', 'Описание', (b) => b.description.length >= 20, false]
+      ['s-what', 'Цена', (b) => !!b.price || st.negotiable, false],
+      ['s-publish', 'Город', (b) => b.city.length >= 2, true],
+      ['s-publish', 'Описание', (b) => b.description.length >= 20, false]
     ];
     const ERR = {
       's-what': (b) => (b.title.length < 3 ? 'Напишите название — хотя бы пару слов.' : !b.category ? 'Выберите категорию.' : !b.subcategory && subsOf(b.category).length ? 'Выберите раздел — так объявление попадёт в нужные фильтры.'
         : attrsMissing(b).length ? `Укажите: ${attrsMissing(b).map((f) => f.label.toLowerCase()).join(', ')}.` : ''),
-      's-where': (b) => (b.city.length < 2 ? 'Укажите город.' : ''),
-      's-publish': (b) => (b.publishAt !== null && b.publishAt < Date.now() + 5 * 60 * 1000 ? 'Выберите время позже — хотя бы через несколько минут.' : boostErr(st.boost))
+      's-publish': (b) => (b.city.length < 2 ? 'Укажите город.' : b.publishAt !== null && b.publishAt < Date.now() + 5 * 60 * 1000 ? 'Выберите время позже — хотя бы через несколько минут.' : boostErr(st.boost))
     };
     let saveTimer = null;
     function changed() {
@@ -2239,11 +2257,13 @@
       const pb = st.boost;
       const ready = st.photos.filter((p) => p.url && !p.loading);
       const prevBoost = pb.xl || pb.frame || pb.tags.length ? { xl: pb.xl, frame: pb.frame, tags: pb.tags, photos: ready.slice(1, 3).map((p) => p.url), more: Math.max(0, ready.length - 3), desc: b.description.replace(/\s+/g, ' ').slice(0, 180) } : null;
-      $('#preview').innerHTML = String(card({ id: 0, title: b.title || 'Название объявления', price: b.price ? Number(b.price) : null, priceUnit: b.priceUnit, city: b.city || 'Город', createdAt: Date.now(), photo: first ? first.url : null, delivery: b.delivery, exchange: b.exchange,
+      $('#preview').innerHTML = $('#preview-m').innerHTML = String(card({ id: 0, title: b.title || 'Название объявления', price: b.price ? Number(b.price) : null, priceUnit: b.priceUnit, city: b.city || 'Город', createdAt: Date.now(), photo: first ? first.url : null, delivery: b.delivery, exchange: b.exchange,
         summary: attrSummary(b.subcategory, b.attrs), metro: b.metro, hasVideo: !!st.video, boost: prevBoost }));
       const q = boostQuote(pb);
       $$('[data-submit]').forEach((x) => { const t = x.id === 'dock-send' ? (l ? 'Сохранить' : 'На проверку') : sendLabel; x.textContent = q.any ? `${t} · ${rub(q.amount)}` : t; });
       const pt = $('#paid-terms'); if (pt) pt.classList.toggle('hidden', !q.any);
+      const moreN = [b.metro, b.district, b.video].filter(Boolean).length + (subOf(b.subcategory) || { fields: [] }).fields.filter((f) => !f.req && b.attrs[f.key] !== undefined).length;
+      $('#more-sub').textContent = moreN ? `заполнено: ${moreN}` : 'метро, район, характеристики, видео';
       const eb = $('#ed-boost');
       if (eb) { if (q.any) eb.open = true; eb.classList.toggle('on', q.any); const es = $('#eb-sum'); es.textContent = q.any ? rub(q.amount) : es.dataset.from; }
       if (st.tried) for (const sid of Object.keys(ERR)) showErr(sid, ERR[sid](b));
@@ -2268,8 +2288,8 @@
     const focusErr = (sid) => {
       const b = body();
       const miss = sid === 's-what' && b.subcategory ? attrsMissing(b)[0] : null;
-      const f = sid === 's-what' && b.title.length < 3 ? form.title : sid === 's-where' ? form.city : sid === 's-what' && b.category && !b.subcategory ? $('[data-sub]')
-        : miss ? $(`#at-${miss.key}`) || $(`[data-field="${miss.key}"] button`) : sid === 's-publish' ? $('#w-time + .pick-btn') : null;
+      const f = sid === 's-what' && b.title.length < 3 ? form.title : sid === 's-what' && b.category && !b.subcategory ? $('[data-sub]')
+        : miss ? $(`#at-${miss.key}`) || $(`[data-field="${miss.key}"] button`) : sid === 's-publish' && b.city.length < 2 ? form.city : sid === 's-publish' ? $('#w-time + .pick-btn') : null;
       if (f) setTimeout(() => { f.focus({ preventScroll: true }); if (miss) f.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 60);
     };
     // check — «Далее» не пускает дальше, пока на текущем шаге не заполнено обязательное.
@@ -2329,6 +2349,7 @@
     setCat(st.category); setCond(st.condition); setUnit(st.priceUnit); setNeg(st.negotiable);
     if (canBoost) bindBoostPicker($('#s-publish'), st.boost, changed);
     renderPhotos(); renderVideo(); loadMetro();
+    if (src.district || src.metro || st.video || (subOf(st.sub) || { fields: [] }).fields.some((f) => !f.req && st.attrs[f.key] !== undefined)) $('#ed-more').open = true;
     goStep(st.step);
     if (l) fetchHint();
   }

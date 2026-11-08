@@ -302,9 +302,9 @@ function pages(d) {
     ['settings-city', '/profile/settings#s-city', d.buyer],
     ['user-own', `/u/${d.seller.user.id}`, d.seller],
     // 1.20: подача по шагам, торг и обмен, публикация в выбранное время
-    ['new-step-price', '/new', d.seller, 'step:2'],
-    ['new-step-publish', '/new', d.seller, 'step:5'],
-    ['edit-step-publish', `/edit/${d.ids[0]}`, d.seller, 'step:5'],
+    ['new-step-price', '/new', d.seller, 'step:1'],
+    ['new-step-publish', '/new', d.seller, 'step:2'],
+    ['edit-step-publish', `/edit/${d.ids[0]}`, d.seller, 'step:2'],
     ['my-scheduled', '/profile?status=scheduled', d.seller],
     ['listing-scheduled', `/l/${d.scheduled}`, d.seller],
     ['search-exchange', '/search?exchange=1', null],
@@ -313,11 +313,13 @@ function pages(d) {
     ['boost-modal-busy', `/l/${d.car}`, d.seller, '[data-promote]'],
     ['pay-boost', `/pay/${d.boostPay}`, d.seller],
     ['admin-tags', '/admin?status=tags', d.admin],
-    ['new-step-publish-boost', '/new', d.seller, 'step:5:boost'],
+    ['new-step-publish-boost', '/new', d.seller, 'step:2:boost'],
+    // 1.36: «Ещё по желанию» на шаге «Отправка» — метро, район, необязательные характеристики, видео
+    ['edit-step-more', `/edit/${d.ids[2]}`, d.seller, 'step:2:more'],
     // 1.22: характеристики чипсами, выбор из списка (метро, сортировка), карточка автора, уведомления
     ['edit-car-attrs', `/edit/${d.car}`, d.seller, 'step:1'],
     ['edit-sofa-attrs', `/edit/${d.ids[4]}`, d.seller, 'step:1'],
-    ['pick-metro', `/edit/${d.ids[2]}`, d.seller, 'pick:3:#metro'],
+    ['pick-metro', `/edit/${d.ids[2]}`, d.seller, 'pick:2:#metro'],
     ['pick-brand', `/edit/${d.car}`, d.seller, 'pick:1:[data-field="brand"] [data-av-more]'],
     ['pick-sort', '/search?category=transport', null, 'pick::#sort'],
     ['listing-owner', `/l/${d.ids[0]}`, d.seller],
@@ -407,7 +409,7 @@ async function main() {
         } else if (open && open.startsWith('pick:')) {
           // Красивый выбор вместо системного списка: pick:<шаг формы>:<select или кнопка>.
           const [, stepNo, sel] = open.match(/^pick:(\d*):(.*)$/);
-          if (stepNo) { await page.click(`[data-step="${stepNo}"]`); await page.waitForTimeout(300); }
+          if (stepNo) { await page.click(`[data-step="${stepNo}"]`); await page.waitForTimeout(300); await page.evaluate(() => { const m = document.querySelector('#ed-more'); if (m) m.open = true; }); }
           await page.click(sel.startsWith('#') ? `${sel} + .pick-btn` : sel);
           await page.waitForTimeout(300);
           if (!(await page.$('.pick .pick-it'))) errors.push('список не открылся');
@@ -455,9 +457,15 @@ async function main() {
           await page.reload({ waitUntil: 'networkidle' });
           await page.waitForTimeout(1800);
           if (await page.$('.ask-push')) errors.push('вопрос про уведомления повторился');
-        } else if (open === 'step:5:boost') {
+        } else if (open === 'step:2:more') {
+          await page.click('[data-step="2"]');
+          await page.waitForTimeout(300);
+          await page.evaluate(() => { document.querySelector('#ed-more').open = true; });
+          await page.waitForTimeout(200);
+          if (!(await page.$('#ed-more #district'))) errors.push('нет «Ещё по желанию»');
+        } else if (open === 'step:2:boost') {
           // Продвижение при подаче: XL и метки, одна метка выбрана — цена на кнопке, превью с XL.
-          await page.click('[data-step="5"]');
+          await page.click('[data-step="2"]');
           await page.waitForTimeout(300);
           await page.click('#ed-boost summary'); // продвижение свёрнуто в одну строку
           await page.waitForTimeout(150);
