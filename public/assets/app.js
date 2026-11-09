@@ -4032,16 +4032,20 @@
     setTitle(u.name);
     const own = S.user && S.user.id === u.id;
     const followers = u.followers || 0;
+    const sh = u.shop; // 1.46.1: у магазина — одна шапка: обложка, тариф, название, описание, часы и адрес
     // Сверху — широкая карточка продавца, ниже вкладки и объявления во всю ширину.
     app.innerHTML = String(html`<div class="wrap pub">
       ${own ? html`<div class="pub-own">${ic('eye', 18)}<span>Так ваш профиль видят покупатели</span><a href="/profile/settings">Изменить профиль</a><a href="/profile">Мой профиль</a></div>` : ''}
-      <section class="pub-hero" aria-label="Продавец">
+      <section class="pub-hero ${sh ? `is-shop ${sh.plan}` : ''}" aria-label="${sh ? 'Магазин' : 'Продавец'}">
+        ${sh ? html`<div class="psh-cover">${sh.cover ? html`<img src="${sh.cover}" alt="">` : ''}<span class="pf-plan">${ic('store', 14, 2.2)}${sh.plan === 'pro' ? 'Магазин Про' : 'Магазин'}</span></div>` : ''}
         <div class="pub-ava">${ava(u, 'xl')}</div>
         <div class="pub-who">
-          <h1>${nameSeal(u.name, u.badges)}</h1>
+          <h1>${nameSeal(sh ? sh.name : u.name, u.badges)}</h1>
           <div class="pub-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
           ${repLine(u.rep, `/u/${u.id}?tab=reviews`)}
-          <div class="pf-badges">${trustBadges(u.badges)}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}</div>
+          ${sh && sh.about ? html`<p class="shop-about">${sh.about}</p>` : ''}
+          ${sh ? shopFacts(sh) : ''}
+          <div class="pf-badges">${trustBadges(sh ? { ...u.badges, shop: false } : u.badges)}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}</div>
         </div>
         <div class="pub-side">
           <div class="pf-nums">
@@ -4052,7 +4056,6 @@
           <div class="pub-acts">${own ? html`<a class="btn btn-accent btn-block" href="/profile/settings">${ic('edit', 18)}Изменить профиль</a>` : followBtn(u.id, u.following, 'btn-accent')}<button type="button" class="icon-btn pub-share" data-share aria-label="Поделиться профилем">${ic('share', 19)}</button></div>
         </div>
       </section>
-      ${u.shop ? shopHero(u.shop) : ''}
       <div class="seg seg-lg" role="tablist">
         <a role="tab" aria-selected="${tab === 'ads' ? 'true' : 'false'}" class="${tab === 'ads' ? 'on' : ''}" href="/u/${u.id}">Объявления <span class="n">${u.activeCount}</span></a>
         <a role="tab" aria-selected="${tab === 'reviews' ? 'true' : 'false'}" class="${tab === 'reviews' ? 'on' : ''}" href="/u/${u.id}?tab=reviews">${levelMedal(u.rep ? u.rep.level : 0, 16)}Репутация</a>
@@ -4484,19 +4487,13 @@
   }
 
   // Витрина магазина на публичной странице продавца.
-  function shopHero(sh) {
+  // Часы, адрес, сайт магазина — строкой (1.46.1: в общей шапке профиля).
+  function shopFacts(sh) {
     const site = sh.site ? (() => { try { return new URL(sh.site).hostname.replace(/^www\./, ''); } catch { return ''; } })() : '';
-    return html`<section class="shop-hero">
-      <div class="shop-cover">${sh.cover ? html`<img src="${sh.cover}" alt="">` : ''}</div>
-      <div class="shop-body">
-        <div class="shop-name"><span class="pf-badge dark">${ic('store', 13, 2)} ${sh.plan === 'pro' ? 'Магазин Про' : 'Магазин'}</span><h2>${sh.name}</h2></div>
-        ${sh.about ? html`<p class="shop-about">${sh.about}</p>` : ''}
-        ${sh.hours || sh.address || site ? html`<div class="shop-facts">
-          ${sh.hours ? html`<span>${ic('clock', 16)}${sh.hours}</span>` : ''}
-          ${sh.address ? html`<span>${ic('pin', 16)}${sh.address}</span>` : ''}
-          ${site ? html`<a href="${sh.site}" target="_blank" rel="nofollow noopener ugc">${ic('link', 16)}${site}</a>` : ''}</div>` : ''}
-      </div>
-    </section>`;
+    return sh.hours || sh.address || site ? html`<div class="shop-facts">
+      ${sh.hours ? html`<span>${ic('clock', 16)}${sh.hours}</span>` : ''}
+      ${sh.address ? html`<span>${ic('pin', 16)}${sh.address}</span>` : ''}
+      ${site ? html`<a href="${sh.site}" target="_blank" rel="nofollow noopener ugc">${ic('link', 16)}${site}</a>` : ''}</div>` : '';
   }
 
   // ================= модерация =================
