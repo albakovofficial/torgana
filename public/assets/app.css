@@ -769,11 +769,11 @@ a.pf-num:hover { color: var(--text); box-shadow: 0 6px 18px rgba(16, 16, 16, .07
 .stars { display: inline-flex; gap: 2px; flex: none; }
 .st-on { fill: #E39A00; }
 .st-off { fill: #E2E2DE; }
-.rating-line { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text); }
-a.rating-line:hover { color: var(--text); text-decoration: underline; }
-.rating-line b { font-weight: 800; }
-.rating-line span { color: var(--muted); }
-.panel .rating-line { margin: 2px 0; }
+.rep-line { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text); }
+a.rep-line:hover { color: var(--text); text-decoration: underline; }
+.rep-line b { font-weight: 800; }
+.rep-line span { color: var(--muted); }
+.panel .rep-line { margin: 2px 0; }
 .nav-rating { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; }
 .rv-sum { display: flex; gap: 22px; align-items: center; }
 .rv-sum-big { display: flex; flex-direction: column; gap: 6px; flex: none; }
@@ -814,11 +814,6 @@ a.rating-line:hover { color: var(--text); text-decoration: underline; }
 .seg-lg a { height: 44px; padding: 0 18px; gap: 8px; font-size: 15px; }
 .seg .n { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--surface-2); font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
 .seg a.on .n { background: var(--text); color: #fff; }
-.rv-bar-chat { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: #FFF9EC; border-bottom: 1px solid var(--line); font-size: 14px; flex-wrap: wrap; }
-.rv-bar-chat > span { flex: 1 1 220px; }
-.rv-bar-chat.done { background: var(--accent-soft); color: var(--accent); }
-.rv-bar-chat.done span { color: var(--text-2); }
-.rv-bar-chat a { font-weight: 600; }
 .rv-f { border: 0; margin: 0 0 16px; padding: 0; }
 .rv-f legend { margin-bottom: 8px; font-size: 15px; font-weight: 700; }
 .rv-deal-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -2900,3 +2895,69 @@ body.pv-open { overflow: hidden; }
 .tm-file { cursor: pointer; }
 .tm-checks { display: grid; gap: 8px; }
 @media (max-width: 520px) { .tm-doc { flex-wrap: wrap; } .tm-file { width: 100%; } }
+
+/* ---------- 1.46.0: репутация вместо отзывов ---------- */
+.medal { flex: none; display: inline-block; vertical-align: middle; filter: drop-shadow(0 1px 2px rgba(16, 16, 16, .18)); }
+.rep { display: flex; flex-direction: column; gap: 14px; padding: 18px; border-radius: 24px; background: var(--surface); }
+.rep.compact { gap: 10px; padding: 14px; border-radius: 20px; }
+.rep-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.rep-head > span:nth-child(2) { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.rep-head b { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
+.rep.compact .rep-head b { font-size: 16px; }
+.rep-head small { font-size: 13px; color: var(--muted); }
+.rep-buyer { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12.5px; font-weight: 700; }
+.rep-nums { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
+.rep-nums span { display: flex; flex-direction: column; padding: 10px 12px; border-radius: 16px; background: #fff; font-size: 13px; color: var(--text-2); }
+.rep-nums b { font-size: 22px; font-weight: 800; letter-spacing: -0.03em; color: var(--text); }
+.rep.compact .rep-nums b { font-size: 18px; }
+.rep-nums .bad b { color: var(--danger); }
+.rep-tags, .rep-marks { display: flex; flex-wrap: wrap; gap: 6px; }
+.rep-tags span { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; background: #fff; font-size: 13.5px; font-weight: 600; }
+.rep-tags b { color: var(--accent); }
+.rep-marks span { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 999px; background: #FFF6E5; color: #7A4B08; font-size: 12.5px; font-weight: 700; }
+.rep-how { font-size: 13.5px; color: var(--text-2); }
+.rep-how summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+.rep-how p { margin: 8px 0 0; line-height: 1.55; }
+.rep-page { display: flex; flex-direction: column; gap: 14px; max-width: 720px; }
+.rep-link { display: block; color: inherit; }
+.rep-old, .rep-archive summary { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-2); cursor: pointer; }
+.rep-archive .rv-list { margin-top: 12px; }
+.rep-issues { display: flex; flex-direction: column; gap: 8px; }
+.rep-issues h2 { margin: 6px 0 2px; font-size: 18px; }
+.rep-issue { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px; border-radius: 18px; border: 1px solid var(--line); font-size: 14px; }
+.rep-issue small { color: var(--muted); }
+.rep-issue .btn { margin-top: 6px; }
+.deal-bar { display: flex; flex-direction: column; gap: 10px; padding: 12px 20px; background: var(--accent-soft); border-bottom: 1px solid var(--line); font-size: 14px; }
+.deal-bar > b { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 15px; }
+.deal-bar > b .muted { font-weight: 500; font-size: 13px; }
+.deal-bar.slim { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 12px; padding: 8px 20px; background: var(--surface); }
+.deal-bar .muted { display: inline-flex; align-items: center; gap: 5px; }
+.deal-bar.ask { flex-direction: row; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+.deal-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.deal-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.deal-tags .chip { background: #fff; }
+.deal-tags .chip.active { background: var(--accent); color: #fff; }
+.deal-problem { margin-left: auto; font-size: 13px; color: var(--danger); }
+.deal-issue { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--text-2); }
+.rep-adm { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+.rep-adm-row { display: flex; flex-direction: column; gap: 4px; padding: 14px; border-radius: 18px; background: var(--surface); font-size: 14px; }
+.rep-adm-row p { margin: 4px 0 0; }
+.rep-adm-reply { padding: 8px 12px; border-radius: 12px; background: #fff; }
+@media (max-width: 760px) { .deal-bar, .deal-bar.slim { padding: 10px 14px; } .rep-nums b { font-size: 19px; } }
+
+/* 1.46.0: карточка профиля с тарифом — обложка витрины, тариф, быстрые ссылки (и на телефоне) */
+.pf-card.shop { padding-top: 0; overflow: hidden; background: #fff; border: 1px solid var(--line); }
+.pf-cover { position: relative; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; height: 116px; margin: 0 -20px; padding: 14px 16px; background: radial-gradient(80% 120% at 100% 0%, rgba(46, 156, 116, .55), transparent 70%), linear-gradient(135deg, #1F5E4A, #0E2E24); color: #fff; }
+.pf-card.pro .pf-cover { background: radial-gradient(80% 120% at 100% 0%, rgba(143, 217, 188, .45), transparent 70%), linear-gradient(135deg, #17493A, #0B0F0E); }
+.pf-cover.has { background: linear-gradient(180deg, rgba(0, 0, 0, .35), rgba(0, 0, 0, 0) 60%), var(--cv) center / cover no-repeat; }
+.pf-plan { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px; background: rgba(255, 255, 255, .92); color: var(--accent); font-size: 13px; font-weight: 750; }
+.pf-until { height: 30px; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; background: rgba(0, 0, 0, .28); font-size: 12.5px; font-weight: 600; }
+.pf-card.shop .pf-who { align-items: flex-start; }
+.pf-card.shop .pf-ava { margin-top: -40px; }
+.pf-card.shop .pf-ava .avatar { box-shadow: 0 0 0 4px #fff; }
+.pf-card.shop .pf-who-txt { flex: 1; padding-top: 4px; }
+.pf-card.shop .pf-badge:not(.dark):not(.seal), .pf-card.shop .pf-num { background: var(--surface); }
+.pf-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pf-tools a { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; border-radius: 18px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 650; text-align: center; }
+.pf-tools a:hover { background: #D9E8E1; }
+@media (max-width: 760px) { .pf-cover { height: 104px; } }

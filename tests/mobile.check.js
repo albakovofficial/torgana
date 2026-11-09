@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const { chromium } = require('playwright');
-const { startServer, registerUser, client, fakeS3 } = require('./helpers');
+const { startServer, registerUser, client, fakeS3, seedReview } = require('./helpers');
 
 const SHOTS = path.join(__dirname, 'screenshots');
 // UI_WIDTHS=320,390,768,1440 — проверить на других ширинах (до 430 — телефон, до 1024 — планшет, шире — компьютер).
@@ -36,7 +36,7 @@ const YMAPS_STUB = `window.ymaps = {
 };
 setTimeout(() => window.__mapReady && window.__mapReady(), 0);`;
 
-async function seed(base, browser) {
+async function seed(base, browser, srv) {
   const seller = await registerUser(base, { name: 'Анна Смирнова', email: 'anna@test.local' });
   const buyer = await registerUser(base, { name: 'Борис', email: 'boris@test.local' });
   const admin = await registerUser(base, { name: 'Модератор', email: 'admin@test.local' });
@@ -124,8 +124,8 @@ async function seed(base, browser) {
   const thread = (await admin.get('/api/admin/support')).data.items[0].id;
   await admin.post(`/api/admin/support/${thread}/messages`, { body: 'Все объявления проверяются перед публикацией — обычно несколько часов.' });
   await buyer.post(`/api/listings/${ids[1]}/report`, { reason: 'Мошенничество', text: 'Просит предоплату' });
-  // отзывы: опубликованный с ответом продавца, второй — с жалобой; диалог, где можно оставить отзыв
-  const rv1 = (await buyer.post('/api/reviews', { conversationId: conv.data.id, rating: 5, received: true, text: 'Коляска как в описании, всё проверили на месте. Продавец вежливый, рекомендую!' })).data.review.id;
+  // отзывы (архив до 1.46): опубликованный с ответом продавца, второй — с жалобой
+  const rv1 = seedReview(srv, { listingId: ids[0], conversationId: conv.data.id, authorId: buyer.user.id, sellerId: seller.user.id, title: 'Детская коляска Cybex Priam 2 в 1', text: 'Коляска как в описании, всё проверили на месте. Продавец вежливый, рекомендую!' });
   await admin.post(`/api/admin/reviews/${rv1}/publish`);
   await seller.post(`/api/reviews/${rv1}/reply`, { text: 'Спасибо! Пусть служит долго.' });
   await admin.post(`/api/admin/reviews/${rv1}/reply/publish`);
@@ -133,12 +133,14 @@ async function seed(base, browser) {
   const c2 = (await critic.post('/api/conversations', { listingId: ids[3] })).data.id;
   await critic.post(`/api/conversations/${c2}/messages`, { body: 'Велосипед ещё продаётся?' });
   await seller.post(`/api/conversations/${c2}/messages`, { body: 'Да.' });
-  const rv2 = (await critic.post('/api/reviews', { conversationId: c2, rating: 1, received: false, text: 'Договорились о встрече, но продавец не пришёл и перестал отвечать.' })).data.review.id;
+  const rv2 = seedReview(srv, { listingId: ids[3], conversationId: c2, authorId: critic.user.id, sellerId: seller.user.id, title: 'Велосипед', rating: 1, received: false, text: 'Договорились о встрече, но продавец не пришёл и перестал отвечать.' });
   await admin.post(`/api/admin/reviews/${rv2}/publish`);
   await seller.post(`/api/reviews/${rv2}/complaint`, { reason: 'Ложные сведения', text: 'Я ждала у метро до семи вечера и писала в чат — покупатель не пришёл.' });
   const c3 = (await buyer.post('/api/conversations', { listingId: ids[4] })).data.id;
   await buyer.post(`/api/conversations/${c3}/messages`, { body: 'Добрый день! Можно забрать завтра?' });
   await seller.post(`/api/conversations/${c3}/messages`, { body: 'Да, после обеда.' });
+  // 1.46: «Сделка состоялась?» появляется после трёх сообщений с каждой стороны
+  for (let i = 0; i < 2; i++) { await buyer.post(`/api/conversations/${c3}/messages`, { body: 'Хорошо, а во сколько?' }); await seller.post(`/api/conversations/${c3}/messages`, { body: 'В два часа подойдёт' }); }
   // 1.10: сохранённые поиски, снижение цены, фото в чате
   const phone = (await seller.get(`/api/listings/${ids[1]}`)).data.listing;
   await seller.patch(`/api/listings/${ids[1]}`, { title: phone.title, description: phone.description, category: phone.category, city: phone.city, price: 79900, delivery: true, photos: [photos[1]] });
@@ -207,7 +209,14 @@ async function seed(base, browser) {
     const c = (await b.post('/api/conversations', { listingId: car })).data.id;
     await b.post(`/api/conversations/${c}/messages`, { body: 'Здравствуйте! Машина ещё продаётся?' });
     await seller.post(`/api/conversations/${c}/messages`, { body: 'Да, приезжайте посмотреть' });
+    // 1.46: пять подтверждённых сделок — уровень «Надёжный», комплименты
+    for (let i = 0; i < 2; i++) { await b.post(`/api/conversations/${c}/messages`, { body: 'Договорились' }); await seller.post(`/api/conversations/${c}/messages`, { body: 'Жду' }); }
+    await b.post(`/api/conversations/${c}/deal`, { answer: 'yes' });
+    await seller.post(`/api/conversations/${c}/deal`, { answer: 'yes' });
+    await b.post(`/api/conversations/${c}/praise`, { tags: ['Всё как на фото', 'Быстро отвечает'] });
   }
+  // 1.46: жалоба по сделке — в модерации «Репутация»
+  await critic.post(`/api/conversations/${c2}/issue`, { reason: 'Не пришёл на встречу', text: 'Ждал у метро полчаса' });
   // 1.42: продавец удалил объявление — переписка покупателя остаётся с пометкой «Объявление удалено».
   const scooter = (await seller.post('/api/listings', { title: 'Самокат Xiaomi Pro 2', category: 'hobby', city: 'Москва', price: '18000' })).data.id;
   await admin.post(`/api/admin/listings/${scooter}/restore`);
@@ -262,13 +271,17 @@ function pages(d) {
     ['admin-seo', '/admin?status=seo', d.admin],
     ['confirm-code', '/confirm', null, 'code'],
     ['profile', '/profile', d.seller],
+    ['profile-shop', '/profile', d.shop], // 1.46: карточка профиля с тарифом
     ['profile-listings', '/profile/listings', d.seller],
     ['profile-rejected', '/profile/listings?status=rejected', d.seller],
     ['settings', '/profile/settings', d.seller],
-    ['reviews-about', '/profile/reviews', d.seller],
-    ['reviews-mine', '/profile/reviews?tab=mine', d.buyer],
+    ['reviews-about', '/profile/reviews', d.seller], // 1.46: репутация
+    ['reviews-old', '/profile/reviews?old=1', d.seller],
+    ['reviews-mine', '/profile/reviews?old=1&tab=mine', d.buyer],
     ['user-reviews', `/u/${d.seller.user.id}?tab=reviews`, null],
-    ['chat-review', `/messages/${d.convReview}`, d.buyer],
+    ['chat-deal', `/messages/${d.convReview}`, d.buyer],
+    ['admin-rep', '/admin?status=rep', d.admin],
+    ['search-trusted', '/search?trusted=1', null],
     ['admin-reviews', '/admin?status=reviews', d.admin],
     ['admin-review-complaints', '/admin?status=reviews&rt=complaints', d.admin],
     ['stats', `/profile/stats/${d.ids[1]}`, d.seller],
@@ -433,12 +446,12 @@ async function main() {
   fs.rmSync(SHOTS, { recursive: true, force: true });
   fs.mkdirSync(SHOTS, { recursive: true });
   const yk = await startYookassa();
-  const srv = await startServer({ YOOKASSA_TEST_BASE: `http://127.0.0.1:${yk.address().port}` });
+  const srv = await startServer({ YOOKASSA_TEST_BASE: `http://127.0.0.1:${yk.address().port}`, REP_FRESH_DAYS: '0' });
   const browser = await chromium.launch();
   const problems = [];
   let checked = 0;
   try {
-    const d = await seed(srv.base, browser);
+    const d = await seed(srv.base, browser, srv);
     seeded = d;
     for (const [vpName, { kind, ...vp }] of Object.entries(VIEWPORTS)) {
       // UI_ONLY=home,boost-modal — проверить только эти страницы (быстрее при правке вёрстки).

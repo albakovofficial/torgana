@@ -68,6 +68,18 @@ async function startServer(extraEnv = {}) {
   };
 }
 
+// 1.46.0: новых отзывов нет (их заменила репутация) — архивные отзывы для тестов кладём прямо в базу запущенного сервера.
+function seedReview(srv, { listingId, conversationId, authorId, sellerId, title, rating = 5, received = true, text = 'Всё как в описании, спасибо!', status = 'pending' }) {
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(path.join(srv.tmp, 'data', 'torgana.db'));
+  try {
+    db.exec('PRAGMA busy_timeout = 5000');
+    const r = db.prepare(`INSERT INTO reviews (listing_id, conversation_id, author_id, seller_id, listing_title, rating, received, text, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(listingId, conversationId, authorId, sellerId, title, rating, received ? 1 : 0, text, status, Date.now());
+    return Number(r.lastInsertRowid);
+  } finally { db.close(); }
+}
+
 // Клиент, который хранит cookie входа, как браузер.
 function client(base) {
   let cookie = '';
@@ -230,4 +242,4 @@ function fakeS3({ access = 'AKTEST', secret = 'secret-key', bucket = 'torgana-ba
   return new Promise((r) => srv.listen(0, '127.0.0.1', () => r({ srv, store, st, endpoint: `http://127.0.0.1:${srv.address().port}`, access, secret, bucket })));
 }
 
-module.exports = { ROOT, PNG_1PX, JPEG_HEAD, startServer, startSmtp, client, registerUser, publish, codeOf, fakeS3 };
+module.exports = { seedReview, ROOT, PNG_1PX, JPEG_HEAD, startServer, startSmtp, client, registerUser, publish, codeOf, fakeS3 };

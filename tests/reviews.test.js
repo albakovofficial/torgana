@@ -1,10 +1,10 @@
 'use strict';
 
-// Отзывы о продавцах: только покупатель из переписки, «получен / не получен», один на объявление,
-// после модерации; изменить и удалить нельзя никому; ответ продавца один раз; жалоба с обоснованием.
+// Отзывы о продавцах — архив (1.46.0: новые не принимаются, вместо них репутация — tests/reputation.test.js).
+// Старые: после модерации; изменить и удалить нельзя никому; ответ продавца один раз; жалоба с обоснованием.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, client, registerUser, publish } = require('./helpers');
+const { startServer, client, registerUser, publish, seedReview } = require('./helpers');
 
 let srv; let admin; let anna; let boris; let vera; let id; let conv; let rid;
 
@@ -21,31 +21,16 @@ after(() => srv.stop());
 
 const send = (c, cid, body) => c.post(`/api/conversations/${cid}/messages`, { body });
 const leave = (c, body) => c.post('/api/reviews', { conversationId: conv, rating: 5, received: true, text: 'Всё как в описании, спасибо!', ...body });
+const old = (author, body) => seedReview(srv, { listingId: id, conversationId: conv, authorId: author.user.id, sellerId: anna.user.id, title: 'Велосипед детский', ...body });
 
-test('отзыв — только после переписки, где писали оба, и только покупатель', async () => {
-  assert.equal((await boris.get(`/api/conversations/${conv}`)).data.review.can, false);
-  assert.equal((await leave(boris)).status, 403, 'без переписки нельзя');
+test('новые отзывы не принимаются — в чате вместо формы отзыва сделка', async () => {
   await send(boris, conv, 'Здравствуйте! Ещё продаётся?');
-  assert.equal((await leave(boris)).status, 403, 'продавец ещё не ответил');
   await send(anna, conv, 'Да, приезжайте.');
-  assert.equal((await boris.get(`/api/conversations/${conv}`)).data.review.can, true);
-  assert.equal((await anna.get(`/api/conversations/${conv}`)).data.review, null, 'продавцу форма не показывается');
-  assert.equal((await leave(anna)).status, 403, 'продавец о себе не пишет');
-  assert.equal((await leave(vera)).status, 403, 'чужой диалог');
-});
-
-test('нужны итог сделки, оценка и текст; один отзыв на объявление', async () => {
-  assert.equal((await leave(boris, { received: undefined })).status, 400);
-  assert.equal((await leave(boris, { received: 'да' })).status, 400);
-  assert.equal((await leave(boris, { rating: 6 })).status, 400);
-  assert.equal((await leave(boris, { text: 'ок' })).status, 400);
-  const r = await leave(boris, { rating: 4, received: false, text: 'Договорились, но товар не отдали — продавец не пришёл.' });
-  assert.equal(r.status, 200);
-  assert.equal(r.data.review.status, 'pending');
-  assert.equal(r.data.review.received, false);
-  rid = r.data.review.id;
-  assert.equal((await leave(boris)).status, 409, 'второй раз нельзя');
-  assert.equal((await boris.get(`/api/conversations/${conv}`)).data.review.status, 'pending');
+  assert.equal((await leave(boris)).status, 410);
+  const chat = (await boris.get(`/api/conversations/${conv}`)).data;
+  assert.equal(chat.review, undefined);
+  assert.equal(chat.deal.role, 'buyer');
+  rid = old(boris, { rating: 4, received: false, text: 'Договорились, но товар не отдали — продавец не пришёл.' });
 });
 
 test('изменить или удалить отзыв не может никто', async () => {
@@ -57,9 +42,7 @@ test('изменить или удалить отзыв не может никт
   // удаление объявления отзыв не убирает
   const id2 = await publish(anna, admin, { title: 'Самокат', category: 'hobby', city: 'Казань', price: '3000' });
   const c2 = (await vera.post('/api/conversations', { listingId: id2 })).data.id;
-  await send(vera, c2, 'Добрый день!');
-  await send(anna, c2, 'Здравствуйте!');
-  const r2 = (await vera.post('/api/reviews', { conversationId: c2, rating: 2, received: true, text: 'Самокат с трещиной, о которой не сказали.' })).data.review.id;
+  const r2 = seedReview(srv, { listingId: id2, conversationId: c2, authorId: vera.user.id, sellerId: anna.user.id, title: 'Самокат', rating: 2, text: 'Самокат с трещиной, о которой не сказали.' });
   await admin.post(`/api/admin/reviews/${r2}/publish`);
   assert.equal((await anna.del(`/api/listings/${id2}`)).status, 200);
   const pub = (await client(srv.base).get(`/api/users/${anna.user.id}/reviews`)).data;
@@ -84,15 +67,13 @@ test('до проверки отзыв не виден; модератор пу�
   assert.equal(mineInPub.received, false);
   assert.equal(mineInPub.status, undefined, 'служебные поля не видны всем');
   assert.equal((await client(srv.base).get(`/api/users/${anna.user.id}`)).data.user.rating.avg, 3);
-  assert.equal((await client(srv.base).get(`/api/listings/${id}`)).data.seller.rating.count, 2);
-  // 1.26: в карточке выдачи — продавец с фото и оценкой; в профиле продавца строки продавца нет
+  // 1.46.0: в карточке выдачи — продавец с фото и уровнем репутации (вместо оценки); в профиле продавца строки продавца нет
   const cardIt = (await client(srv.base).get('/api/listings?q=Велосипед')).data.items.find((x) => x.id === id);
-  assert.deepEqual(cardIt.seller, { id: anna.user.id, name: 'Анна', avatar: null, rating: 3, reviews: 2, shop: false });
+  assert.deepEqual(cardIt.seller, { id: anna.user.id, name: 'Анна', avatar: null, level: 0, shop: false });
   assert.equal((await client(srv.base).get(`/api/users/${anna.user.id}`)).data.items.find((x) => x.id === id).seller, null);
-  // 1.27: в чате — оценка собеседника и город объявления (колонка справа)
+  // в чате — уровень собеседника и город объявления (колонка справа)
   const chat = (await boris.get(`/api/conversations/${conv}`)).data;
-  assert.equal(chat.other.rating.count, 2);
-  assert.equal(chat.other.rating.avg, 3);
+  assert.equal(chat.other.rep.levelName, 'Новичок');
   assert.equal(chat.listing.city, 'Казань');
   assert.equal((await anna.get('/api/me')).data.user.rating.count, 2);
   assert.equal((await client(srv.base).get(`/api/users/${anna.user.id}/reviews?stars=4`)).data.items.length, 1);

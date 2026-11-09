@@ -4,7 +4,7 @@
 // уведомления о сообщениях и решениях модерации, отписка, ошибки почтового сервиса.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, startSmtp, client, registerUser, publish, codeOf } = require('./helpers');
+const { startServer, startSmtp, client, registerUser, publish, codeOf, seedReview } = require('./helpers');
 
 let srv; let smtp; let admin; let anna; let boris;
 const link = (mail, path) => {
@@ -239,7 +239,8 @@ test('отзывы: продавцу — «Новый отзыв», автору
   const conv = (await anna.post('/api/conversations', { listingId: id })).data.id;
   await anna.post(`/api/conversations/${conv}/messages`, { body: 'Добрый день! Можно посмотреть?' });
   await boris.post(`/api/conversations/${conv}/messages`, { body: 'Да, приезжайте.' });
-  const rid = (await anna.post('/api/reviews', { conversationId: conv, rating: 5, received: true, text: 'Гитара отличная, всё честно.' })).data.review.id;
+  const meId = async (c) => (await c.get('/api/me')).data.user.id;
+  const rid = seedReview(srv, { listingId: id, conversationId: conv, authorId: await meId(anna), sellerId: await meId(boris), title: 'Гитара акустическая', text: 'Гитара отличная, всё честно.' }); // 1.46.0: архивный отзыв
   let n = smtp.inbox.length;
   await admin.post(`/api/admin/reviews/${rid}/publish`);
   const toSeller = await smtp.waitFor((x) => smtp.inbox.indexOf(x) >= n && x.to === 'boris@test.local' && /Новый отзыв о вас/.test(x.subject));
