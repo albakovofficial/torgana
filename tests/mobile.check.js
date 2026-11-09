@@ -281,6 +281,8 @@ function pages(d) {
     ['admin-ai', '/admin?status=ai', d.admin],
     ['admin-sources', '/admin?status=sources', d.admin],
     ['admin-user', `/admin/u/${d.seller.user.id}`, d.admin],
+    ['admin-gift-boost', `/admin/u/${d.seller.user.id}`, d.admin, '[data-gift-boost]'], // 1.44: подарить продвижение
+    ['admin-gift-promo', `/admin/u/${d.seller.user.id}`, d.admin, '[data-gift-promo]'],
     // 1.39: удаление профиля — экран восстановления и карточка временно удалённого в модерации
     ['account-gone', '/profile', d.gone],
     ['admin-user-gone', `/admin/u/${d.gone.user.id}`, d.admin],
