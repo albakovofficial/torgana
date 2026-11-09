@@ -115,6 +115,7 @@
     mail: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M4 7l8 6 8-6"/>',
     store: '<path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v1.5a2.7 2.7 0 0 1-5.3 0 2.7 2.7 0 0 1-5.4 0A2.7 2.7 0 0 1 4 10.5z"/><path d="M5.5 13v7h13v-7"/><path d="M10 20v-4h4v4"/>',
     card: '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18M7 15h3"/>',
+    gift: '<rect x="3" y="8" width="18" height="5" rx="1.5"/><path d="M5 13v8h14v-8M12 8v13M12 8c-1.6-3.6-5-3.8-5-1.6C7 8 10 8 12 8zm0 0c1.6-3.6 5-3.8 5-1.6C17 8 14 8 12 8z"/>',
     megaphone: '<path d="M4 10v4a1 1 0 0 0 1 1h2l7 4V5L7 9H5a1 1 0 0 0-1 1z"/><path d="M17.5 9a4 4 0 0 1 0 6"/><path d="M7.5 15l1.2 4.5"/>',
     trend: '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
     download: '<path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/>',
@@ -1546,7 +1547,7 @@
           </div>
           <a href="/u/${seller.id}" class="panel" style="display:flex;align-items:center;gap:14px;color:var(--text)">
             ${ava(seller)}
-            <span style="flex:1;min-width:0"><span style="display:block;font-size:17px;font-weight:700">${seller.name}</span>
+            <span style="flex:1;min-width:0"><span style="display:block;font-size:17px;font-weight:700">${nameSeal(seller.name, seller.badges)}</span>
             ${ratingLine(seller.rating)}
             <span class="muted" style="display:block;font-size:13px">На Торгане с ${since(seller.createdAt)} · ${seller.activeCount} ${plural(seller.activeCount, 'объявление', 'объявления', 'объявлений')}</span>
             ${seller.badges && (seller.badges.phone || seller.badges.biz) ? html`<span class="pf-badges" style="margin-top:8px">${trustBadges(seller.badges)}</span>` : ''}</span>
@@ -3217,7 +3218,7 @@
       <div class="pf-who">
         <div class="pf-ava">${ava(u, 'lg')}<button class="pf-cam" type="button" data-ava-pick aria-label="${u.avatar ? 'Сменить фото профиля' : 'Добавить фото профиля'}">${ic('camera', 15, 2)}</button></div>
         <div class="pf-who-txt">
-          <div class="pf-name">${u.name}</div>
+          <div class="pf-name">${nameSeal(u.name, u.badges)}</div>
           <div class="pf-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
           ${u.rating ? ratingLine(u.rating, '/profile/reviews') : ''}
         </div>
@@ -3246,7 +3247,24 @@
   }
 
   // Значки доверия продавца: «Телефон подтверждён», «ИП проверен» / «Компания проверена».
-  const trustBadges = (b) => (b ? html`${b.shop ? html`<span class="pf-badge dark">${ic('store', 13, 2)} Магазин</span>` : ''}${b.biz ? html`<span class="pf-badge ok" title="${b.biz.name}">${ic('shield', 13, 2)} ${b.biz.kind === 'ИП' ? 'ИП проверен' : 'Компания проверена'}</span>` : ''}${b.phone ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Телефон подтверждён</span>` : ''}` : '');
+  // 1.45.0: объёмный цветной значок проверенного бизнеса (ИНН и ОГРН сверены модератором) — рядом с именем в профиле.
+  // У каждого значка свои id градиентов: общие id ломаются, если первый значок на странице скрыт.
+  let sealN = 0;
+  const SEAL_PATH = 'M12 1L14.48 2.73L17.5 2.47L18.79 5.21L21.53 6.5L21.27 9.52L23 12L21.27 14.48L21.53 17.5L18.79 18.79L17.5 21.53L14.48 21.27L12 23L9.52 21.27L6.5 21.53L5.21 18.79L2.47 17.5L2.73 14.48L1 12L2.73 9.52L2.47 6.5L5.21 5.21L6.5 2.47L9.52 2.73Z';
+  function verifiedSeal(size = 20) {
+    const k = `vs${++sealN}`;
+    return raw(`<svg class="vseal" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><defs>
+      <linearGradient id="${k}a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5FE0FF"/><stop offset=".45" stop-color="#2F8BFF"/><stop offset="1" stop-color="#5B3DF5"/></linearGradient>
+      <linearGradient id="${k}b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>
+      <path d="${SEAL_PATH}" transform="translate(0 .9)" fill="#2A1F8F" opacity=".45" stroke="#2A1F8F" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="${SEAL_PATH}" fill="url(#${k}a)" stroke="url(#${k}a)" stroke-width="1.6" stroke-linejoin="round"/>
+      <ellipse cx="11" cy="7.4" rx="7" ry="4.2" fill="url(#${k}b)"/>
+      <path d="M7.6 12.6l3 3 6-6.4" fill="none" stroke="#1B2A8A" stroke-opacity=".35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 .7)"/>
+      <path d="M7.6 12.6l3 3 6-6.4" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`);
+  }
+  // Имя с объёмным значком, если бизнес проверен.
+  const nameSeal = (name, b) => (b && b.biz ? html`${name}<span class="name-seal" title="${b.biz.kind === 'ИП' ? 'ИП проверен' : 'Компания проверена'}: ${b.biz.name}">${verifiedSeal(22)}</span>` : name);
+  const trustBadges = (b) => (b ? html`${b.shop ? html`<span class="pf-badge dark">${ic('store', 13, 2)} Магазин</span>` : ''}${b.biz ? html`<span class="pf-badge seal" title="${b.biz.name}">${verifiedSeal(15)} ${b.biz.kind === 'ИП' ? 'ИП проверен' : 'Компания проверена'}</span>` : ''}${b.phone ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Телефон подтверждён</span>` : ''}` : '');
 
   // Разделы аккаунта и «Выйти» — одно меню для левой колонки профиля (на компьютере) и для панели ≡ (full).
   // В панели вместо пункта «Настройки» — все группы настроек, публичный профиль и помощь.
@@ -3603,16 +3621,20 @@
     const tst = $('[data-test]', el); if (tst) tst.onclick = () => act(async () => { const r = await api('POST', '/api/push/test'); if (!r.ok) throw new Error('Не получилось отправить — выключите и включите уведомления'); }, 'Отправили проверочное уведомление');
   }
 
-  // Для бизнеса: заявка на проверку ИП или компании (ИНН, ОГРН/ОГРНИП) и её статус.
-  function bizBlock(b) {
-    if (b && b.status === 'verified') return html`<div class="biz-ok">${ic('shield', 22, 2)}<span><b>${b.name} — ${b.kind === 'ip' ? 'ИП проверен' : 'компания проверена'}</b><span>ИНН ${b.inn} · ${b.kind === 'ip' ? 'ОГРНИП' : 'ОГРН'} ${b.ogrn}. Значок видят покупатели у ваших объявлений.</span></span></div>
-      <div class="set-btns"><a class="btn btn-soft btn-sm" href="/profile/business">${ic('store', 16, 2)}Тарифы и продвижение</a><button type="button" class="btn btn-line btn-sm" data-biz-del>Убрать данные бизнеса</button></div>`;
+  // Для бизнеса (1.45.0): переключатель бизнес-аккаунта (для всех, открывает тарифы) и, по желанию,
+  // проверка ИП или компании (ИНН, ОГРН/ОГРНИП) — ради объёмного значка рядом с именем.
+  function bizBlock(b, on, hasPlan) {
+    const acc = html`<label class="switch biz-switch"><span>Бизнес-аккаунт<small>${on ? 'Включён — тарифы для магазина доступны' : 'Бесплатно. Открывает тарифы: витрину, статистику, автозагрузку'}</small></span><input type="checkbox" data-biz-acc ${on ? raw('checked') : ''} ${on && hasPlan ? raw('disabled') : ''}><span class="track"></span></label>
+      ${on ? html`<div class="set-btns"><a class="btn btn-soft btn-sm" href="/business">${ic('store', 16, 2)}Тарифы</a><a class="btn btn-soft btn-sm" href="/profile/business">Мой магазин</a></div>` : ''}
+      <h3 class="set-h3 seal-h">${verifiedSeal(20)}Проверенный бизнес <span class="muted">— по желанию</span></h3>`;
+    if (b && b.status === 'verified') return html`${acc}<div class="biz-ok">${verifiedSeal(26)}<span><b>${b.name} — ${b.kind === 'ip' ? 'ИП проверен' : 'компания проверена'}</b><span>ИНН ${b.inn} · ${b.kind === 'ip' ? 'ОГРНИП' : 'ОГРН'} ${b.ogrn}. Значок видят покупатели рядом с вашим именем.</span></span></div>
+      <div class="set-btns"><button type="button" class="btn btn-line btn-sm" data-biz-del>Убрать данные бизнеса</button></div>`;
     const stage = b && b.status === 'pending' ? 2 : 1;
     const step = (n, icon, t, sub) => html`<li class="${n === stage ? 'on' : n < stage ? 'done' : ''}"><span class="bs-n">${n}</span><span class="bs-ic">${ic(n < stage ? 'check' : icon, 20)}</span><b>${t}</b><small>${sub}</small></li>`;
-    return html`<ol class="biz-steps">${step(1, 'edit', 'Заполните данные', 'Название, ИНН и ОГРН')}${step(2, 'shield', 'Проверка модератором', 'Сверим с ЕГРЮЛ или ЕГРИП')}${step(3, 'store', 'Значок у объявлений', 'Покупатели видят, что вы бизнес')}</ol>
+    return html`${acc}<ol class="biz-steps">${step(1, 'edit', 'Заполните данные', 'Название, ИНН и ОГРН')}${step(2, 'shield', 'Проверка модератором', 'Сверим с ЕГРЮЛ или ЕГРИП')}${step(3, 'check', 'Значок в профиле', 'Объёмный значок рядом с именем')}</ol>
       ${b && b.status === 'pending' ? html`<div class="banner warn">Заявка отправлена ${when(b.at)} — модератор сверит данные по ЕГРЮЛ/ЕГРИП, обычно в течение дня.</div>` : ''}
       ${b && b.status === 'rejected' ? html`<div class="banner danger"><strong>Проверка не пройдена:</strong> ${b.note}</div>` : ''}
-      <p class="muted" style="margin:0;font-size:14px">ИП и компании получают значок «ИП проверен» или «Компания проверена» — покупатели доверяют таким продавцам больше. Данные сверяет модератор, другие пользователи видят только название.</p>
+      <p class="muted" style="margin:0;font-size:14px">Модератор сверит данные с ЕГРЮЛ/ЕГРИП. Покупатели увидят значок и название, ИНН — только модератор.</p>
       <form id="bf" class="biz-form" novalidate>
         <div class="field"><label for="b-name">Название</label><input id="b-name" name="name" class="input" maxlength="120" value="${(b && b.name) || ''}" placeholder="ИП Иванов И. И. или ООО «Ромашка»"></div>
         <div class="row">
@@ -3623,6 +3645,16 @@
       </form>`;
   }
   function bindBizForm(reload) {
+    const acc = $('[data-biz-acc]');
+    if (acc) {
+      acc.onchange = async () => {
+        try {
+          if (acc.checked) await bizAccountOn();
+          else { await api('PUT', '/api/me/business-account', { on: false }); await refreshMe(); toast('Бизнес-аккаунт выключен'); }
+          reload();
+        } catch (ex) { acc.checked = !acc.checked; toast(ex.message, true); }
+      };
+    }
     const f = $('#bf');
     if (f) {
       f.onsubmit = async (e) => {
@@ -3632,7 +3664,7 @@
     }
     $$('[data-biz-del]').forEach((b) => {
       b.onclick = async () => {
-        if (!(await confirmModal('Убрать данные бизнеса?', 'Значок проверенного бизнеса пропадёт. Отправить заявку можно будет заново.', 'Убрать', true))) return;
+        if (!(await confirmModal('Убрать данные бизнеса?', 'Значок проверенного бизнеса пропадёт. Бизнес-аккаунт и тариф останутся. Отправить заявку можно будет заново.', 'Убрать', true))) return;
         try { await api('DELETE', '/api/me/business'); toast('Данные убраны'); await refreshMe(); reload(); } catch (ex) { toast(ex.message, true); }
       };
     });
@@ -3779,7 +3811,7 @@
           </div>
           <div class="set-foot"><span>Минимум 8 символов. На других устройствах потребуется войти заново</span><button class="btn btn-accent" type="submit">Сменить пароль</button></div>
         </form>`,
-      's-biz': () => html`${head('Для бизнеса', 'ИП и компании получают значок у всех объявлений — покупатели доверяют таким продавцам больше')}${bizBlock(u.business)}`,
+      's-biz': () => html`${head('Для бизнеса', 'Бизнес-аккаунт открывает тарифы. Проверка ИНН — по желанию, ради значка в профиле')}${bizBlock(u.business, u.bizAccount, !!u.plan)}`,
       's-acc': () => html`${head('Аккаунт', 'Почта для входа и писем от Торганы')}
         <div class="set-list">
           ${row('mail', 'Почта', u.email, S.config.mail ? (u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 14, 2.4)} Подтверждена</span>` : html`<button type="button" class="btn btn-soft btn-sm" id="verify-again">Подтвердить</button>`) : '')}
@@ -3852,7 +3884,7 @@
       <section class="pub-hero" aria-label="Продавец">
         <div class="pub-ava">${ava(u, 'xl')}</div>
         <div class="pub-who">
-          <h1>${u.name}</h1>
+          <h1>${nameSeal(u.name, u.badges)}</h1>
           <div class="pub-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
           ${ratingLine(u.rating, `/u/${u.id}?tab=reviews`)}
           <div class="pf-badges">${trustBadges(u.badges)}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}</div>
@@ -3899,11 +3931,19 @@
   const dateShort = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   const daysLeft = (ts) => Math.max(0, Math.ceil((ts - Date.now()) / 86400000));
   // Что даёт каждый тариф — ровно то, что работает в коде (lib/business.js, lib/deals.js, lib/support.js, lib/feed.js, lib/promo.js).
+  // 1.45.0: коротко — по три-четыре строки на тариф.
   const planFeatures = (key, pr) => ({
-    free: ['Объявления без лимитов, 30 дней показа', 'Чат, предложения цены и до 12 быстрых ответов', 'Статистика каждого объявления', 'Значок «ИП проверен» или «Компания проверена» после проверки'],
-    shop: ['Витрина: обложка, описание, часы, адрес и сайт', 'Значок «Магазин» в профиле, объявлениях и карточках ленты', 'Статистика по всем объявлениям за 7, 30 или 90 дней', 'Выгрузка статистики для Excel', 'До 30 быстрых ответов в чате'],
-    pro: ['Всё из тарифа «Магазин», значок «Магазин Про»', 'Автозагрузка из XML-фида в формате Авито — до 1000 объявлений, каждые 6 часов', pr.proDiscount ? `Скидка ${pr.proDiscount}% на «Рекламу над поиском»` : '«Реклама над поиском» по обычной цене', 'Обращения в поддержку — первыми в очереди']
+    shop: ['Витрина: обложка, описание, адрес и сайт', 'Значок «Магазин» у объявлений', 'Статистика всех объявлений и выгрузка в Excel'],
+    pro: ['Всё из «Магазина»', 'Автозагрузка из XML-фида Авито', pr.proDiscount ? `Скидка ${pr.proDiscount}% на рекламу над поиском` : 'Обращения в поддержку — первыми', ...(pr.proDiscount ? ['Обращения в поддержку — первыми'] : [])]
   })[key];
+  // Цена, зачёркнутая «от руки» (1.45.0): неровная линия рисуется при появлении.
+  const handStrike = (text) => html`<span class="hand-strike">${text}<svg viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true"><path pathLength="100" d="M3 15.5c13-2.6 27-5.4 43-6.4 17-1.1 33 .3 47-1.6 9.6-1.3 16-3.1 24-5.2"/><path pathLength="100" class="hs2" d="M8 19.5c18-3.3 39-6.1 61-6.3 15-.2 29 .4 46-3.9"/></svg></span>`;
+  // Включить бизнес-аккаунт — с любой страницы, где он нужен (страница «Для бизнеса», «Мой бизнес», настройки).
+  async function bizAccountOn() {
+    await api('PUT', '/api/me/business-account', { on: true });
+    await refreshMe();
+    toast('Бизнес-аккаунт включён — выберите тариф');
+  }
 
   // Подтверждение покупки → страница оплаты ЮKassa.
   function payModal({ title, lines, amount, url, body }) {
@@ -3922,15 +3962,12 @@
   }
 
   // /business — тарифы, продвижение, вопросы. Цены — с сервера (их задаёт владелец).
+  // 1.45.0: страница упрощена до трёх шагов: бизнес-аккаунт (для всех, бесплатно) → тариф (первым — 0 ₽) → витрина.
   const BIZ_FAQ = [
-    ['Нужно ли платить, чтобы продавать?', 'Нет. Размещение бесплатно и без лимитов для всех — и для частных лиц, и для магазинов. Тариф не открывает размещение, а добавляет инструменты: витрину, общую статистику, автозагрузку.'],
-    ['Кто может подключить тариф?', 'ИП и компании, подтвердившие данные в «Настройки → Для бизнеса»: название, ИНН и ОГРН(ИП). Модератор сверяет их с ЕГРЮЛ/ЕГРИП вручную. Подтверждение бесплатное, значок «ИП проверен» или «Компания проверена» появляется и без тарифа.'],
-    ['Как оплатить?', 'На странице ЮKassa — банковской картой, через СБП и другими способами, доступными в ЮKassa. Чек придёт на почту. Автоплатежей нет: тариф продлеваете сами, когда нужно.'],
-    ['Что будет, когда тариф закончится?', 'За 3 дня придёт письмо. После окончания витрина и значок «Магазин» скрываются, а объявления остаются на месте и продолжают показываться. Продлить можно в любой момент.'],
-    ['Можно ли сменить тариф?', 'Да, в любой момент. Оставшиеся дни пересчитаем по цене месяца: например, 10 дней «Магазина» превратятся в 3 дня «Магазина Про», и к ним добавится оплаченный срок.'],
-    ['Чем продвижение в ленте отличается от рекламы над поиском?', 'Продвижение в ленте доступно всем продавцам: XL-карточка, рамка или метки на фото на 7 дней, порядок выдачи не меняется. «Реклама над поиском» — тоже для всех: объявление показывается в отдельном блоке «Реклама» над выдачей и лентой тем, кто ищет похожее в вашем городе; аукциона ставок нет, запуск сразу после оплаты.'],
-    ['Можно ли вернуть деньги?', 'Да. Напишите в поддержку — вернём стоимость неиспользованных полных дней тарифа или рекламы тем же способом, которым вы платили. Продвижение в ленте возвращается автоматически, если объявление не опубликовали за 7 дней после оплаты; отклонённые метки — их долей.'],
-    ['Что такое автозагрузка?', 'В тарифе «Магазин Про» объявления загружаются из XML-файла в формате автозагрузки Авито — по ссылке, той же, что вы указываете в Авито. Файл проверяется каждые 6 часов и по кнопке. Новые и изменённые объявления проходят проверку модератора, пропавшие из файла — снимаются с публикации.']
+    ['Нужно ли платить, чтобы продавать?', 'Нет. Объявления бесплатны и без лимитов для всех. Тариф добавляет инструменты магазина.'],
+    ['Кто может подключить тариф?', 'Любой, кто включил бизнес-аккаунт, — это бесплатно. Проверка ИНН не обязательна: она даёт значок проверенного бизнеса в профиле.'],
+    ['Что будет после бесплатного периода?', 'Тариф просто закончится — объявления останутся. Продлить можно по обычной цене. Автоплатежей нет.'],
+    ['Как оплатить и вернуть деньги?', 'Картой или через СБП на странице ЮKassa, чек придёт на почту. За неиспользованные дни вернём деньги через поддержку.']
   ];
   async function viewBusiness(_, q) {
     setTitle('Для бизнеса');
@@ -3938,146 +3975,99 @@
     const pr = (me && me.prices) || S.config.billing.prices;
     const ready = me ? me.ready : S.config.billing.ready;
     const plan = me && me.plan;
-    const biz = !!(me && me.biz && me.biz.status === 'verified');
+    const bizOn = !!(me && me.bizAccount);
+    const st = S.config.billing.starter; // бесплатный старт: { days, limit, left } — пока есть места
+    // 0 ₽ показываем гостю и тем, кому старт доступен (или станет доступен после включения бизнес-аккаунта).
+    const free = !!st && (!me || me.trial || me.trialWhy === 'Сначала включите бизнес-аккаунт');
     let months = ['1', '3', '12'].includes(q.get('m')) ? Number(q.get('m')) : 1;
     const bp = pr.boost || {};
-    const feat = (icon, tone, t, d) => html`<div class="bz-feat"><span class="bz-ic ${tone}">${ic(icon, 20, 1.9)}</span><b>${t}</b><span>${d}</span></div>`;
-    const step = (n, t, d) => html`<li><span class="bz-n">${n}</span><b>${t}</b><span>${d}</span></li>`;
+    const flow = (n, t, done) => html`<li class="${done ? 'done' : ''}"><span>${done ? ic('check', 14, 3) : n}</span>${t}</li>`;
+    const heroCta = !S.user ? html`<a class="btn btn-accent btn-lg" href="/login?next=/business">Войти и начать</a>`
+      : !bizOn ? html`<button type="button" class="btn btn-accent btn-lg" data-biz-on>Включить бизнес-аккаунт</button>`
+        : plan ? html`<a class="btn btn-accent btn-lg" href="/profile/business">Мой магазин</a>` : html`<a class="btn btn-accent btn-lg" href="#plans">Выбрать тариф</a>`;
     app.innerHTML = String(html`<div class="wrap biz bz">
       <section class="bz-hero">
         <div class="bz-hero-txt">
           <span class="bz-kicker">${ic('store', 15, 2)}Торгана для бизнеса</span>
-          <h1>Магазин на Торгане — по честным правилам</h1>
-          <p>Размещать объявления можно бесплатно и без лимитов — и частным лицам, и компаниям. Тариф не открывает размещение, а добавляет инструменты магазина: витрину, общую статистику и автозагрузку.</p>
-          <div class="bz-cta"><a class="btn btn-accent" href="#plans">Смотреть тарифы</a>${biz ? html`<a class="btn btn-line" href="/profile/business">Мой бизнес</a>` : html`<a class="btn btn-line" href="${S.user ? '/profile/settings#s-biz' : '/login?next=/profile/settings%23s-biz'}">Подтвердить бизнес</a>`}</div>
-          <div class="bz-facts">${[['card', 'blue', 'Оплата через ЮKassa'], ['refresh', 'amber', 'Без автоплатежей'], ['shield', 'green', 'Для ИП и компаний после проверки']].map(([i, t, x]) => html`<span><span class="bz-dot ${t}">${ic(i, 14, 2.2)}</span>${x}</span>`)}</div>
+          <h1>Продавайте как магазин</h1>
+          <p>Объявления — бесплатно для всех. Тариф добавляет витрину, статистику и автозагрузку.</p>
+          <ol class="bz-flow">${flow(1, 'Бизнес-аккаунт', bizOn)}${flow(2, 'Тариф', !!plan)}${flow(3, 'Витрина', false)}</ol>
+          <div class="bz-cta">${heroCta}</div>
         </div>
         <div class="bz-mini" aria-hidden="true">
           <div class="bzm-cover"></div>
-          <div class="bzm-head"><span class="bzm-ava">${ic('store', 22, 2)}</span><span><b>Ваш магазин</b><span class="bzm-badges"><i class="g">${ic('store', 11, 2.4)}Магазин</i><i>${ic('check', 11, 3)}ИП проверен</i></span></span></div>
+          <div class="bzm-head"><span class="bzm-ava">${ic('store', 22, 2)}</span><span><b>Ваш магазин</b><span class="bzm-badges"><i class="g">${ic('store', 11, 2.4)}Магазин</i><i>${verifiedSeal(13)}Проверен</i></span></span></div>
           <div class="bzm-grid">${['#DCE3DF', '#E9E6E0', '#DDE4EC'].map((c) => html`<span class="bzm-card"><span style="background:${c}"></span><i></i><i class="s"></i></span>`)}</div>
           <span class="bzm-tag">Пример</span>
         </div>
       </section>
-      ${S.user && !biz ? html`<div class="banner warn biz-banner">${ic('shield', 20, 2)}<span><strong>Тарифы и «Реклама над поиском» — для ИП и компаний.</strong> Отправьте название, ИНН и ОГРН(ИП) на проверку — это бесплатно. <a href="/profile/settings#s-biz" style="text-decoration:underline">Подтвердить бизнес</a></span></div>` : ''}
-      ${!ready ? html`<div class="banner soft biz-banner">${ic('clock', 20, 2)}<span><strong>Приём оплаты подключается.</strong> Цены на этой странице действуют, но оплатить пока нельзя — напишите в <a href="/messages/support" style="text-decoration:underline">поддержку</a>, если хотите подключиться первыми.</span></div>` : ''}
-      ${plan ? html`<div class="banner ok biz-banner">${ic('check', 20, 2.2)}<span>Сейчас у вас ${plan.trial ? 'пробный тариф' : 'тариф'} <strong>«${plan.name}»</strong> до ${dateLong(plan.until)} <a href="/profile/business" style="text-decoration:underline">Открыть «Для бизнеса»</a></span></div>`
-    : S.config.billing.starter ? html`<div class="bz-gift"><span class="bz-gift-ic">${ic('store', 22, 2)}</span><div><b>Первым ${S.config.billing.starter.limit} магазинам — «${S.config.billing.starter.name}» на ${S.config.billing.starter.days} дней бесплатно</b><span>Подтвердите бизнес — тариф включится сам, без оплаты. Осталось ${S.config.billing.starter.left} ${plural(S.config.billing.starter.left, 'место', 'места', 'мест')}.</span></div>${biz ? '' : html`<a class="btn btn-accent btn-sm" href="${S.user ? '/profile/settings#s-biz' : '/login?next=/profile/settings%23s-biz'}">Подтвердить бизнес</a>`}</div>` : ''}
-
-      <section class="biz-sec">
-        <div class="biz-sec-head"><div><span class="bz-label">Бесплатно для всех</span><h2>Всё для продаж — без тарифа</h2>
-          <p class="biz-lead">Это есть у каждого продавца, и у магазинов тоже. Ничего из этого не исчезнет, если тариф закончится.</p></div></div>
-        <div class="bz-feats">
-          ${feat('tag', 'green', 'Объявления без лимитов', 'Сколько угодно объявлений. Показ — 30 дней, опубликовать снова можно бесплатно.')}
-          ${feat('shield', 'blue', 'Проверка модератором', 'Каждое объявление и каждую правку смотрит человек до публикации.')}
-          ${feat('chat', 'violet', 'Чат с покупателями', 'Фото в чате, быстрые ответы и предупреждение о мошенниках.')}
-          ${feat('trend', 'amber', 'Торг в один клик', 'Покупатель предлагает цену — вы принимаете или отклоняете одной кнопкой.')}
-          ${feat('chart', 'blue', 'Статистика объявления', 'Показы, переходы, избранное и откуда приходят покупатели.')}
-          ${feat('star', 'amber', 'Отзывы покупателей', 'Только после переписки по объявлению. На отзыв можно ответить.')}
-          ${feat('bell', 'violet', 'Подписчики', 'Те, кто подписался на вас, узнают о новых объявлениях.')}
-          ${feat('check', 'green', 'Значок проверенного бизнеса', '«ИП проверен» или «Компания проверена» после проверки ИНН и ОГРН(ИП).')}
-        </div>
-      </section>
-
-      <section class="biz-sec">
-        <div class="biz-sec-head"><div><span class="bz-label">С тарифом</span><h2>Как будет выглядеть ваш магазин</h2>
-          <p class="biz-lead">Витрина появляется вверху вашей страницы продавца, над всеми объявлениями. Здесь — пример; содержание вы заполняете сами.</p></div></div>
-        <div class="bz-shop">
-          <div class="bz-frame" aria-hidden="true">
-            <div class="bzf-cover"><span>Обложка 1600 × 530</span></div>
-            <div class="bzf-body">
-              <div class="bzf-top"><span class="bzf-ava">${ic('store', 28, 1.9)}</span>
-                <span class="bzf-name"><span class="bzf-badges"><i class="dark">${ic('store', 12, 2.2)}Магазин Про</i><i class="ok">${ic('check', 12, 3)}Компания проверена</i></span><b>Название вашего магазина</b>
-                  <span class="bzf-rate"><span class="st">${starSvg(true, 14)}</span>оценка из отзывов · подписчики</span></span>
-                <span class="bzf-btn">${ic('bell', 15, 2.2)}Подписаться</span></div>
-              <p class="bzf-about">Описание магазина — до 1500 символов: что продаёте, условия, гарантия, доставка.</p>
-              <div class="bzf-facts"><span>${ic('clock', 15)}Часы работы</span><span>${ic('pin', 15)}Адрес</span><span>${ic('link', 15)}ваш-сайт.ru</span></div>
-              <div class="bzf-grid">${['#DCE3DF', '#E9E6E0', '#DDE4EC', '#EEE3D6'].map((c) => html`<span class="bzf-card"><span class="bzf-img" style="background:${c}"></span><b></b><i></i><span class="bzf-seller"><span></span>${ic('store', 10, 2.4)}</span></span>`)}</div>
-            </div>
-          </div>
-          <ol class="bz-notes">
-            <li><span class="bz-ic green">${ic('image', 18, 1.9)}</span><span><b>Обложка и описание</b>Обложка, рассказ о магазине, часы работы, адрес и ссылка на сайт.</span></li>
-            <li><span class="bz-ic blue">${ic('store', 18, 1.9)}</span><span><b>Значок «Магазин»</b>В профиле, на странице объявления и в строке продавца на карточках ленты.</span></li>
-            <li><span class="bz-ic amber">${ic('chart', 18, 1.9)}</span><span><b>Статистика магазина</b>Показы, переходы и избранное по всем объявлениям, по дням и источникам, с выгрузкой для Excel.</span></li>
-            <li><span class="bz-ic violet">${ic('refresh', 18, 1.9)}</span><span><b>Автозагрузка в «Про»</b>Объявления подтягиваются из вашего фида — тот же XML, что для Авито.</span></li>
-          </ol>
-        </div>
-      </section>
+      ${!ready ? html`<div class="banner soft biz-banner">${ic('clock', 20, 2)}<span><strong>Оплата подключается.</strong> Цены действуют, но оплатить пока нельзя.</span></div>` : ''}
+      ${plan ? html`<div class="banner ok biz-banner">${ic('check', 20, 2.2)}<span>${plan.trial ? 'Бесплатный тариф' : 'Тариф'} <strong>«${plan.name}»</strong> до ${dateLong(plan.until)}. <a href="/profile/business" style="text-decoration:underline">Мой магазин</a></span></div>` : ''}
 
       <section class="biz-sec" id="plans">
-        <div class="biz-sec-head"><div><span class="bz-label">Тарифы</span><h2>Платите только за инструменты</h2></div>
+        <div class="biz-sec-head"><div><h2>Тарифы</h2>${free ? html`<span class="bz-free">${ic('gift', 15, 2)}Первым ${st.limit} — ${st.days} ${plural(st.days, 'день', 'дня', 'дней')} бесплатно · осталось ${st.left} ${plural(st.left, 'место', 'места', 'мест')}</span>` : ''}</div>
           <div class="seg" role="tablist" aria-label="Срок">${[[1, '1 месяц'], [3, '3 месяца'], [12, '12 месяцев']].map(([m, t]) => html`<button type="button" role="tab" data-m="${m}">${t}</button>`)}</div></div>
-        <div class="plans" id="plan-cards"></div>
-        <p class="muted biz-small">Месяц тарифа — 30 дней. Сменить тариф можно в любой момент: оставшиеся дни пересчитаем по цене месяца. Автоплатежей нет.</p>
+        <div class="plans two" id="plan-cards"></div>
+        <p class="muted biz-small">Без тарифа всё бесплатно: объявления без лимитов, чат, торг и статистика каждого объявления. Автоплатежей нет.</p>
       </section>
 
       <section class="biz-sec">
-        <div class="biz-sec-head"><div><span class="bz-label">Продвижение</span><h2>Чтобы заметили быстрее</h2>
-          <p class="biz-lead">Два вида платного продвижения. Оба — по фиксированной цене, без аукционов ставок.</p></div></div>
+        <div class="biz-sec-head"><h2>Продвижение</h2></div>
         <div class="bz-promo">
-          <div class="bz-pcard">
-            <span class="bz-ic violet">${ic('xl', 20, 1.9)}</span>
-            <b class="bz-ph">Продвижение в ленте</b><span class="bz-for">Для всех продавцов · 7 дней</span>
-            <ul class="bz-prices">
-              <li><span>XL-карточка — две ячейки, больше фото</span><b>${rub(bp.xl)}</b></li>
-              <li><span>Яркая рамка</span><b>${rub(bp.frame)}</b></li>
-              <li><span>Метки на фото — одна или две</span><b>${rub(bp.tags)}</b></li>
-              <li class="all"><span>Всё в одном</span><b>${rub(bp.all)}</b></li></ul>
-            <p>Порядок выдачи не меняется — карточка просто заметнее. Не опубликовали объявление за 7 дней после оплаты — деньги вернутся автоматически.</p>
-          </div>
-          <div class="bz-pcard">
-            <span class="bz-ic blue">${ic('megaphone', 20, 1.9)}</span>
-            <b class="bz-ph">Реклама над поиском</b><span class="bz-for">Для всех продавцов</span>
-            <ul class="bz-prices">${[3, 7, 30].map((d) => html`<li><span>${d} ${plural(d, 'день', 'дня', 'дней')}${pr.proDiscount ? html` · в «Про» ${rub(Math.max(1, Math.round(pr.promo[d] * (100 - pr.proDiscount) / 100)))}` : ''}</span><b>${rub(pr.promo[d])}</b></li>`)}</ul>
-            <p>Отдельный блок «Реклама» над выдачей и лентой — для тех, кто ищет похожее в вашем городе. Обычная выдача не меняется. Запускается сразу после оплаты.</p>
-          </div>
+          <div class="bz-pcard"><span class="bz-ic violet">${ic('xl', 20, 1.9)}</span><span><b class="bz-ph">Продвижение в ленте</b><span class="bz-for">XL, рамка или метки на фото · 7 дней</span></span><b class="bz-from">от ${rub(Math.min(bp.xl, bp.frame, bp.tags))}</b></div>
+          <div class="bz-pcard"><span class="bz-ic blue">${ic('megaphone', 20, 1.9)}</span><span><b class="bz-ph">Реклама над поиском</b><span class="bz-for">Блок «Реклама» над выдачей в вашем городе</span></span><b class="bz-from">от ${rub(pr.promo[3])}</b></div>
         </div>
+        <p class="muted biz-small">Для всех продавцов. Подключается в «Моих объявлениях» → «Продвигать».</p>
       </section>
 
-      <section class="biz-sec">
-        <div class="biz-sec-head"><div><span class="bz-label">Подключение</span><h2>Четыре шага</h2></div></div>
-        <ol class="bz-steps">
-          ${step(1, 'Подтвердите бизнес', '«Настройки → Для бизнеса»: название, ИНН и ОГРН(ИП). Модератор сверит их с ЕГРЮЛ/ЕГРИП.')}
-          ${step(2, 'Выберите тариф', 'На 1, 3 или 12 месяцев. Оплата — на странице ЮKassa, чек придёт на почту.')}
-          ${step(3, 'Оформите витрину', 'Обложка, описание, часы, адрес и сайт — в разделе «Для бизнеса» профиля.')}
-          ${step(4, 'Подключите фид', 'В «Магазин Про» вставьте ссылку на XML — объявления загрузятся и пройдут проверку.')}
-        </ol>
-      </section>
-
-      <section class="biz-sec"><div class="biz-sec-head"><h2>Вопросы и ответы</h2></div>
+      <section class="biz-sec"><div class="biz-sec-head"><h2>Вопросы</h2></div>
         <div class="faq">${BIZ_FAQ.map(([t, a]) => html`<details><summary>${t}${ic('down', 18, 2)}</summary><p>${a}</p></details>`)}</div>
-        <p class="muted biz-small">Условия платных услуг — в <a href="/page/terms#paid" style="text-decoration:underline">разделе 7 Пользовательского соглашения</a>, правила рекламы — в <a href="/page/rules#ads" style="text-decoration:underline">Правилах</a>. Исполнитель — ${S.config.operator ? `${S.config.operator.name}, ИНН ${S.config.operator.inn}` : 'оператор Торганы'}.</p>
+        <p class="muted biz-small">Условия — в <a href="/page/terms#paid" style="text-decoration:underline">разделе 7 Пользовательского соглашения</a>. Исполнитель — ${S.config.operator ? `${S.config.operator.name}, ИНН ${S.config.operator.inn}` : 'оператор Торганы'}.</p>
       </section>
     </div>`);
+    const turnOn = async (b) => { b.disabled = true; try { await bizAccountOn(); viewBusiness(_, new URLSearchParams({ m: String(months) })); } catch (ex) { toast(ex.message, true); b.disabled = false; } };
     const paint = () => {
       $$('[data-m]').forEach((b) => { b.classList.toggle('on', Number(b.dataset.m) === months); b.setAttribute('aria-selected', Number(b.dataset.m) === months ? 'true' : 'false'); });
       const save = (key) => { const full = pr[key][1] * months; return full > pr[key][months] ? Math.round((1 - pr[key][months] / full) * 100) : 0; };
+      const perMonth = (key) => Math.round(pr[key][months] / months);
       const cta = (key) => {
         const cls = key === 'pro' ? 'btn-accent' : 'btn-dark';
-        if (!S.user) return html`<a class="btn ${cls} btn-block" href="/login?next=/business">Войти и подключить</a>`;
-        if (!biz) return html`<a class="btn ${cls} btn-block" href="/profile/settings#s-biz">Подтвердить бизнес</a>`;
+        if (!S.user) return html`<a class="btn ${cls} btn-block" href="/login?next=/business">${free ? 'Войти и начать бесплатно' : 'Войти и подключить'}</a>`;
+        if (!bizOn) return html`<button type="button" class="btn ${cls} btn-block" data-biz-on>Включить бизнес-аккаунт</button>`;
+        if (free && !plan) return html`<button type="button" class="btn ${cls} btn-block" data-trial="${key}">Начать бесплатно</button>`;
         if (!ready) return html`<button type="button" class="btn btn-soft btn-block" disabled>Оплата скоро</button>`;
         return html`<button type="button" class="btn ${cls} btn-block" data-buy="${key}">${plan && plan.id === key ? `Продлить на ${months} мес.` : plan ? `Перейти на «${PLAN_NAME[key]}»` : 'Подключить'}</button>`;
       };
+      const price = (key) => (free ? html`
+            <div class="plan-price is-free"><b>0 ₽</b>${handStrike(rub(perMonth(key)))}</div>
+            <p class="plan-then">${st.days} ${plural(st.days, 'день', 'дня', 'дней')} бесплатно, далее <b>${rub(perMonth(key))}</b> в месяц</p>`
+        : html`
+            <div class="plan-price"><b>${rub(perMonth(key))}</b><span>в месяц</span></div>
+            <p class="plan-then">${months > 1 ? html`${rub(pr[key][months])} за ${months} мес.${save(key) ? html` · <span class="plan-save">выгода ${save(key)}%</span>` : ''}` : key === 'shop' ? 'Витрина и статистика' : 'Для тех, у кого много товаров'}</p>`);
       $('#plan-cards').innerHTML = String(html`
-        <div class="plan free"><div class="plan-top"><h3>Бесплатно</h3><div class="plan-price"><b>0 ₽</b><span>всегда</span></div><p>Для всех — частных лиц и компаний.</p></div>
-          <ul>${planFeatures('free', pr).map((f) => html`<li>${ic('check', 16, 2.4)}${f}</li>`)}</ul>
-          <a class="btn btn-soft btn-block" href="/new">Разместить объявление</a></div>
         ${['shop', 'pro'].map((key) => html`<div class="plan ${key} ${plan && plan.id === key ? 'current' : ''}">
-          <div class="plan-top"><h3>${PLAN_NAME[key]}${plan && plan.id === key ? html`<span class="plan-cur">ваш тариф</span>` : ''}</h3>
-            <div class="plan-price"><b>${rub(Math.round(pr[key][months] / months))}</b><span>в месяц</span></div>
-            <p>${months > 1 ? html`${rub(pr[key][months])} за ${months} мес.${save(key) ? html` · <span class="plan-save">выгода ${save(key)}%</span>` : ''}` : key === 'shop' ? 'Витрина и статистика для магазина.' : 'Для тех, у кого много товаров.'}</p>${key === 'pro' ? html`<span class="plan-pick">Больше всего возможностей</span>` : ''}</div>
+          <div class="plan-top"><h3>${PLAN_NAME[key]}${plan && plan.id === key ? html`<span class="plan-cur">ваш тариф</span>` : key === 'pro' ? html`<span class="plan-cur">больше всего</span>` : ''}</h3>${price(key)}</div>
           <ul>${planFeatures(key, pr).map((f) => html`<li>${ic('check', 16, 2.4)}${f}</li>`)}</ul>
           ${cta(key)}</div>`)}`);
+      $$('[data-biz-on]').forEach((b) => { b.onclick = () => turnOn(b); });
+      $$('[data-trial]').forEach((b) => {
+        b.onclick = async () => {
+          const key = b.dataset.trial;
+          if (!(await confirmModal(`«${PLAN_NAME[key]}» бесплатно на ${st.days} ${plural(st.days, 'день', 'дня', 'дней')}?`, `Без оплаты и без карты. Дальше — ${rub(pr[key][1])} в месяц, только если продлите сами. Бесплатный период — один раз.`, 'Начать бесплатно'))) return;
+          b.disabled = true;
+          try { await api('POST', '/api/my/plan/trial', { plan: key }); await refreshMe(); toast(`«${PLAN_NAME[key]}» подключён — оформите витрину`); go('/profile/business/shop'); } catch (ex) { toast(ex.message, true); b.disabled = false; }
+        };
+      });
       $$('[data-buy]').forEach((b) => {
         b.onclick = () => {
           const key = b.dataset.buy;
           payModal({ title: `Тариф «${PLAN_NAME[key]}»`, amount: pr[key][months], url: '/api/my/plan/pay', body: { plan: key, months },
-            lines: [['Срок', `${months} мес. (${months * 30} дней)`], ...(plan && plan.id !== key ? [[plan.trial ? `Пробный «${plan.name}»` : `Остаток «${plan.name}»`, plan.trial ? 'закончится, новый тариф — с сегодня' : 'пересчитаем по цене месяца']] : plan ? [['Начало', `с ${dateShort(plan.until)}${plan.trial ? ', после пробного' : ''}`]] : [])] });
+            lines: [['Срок', `${months} мес. (${months * 30} дней)`], ...(plan && plan.id !== key ? [[plan.trial ? `Бесплатный «${plan.name}»` : `Остаток «${plan.name}»`, plan.trial ? 'закончится, новый тариф — с сегодня' : 'пересчитаем по цене месяца']] : plan ? [['Начало', `с ${dateShort(plan.until)}${plan.trial ? ', после бесплатного' : ''}`]] : [])] });
         };
       });
     };
     $$('[data-m]').forEach((b) => { b.onclick = () => { months = Number(b.dataset.m); history.replaceState({}, '', `/business?m=${months}`); paint(); }; });
+    const hb = $('.bz-cta [data-biz-on]'); if (hb) hb.onclick = () => turnOn(hb);
     paint();
   }
 
@@ -4188,18 +4178,18 @@
   async function renderBusinessHub(sub, days, reload) {
     const d = await api('GET', '/api/my/business');
     const box = $('#box');
-    const biz = d.biz && d.biz.status === 'verified';
+    const biz = d.bizAccount; // 1.45.0: тарифы — после включения бизнес-аккаунта, проверка ИНН не нужна
     const lock = (need) => (!d.plan ? `в тарифе «${PLAN_NAME[need]}»` : need === 'pro' && d.plan.id !== 'pro' ? 'в тарифе «Магазин Про»' : '');
-    const gate = (need, text) => html`<div class="biz-gate">${ic('store', 26, 1.8)}<div><b>${text}</b><span>${lock(need) ? `Доступно ${lock(need)}.` : ''} ${biz ? '' : 'Сначала подтвердите данные бизнеса.'}</span></div><a class="btn btn-dark" href="${biz ? `/business${need === 'pro' ? '?m=1' : ''}` : '/profile/settings#s-biz'}">${biz ? 'Выбрать тариф' : 'Подтвердить бизнес'}</a></div>`;
+    const gate = (need, text) => html`<div class="biz-gate">${ic('store', 26, 1.8)}<div><b>${text}</b><span>${lock(need) ? `Доступно ${lock(need)}.` : ''} ${biz ? '' : 'Сначала включите бизнес-аккаунт — это бесплатно.'}</span></div><a class="btn btn-dark" href="/business">${biz ? 'Выбрать тариф' : 'Включить бизнес-аккаунт'}</a></div>`;
     if (sub === 'shop') return lock('shop') ? (box.innerHTML = String(gate('shop', 'Витрина магазина'))) : renderShopEditor(box, d, reload);
     if (sub === 'stats') return lock('shop') ? (box.innerHTML = String(gate('shop', 'Статистика магазина'))) : renderShopStats(box, days);
     if (sub === 'feed') return lock('pro') ? (box.innerHTML = String(gate('pro', 'Автозагрузка из фида'))) : renderFeed(box, d, reload);
     const tool = (href, icon, t, sub2, need) => html`<a class="biz-tool ${lock(need) ? 'locked' : ''}" href="${href}"><span class="bt-ic">${ic(icon, 22)}</span><b>${t}</b><small>${lock(need) ? html`${ic('lock', 13, 2)} ${lock(need)}` : sub2}</small></a>`;
     const fs = d.feed.state || {};
     box.innerHTML = String(html`<div class="bizhub">
-      ${!biz ? html`<div class="biz-gate">${ic('shield', 26, 1.8)}<div><b>Подтвердите бизнес</b><span>Тарифы и продвижение — для ИП и компаний. Отправьте название, ИНН и ОГРН(ИП) — модератор сверит их с ЕГРЮЛ/ЕГРИП, обычно за день.</span></div><a class="btn btn-dark" href="/profile/settings#s-biz">Подтвердить</a></div>` : ''}
+      ${!biz ? html`<div class="biz-gate">${ic('store', 26, 1.8)}<div><b>Включите бизнес-аккаунт</b><span>Бесплатно. После этого можно подключить тариф — первым бизнес-аккаунтам он бесплатный.</span></div><button type="button" class="btn btn-dark" data-biz-on>Включить</button></div>` : ''}
       <div class="plan-now ${d.plan ? d.plan.id : 'none'}">
-        <div class="pn-txt"><span class="pn-k">${d.plan && d.plan.trial ? 'Пробный тариф' : 'Тариф'}</span><b>${d.plan ? `«${d.plan.name}»` : 'Не подключён'}</b>
+        <div class="pn-txt"><span class="pn-k">${d.plan && d.plan.trial ? 'Бесплатный тариф' : 'Тариф'}</span><b>${d.plan ? `«${d.plan.name}»` : 'Не подключён'}</b>
           <span>${d.plan ? `до ${dateLong(d.plan.until)} · осталось ${daysLeft(d.plan.until)} ${plural(daysLeft(d.plan.until), 'день', 'дня', 'дней')}` : `Витрина, статистика магазина и автозагрузка — от ${rub(d.prices.shop[1])} в месяц. Размещение объявлений бесплатно всегда.`}</span></div>
         <a class="btn ${d.plan ? 'btn-light' : 'btn-dark'}" href="/business">${d.plan ? 'Продлить или сменить' : 'Выбрать тариф'}</a>
       </div>
@@ -4221,6 +4211,8 @@
     : html`<p class="muted" style="margin:0">Платежей пока не было.</p>`}
       </section>
     </div>`);
+    const on = $('[data-biz-on]', box);
+    if (on) on.onclick = async () => { on.disabled = true; try { await bizAccountOn(); go('/business#plans'); } catch (ex) { toast(ex.message, true); on.disabled = false; } };
   }
 
   function renderShopEditor(box, d, reload) {
@@ -4429,7 +4421,7 @@
     ['Проверка', [['pending', 'inbox', 'На проверке', 'pending'], ['reports', 'flag', 'Жалобы', 'reports'], ['appeals', 'reply', 'Апелляции', 'appeals'], ['reviews', 'star', 'Отзывы', 'reviews'], ['support', 'headset', 'Поддержка', 'support'], ['biz', 'shield', 'Бизнес', 'biz']]],
     ['Объявления', [['active', 'tag', 'Опубликованные'], ['rejected', 'close', 'Отклонённые'], ['sold', 'check', 'Проданные'], ['archived', 'pause', 'Снятые']]],
     ['Люди', [['users', 'users', 'Пользователи'], ['sources', 'chart', 'Откуда приходят'], ['log', 'list', 'Журнал действий']]],
-    ['Деньги', [['payments', 'card', 'Платежи'], ['billing', 'tag', 'Оплата и цены']]],
+    ['Деньги', [['ads', 'megaphone', 'Реклама'], ['payments', 'card', 'Платежи'], ['billing', 'tag', 'Оплата']]],
     ['Настройки', [['notify', 'bell', 'Мои уведомления'], ['mail', 'mail', 'Почта'], ['oauth', 'lock', 'Вход через сервисы'], ['ai', 'sparkle', 'ИИ по фото'], ['seo', 'search', 'Поиск и статистика'], ['backup', 'shield', 'Копии и безопасность'], ['site', 'refresh', 'Версия сайта']]]
   ];
   const LISTING_TABS = ['pending', 'reports', 'appeals', 'active', 'rejected', 'sold', 'archived'];
@@ -4481,6 +4473,7 @@
       backup: () => renderBackupAdmin(box),
       payments: () => renderPaymentsAdmin(box, q),
       billing: () => renderBillingAdmin(box),
+      ads: () => renderAdsAdmin(box, q),
       log: () => renderLogAdmin(box, q),
       notify: () => renderNotifyAdmin(box),
       mail: () => { box.innerHTML = String(head('Почта')); box.insertAdjacentHTML('beforeend', '<div id="special-box"></div>'); renderMailAdmin($('#special-box'), extra); },
@@ -4659,7 +4652,7 @@
           ${u.shop && (u.shop.about || u.shop.cover || u.shop.site) ? html`<div class="muted" style="font-size:14px">Витрина: ${u.shop.about ? `«${u.shop.about.slice(0, 140)}${u.shop.about.length > 140 ? '…' : ''}»` : 'без описания'}${u.shop.site ? ` · ${u.shop.site}` : ''}</div>
           <div class="adm-person-act"><a class="btn btn-soft btn-sm" href="/u/${u.id}" target="_blank">${ic('store', 16)}Витрина</a><button class="btn btn-line btn-sm" data-shop-clear="${u.id}">Очистить витрину</button></div>` : html`<div class="muted" style="font-size:14px">Витрина не заполнена.</div>`}
           <a href="/admin?status=payments" class="muted" style="font-size:13px;text-decoration:underline">Платежи и возвраты</a></div>` : ''}
-        ${svcBlock(u, d.services, d.listings)}
+        ${svcBrief(u, d.services)}
         ${u.blocked ? html`<div class="banner danger"><strong>Заблокирован${u.blockedAt ? ` ${when(u.blockedAt)}` : ''}${blockedBy && blockedBy.admin ? ` · ${blockedBy.admin.name}` : ''}.</strong> ${u.blockReason || 'Причина не указана.'}</div>` : ''}
         <div class="adm-facts">${[
           ['Email', u.email], ['Телефон', u.phone || '—'], ['Город', u.city || '—'],
@@ -4695,28 +4688,53 @@
     $('[data-support]').onclick = async () => {
       try { const r = await api('POST', `/api/admin/users/${u.id}/support`); go(`/admin?status=support&t=${r.thread}`); } catch (e) { toast(e.message, true); }
     };
-    // 1.44.0: подарки модератора — тариф любому пользователю, реклама над поиском и продвижение в ленте бесплатно.
-    const giftModal = (title, note, body, send, done) => openModal(String(html`<h2>${title}</h2><p class="muted" style="margin:0">${note}</p>${body}
-        <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-dark" data-ok>Подарить</button></div>`), (m, close) => {
-      $('[data-x]', m).onclick = close;
-      $('[data-ok]', m).onclick = async (e) => {
-        e.currentTarget.disabled = true;
-        try { await send(m); close(); toast(done); render(); } catch (ex) { toast(ex.message, true); e.currentTarget.disabled = false; }
-      };
-    });
-    const pickListing = (statuses) => html`<div class="field"><label for="g-l">Объявление</label><select id="g-l" class="select">${d.listings.filter((i) => statuses.includes(i.status))
+    // Удаление профиля модератором: временно (можно восстановить) и навсегда — со словом УДАЛИТЬ.
+    const uOff = $('[data-u-off]');
+    if (uOff) uOff.onclick = () => reasonModal({ title: `Удалить профиль ${u.name} временно?`, hint: 'Профиль и объявления скроются, пользователь выйдет на всех устройствах. Вернуть можно здесь же или сам пользователь — войдя и нажав «Восстановить».', url: `/api/admin/users/${u.id}/deactivate`, okLabel: 'Удалить временно', minText: 0, reasons: ['Просьба пользователя', 'Нарушение правил площадки', 'Подозрение на мошенничество'], placeholder: 'Причина — для журнала (необязательно)' });
+    const uRe = $('[data-u-restore]');
+    if (uRe) uRe.onclick = async () => { if (!(await confirmModal('Восстановить профиль?', 'Профиль снова будет виден. Объявления останутся в архиве — пользователь опубликует их сам.', 'Восстановить'))) return; try { await api('POST', `/api/admin/users/${u.id}/restore`); toast('Профиль восстановлен'); render(); } catch (e) { toast(e.message, true); } };
+    const uEr = $('[data-u-erase]');
+    if (uEr) uEr.onclick = () => eraseModal(`Удалить профиль ${u.name} навсегда?`, 'Личные данные сотрутся, объявления с фото, избранное и подписки удалятся. Платежи останутся обезличенными для учёта и возвратов. Отменить нельзя.', async (word) => { await api('POST', `/api/admin/users/${u.id}/erase`, { confirm: word }); toast('Профиль удалён навсегда'); render(); });
+    const sc = $('[data-shop-clear]');
+    if (sc) sc.onclick = () => reasonModal({ title: 'Очистить витрину', hint: 'Уберём описание, обложку, часы, адрес и сайт. Тариф продолжит действовать. Причину увидит продавец.', url: `/api/admin/users/${u.id}/shop/clear`, okLabel: 'Очистить', reasons: ['Контакты и мессенджеры в описании', 'Оскорбительное или недостоверное содержание', 'Ссылка на подозрительный сайт', 'Чужое фото на обложке'], placeholder: 'Что не так — для продавца' });
+    bindModActions(app);
+  }
+
+  // Карточка пользователя в модерации (1.45.0): коротко, что идёт; подарить и отключить — в разделе «Реклама».
+  function svcBrief(u, sv) {
+    sv = sv || { promos: [], boosts: [] };
+    const parts = [u.plan ? `${u.plan.trial ? 'бесплатный тариф' : 'тариф'} «${u.plan.name}» до ${dateShort(u.plan.until)}` : '',
+      sv.promos.length ? `реклама над поиском: ${sv.promos.length}` : '', sv.boosts.length ? `продвижение: ${sv.boosts.length}` : ''].filter(Boolean);
+    return html`<div class="adm-svc adm-svc-brief"><span class="adm-svc-ic">${ic('megaphone', 18, 2)}</span><span class="adm-svc-txt"><b>Реклама и тариф</b><span>${parts.length ? parts.join(' · ') : 'ничего не подключено'}</span></span>
+      <a class="btn btn-soft btn-sm" href="/admin?status=ads&u=${u.id}">${u.blocked ? 'Открыть' : 'Подарить или отключить'}</a></div>`;
+  }
+
+  // ---------- раздел «Реклама» (1.45.0): всё, что касается рекламы, тарифов и подарков, — в одном месте ----------
+  const SVC_REASONS = ['Нарушение правил площадки', 'Запрещённый товар или услуга', 'Жалобы покупателей', 'По просьбе продавца'];
+  const SVC_HINT = 'Причину увидит продавец. Деньги не возвращаются автоматически — возврат оформляется в «Платежах».';
+  const giftModal = (title, note, body, send, done) => openModal(String(html`<h2>${title}</h2><p class="muted" style="margin:0">${note}</p>${body}
+      <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-dark" data-ok>Подарить</button></div>`), (m, close) => {
+    $('[data-x]', m).onclick = close;
+    $('[data-ok]', m).onclick = async (e) => {
+      e.currentTarget.disabled = true;
+      try { await send(m); close(); toast(done); render(); } catch (ex) { toast(ex.message, true); e.currentTarget.disabled = false; }
+    };
+  });
+  // Подарки выбранному пользователю: тариф — любому, реклама и продвижение — его объявлениям.
+  function bindGifts(root, u, listings) {
+    const pickListing = (statuses) => html`<div class="field"><label for="g-l">Объявление</label><select id="g-l" class="select">${listings.filter((i) => statuses.includes(i.status))
       .map((i) => html`<option value="${i.id}">${i.title} · ${STATUS_LABEL[i.status].toLowerCase()}</option>`)}</select></div>`;
-    const giftPlan = $('[data-gift-plan]');
-    if (giftPlan) giftPlan.onclick = () => giftModal('Подарить тариф', 'Бесплатно, без оплаты. Если такой тариф уже есть — продлим на эти дни.',
+    const gp = $('[data-gift-plan]', root);
+    if (gp) gp.onclick = () => giftModal(`Подарить тариф — ${u.name}`, 'Бесплатно, без оплаты. Если такой тариф уже есть — продлим на эти дни.',
       html`<div class="field"><label for="g-plan">Тариф</label><select id="g-plan" class="select"><option value="pro">«Магазин Про»</option><option value="shop">«Магазин»</option></select></div>
         <div class="field"><label for="g-days">Дней</label><input id="g-days" class="input" inputmode="numeric" value="90"></div>`,
       (m) => api('POST', `/api/admin/users/${u.id}/plan`, { plan: $('#g-plan', m).value, days: $('#g-days', m).value }), 'Тариф подарен — продавец получил уведомление');
-    const giftPromo = $('[data-gift-promo]');
-    if (giftPromo) giftPromo.onclick = () => giftModal('Подарить рекламу над поиском', 'Бесплатно: объявление появится в блоке «Реклама» над выдачей. Если реклама уже идёт — продлим.',
+    const gr = $('[data-gift-promo]', root);
+    if (gr) gr.onclick = () => giftModal('Подарить рекламу над поиском', 'Бесплатно: объявление появится в блоке «Реклама» над выдачей. Если реклама уже идёт — продлим.',
       html`${pickListing(['active'])}<div class="field"><label for="g-days">Дней (1–90)</label><input id="g-days" class="input" inputmode="numeric" value="7"></div>`,
       (m) => api('POST', `/api/admin/listings/${$('#g-l', m).value}/promo`, { days: $('#g-days', m).value }), 'Реклама подарена — продавец получил уведомление');
-    const giftBoost = $('[data-gift-boost]');
-    if (giftBoost) giftBoost.onclick = () => giftModal('Подарить продвижение в ленте', 'Бесплатно, на 7 дней. Объявление на проверке — начнётся с публикацией.',
+    const gb = $('[data-gift-boost]', root);
+    if (gb) gb.onclick = () => giftModal('Подарить продвижение в ленте', 'Бесплатно, на 7 дней. Объявление на проверке — начнётся с публикацией.',
       html`${pickListing(['active', 'pending', 'scheduled', 'rejected'])}
         <fieldset class="g-kinds"><legend>Что включить</legend>
           <label class="g-opt"><input type="checkbox" name="g-xl" checked> XL-карточка</label>
@@ -4727,41 +4745,107 @@
         const tags = $$('[name="g-tag"]:checked', m).map((x) => x.value);
         return api('POST', `/api/admin/listings/${$('#g-l', m).value}/boost`, { xl: $('[name="g-xl"]', m).checked, frame: $('[name="g-frame"]', m).checked, tags });
       }, 'Продвижение подарено — продавец получил уведомление');
-    // Удаление профиля модератором: временно (можно восстановить) и навсегда — со словом УДАЛИТЬ.
-    const uOff = $('[data-u-off]');
-    if (uOff) uOff.onclick = () => reasonModal({ title: `Удалить профиль ${u.name} временно?`, hint: 'Профиль и объявления скроются, пользователь выйдет на всех устройствах. Вернуть можно здесь же или сам пользователь — войдя и нажав «Восстановить».', url: `/api/admin/users/${u.id}/deactivate`, okLabel: 'Удалить временно', minText: 0, reasons: ['Просьба пользователя', 'Нарушение правил площадки', 'Подозрение на мошенничество'], placeholder: 'Причина — для журнала (необязательно)' });
-    const uRe = $('[data-u-restore]');
-    if (uRe) uRe.onclick = async () => { if (!(await confirmModal('Восстановить профиль?', 'Профиль снова будет виден. Объявления останутся в архиве — пользователь опубликует их сам.', 'Восстановить'))) return; try { await api('POST', `/api/admin/users/${u.id}/restore`); toast('Профиль восстановлен'); render(); } catch (e) { toast(e.message, true); } };
-    const uEr = $('[data-u-erase]');
-    if (uEr) uEr.onclick = () => eraseModal(`Удалить профиль ${u.name} навсегда?`, 'Личные данные сотрутся, объявления с фото, избранное и подписки удалятся. Платежи останутся обезличенными для учёта и возвратов. Отменить нельзя.', async (word) => { await api('POST', `/api/admin/users/${u.id}/erase`, { confirm: word }); toast('Профиль удалён навсегда'); render(); });
-    // Платные услуги: отключить даже оплаченное (деньги — отдельно, в «Платежах»).
-    const SVC_REASONS = ['Нарушение правил площадки', 'Запрещённый товар или услуга', 'Жалобы покупателей', 'По просьбе продавца'];
-    const svcHint = 'Причину увидит продавец. Деньги не возвращаются автоматически — возврат оформляется в «Платежах».';
-    const sp = $('[data-svc-plan]');
-    if (sp) sp.onclick = () => reasonModal({ title: `Отключить тариф «${u.plan.name}»`, hint: svcHint, url: `/api/admin/users/${u.id}/plan/stop`, okLabel: 'Отключить тариф', reasons: SVC_REASONS, placeholder: 'Почему отключаем — для продавца' });
-    $$('[data-svc-promo]').forEach((b) => { b.onclick = () => reasonModal({ title: 'Отключить рекламу над поиском', hint: svcHint, url: `/api/admin/ads/${b.dataset.svcPromo}/stop`, okLabel: 'Отключить рекламу', reasons: SVC_REASONS, placeholder: 'Почему отключаем — для продавца' }); });
-    $$('[data-svc-boost]').forEach((b) => { b.onclick = () => reasonModal({ title: 'Отключить продвижение', hint: svcHint, url: `/api/admin/boosts/${b.dataset.svcBoost}/stop`, okLabel: 'Отключить продвижение', reasons: SVC_REASONS, placeholder: 'Почему отключаем — для продавца' }); });
-    const sc = $('[data-shop-clear]');
-    if (sc) sc.onclick = () => reasonModal({ title: 'Очистить витрину', hint: 'Уберём описание, обложку, часы, адрес и сайт. Тариф продолжит действовать. Причину увидит продавец.', url: `/api/admin/users/${u.id}/shop/clear`, okLabel: 'Очистить', reasons: ['Контакты и мессенджеры в описании', 'Оскорбительное или недостоверное содержание', 'Ссылка на подозрительный сайт', 'Чужое фото на обложке'], placeholder: 'Что не так — для продавца' });
-    bindModActions(app);
+  }
+  // Отключить идущее (даже оплаченное): тариф, рекламу над поиском, продвижение.
+  function bindStops(root) {
+    $$('[data-svc-plan]', root).forEach((b) => { b.onclick = () => reasonModal({ title: `Отключить тариф — ${b.dataset.name}`, hint: SVC_HINT, url: `/api/admin/users/${b.dataset.svcPlan}/plan/stop`, okLabel: 'Отключить тариф', reasons: SVC_REASONS, placeholder: 'Почему отключаем — для продавца' }); });
+    $$('[data-svc-promo]', root).forEach((b) => { b.onclick = () => reasonModal({ title: 'Отключить рекламу над поиском', hint: SVC_HINT, url: `/api/admin/ads/${b.dataset.svcPromo}/stop`, okLabel: 'Отключить рекламу', reasons: SVC_REASONS, placeholder: 'Почему отключаем — для продавца' }); });
+    $$('[data-svc-boost]', root).forEach((b) => { b.onclick = () => reasonModal({ title: 'Отключить продвижение', hint: SVC_HINT, url: `/api/admin/boosts/${b.dataset.svcBoost}/stop`, okLabel: 'Отключить продвижение', reasons: SVC_REASONS, placeholder: 'Почему отключаем — для продавца' }); });
   }
 
-  // Карточка пользователя в модерации: идущие платные услуги — тариф, реклама над поиском, продвижение —
-  // и подарки (1.44.0): тариф любому пользователю, реклама и продвижение — его объявлениям, бесплатно.
-  function svcBlock(u, sv, listings) {
-    sv = sv || { promos: [], boosts: [] };
-    const has = (st) => listings.some((i) => st.includes(i.status));
+  async function renderAdsAdmin(box, q) {
+    const uid = parseInt(q.get('u') || '0', 10) || 0;
+    const tab = ['plans', 'promos', 'boosts'].includes(q.get('t')) ? q.get('t') : 'promos';
+    const [d, stt, bill, target] = await Promise.all([api('GET', '/api/admin/ads'), api('GET', '/api/admin/starter'), api('GET', '/api/admin/billing'),
+      uid ? api('GET', `/api/admin/users/${uid}`).catch(() => null) : null]);
+    const pr = bill.prices;
+    const priceIn = (name, v, label) => html`<label class="price-in"><span>${label}</span><input class="input" name="${name}" inputmode="numeric" value="${v}"><em>₽</em></label>`;
+    const who = (x) => html`<a href="/admin?status=ads&u=${x.id}">${x.name}</a> <span class="muted">${x.email}</span>`;
     const row = (icon, t, sub, attr) => html`<div class="adm-svc-row"><span class="adm-svc-ic">${ic(icon, 18, 2)}</span><span class="adm-svc-txt"><b>${t}</b><span>${sub}</span></span><button type="button" class="btn btn-line btn-sm" ${raw(attr)}>Отключить</button></div>`;
-    return html`<div class="adm-svc"><h3 class="adm-sub" style="margin:0">Платные услуги</h3>
-      ${u.plan ? row('store', `${u.plan.trial ? 'Пробный тариф' : 'Тариф'} «${u.plan.name}»`, `до ${dateLong(u.plan.until)}`, 'data-svc-plan') : ''}
-      ${sv.promos.map((p) => row('megaphone', 'Реклама над поиском', html`<a href="/admin/l/${p.listingId}">«${p.title}»</a>${p.endsAt ? ` · до ${dateShort(p.endsAt)}` : ''}`, `data-svc-promo="${Number(p.id)}"`))}
-      ${sv.boosts.map((b) => row('bolt', `Продвижение${b.kinds.length ? `: ${b.kinds.join(', ')}` : ''}`, html`<a href="/admin/l/${b.listingId}">«${b.title}»</a> · ${b.status === 'active' ? `до ${dateShort(b.endsAt)}` : 'начнётся после проверки'}`, `data-svc-boost="${Number(b.id)}"`))}
-      ${!u.plan && !sv.promos.length && !sv.boosts.length ? html`<p class="muted" style="margin:0">Сейчас ничего не подключено.</p>` : ''}
-      ${u.blocked ? '' : html`<div class="adm-person-act">
-        <button type="button" class="btn btn-soft btn-sm" data-gift-plan>${ic('store', 16)}Подарить тариф</button>
-        ${has(['active']) ? html`<button type="button" class="btn btn-soft btn-sm" data-gift-promo>${ic('megaphone', 16)}Подарить рекламу</button>` : ''}
-        ${has(['active', 'pending', 'scheduled', 'rejected']) ? html`<button type="button" class="btn btn-soft btn-sm" data-gift-boost>${ic('bolt', 16)}Подарить продвижение</button>` : ''}</div>`}
-      <p class="muted" style="margin:0;font-size:13px">Отключение не возвращает деньги — возврат оформляется в <a href="/admin?status=payments" style="text-decoration:underline">«Платежах»</a>.</p></div>`;
+    const lists = {
+      promos: d.promos.map((p) => row('megaphone', p.title, html`${who(p.user)} · до ${dateShort(p.endsAt)} · показы ${NF.format(p.shows)}, переходы ${NF.format(p.clicks)}${p.gift ? ' · подарок' : ''}${p.listingId ? html` · <a href="/admin/l/${p.listingId}">объявление</a>` : ''}`, `data-svc-promo="${Number(p.id)}"`)),
+      boosts: d.boosts.map((b) => row('bolt', `${b.title}${b.kinds.length ? ` — ${b.kinds.join(', ')}` : ''}`, html`${who(b.user)} · ${b.status === 'active' ? `до ${dateShort(b.endsAt)}` : 'начнётся после проверки'}${b.gift ? ' · подарок' : ''}${b.listingId ? html` · <a href="/admin/l/${b.listingId}">объявление</a>` : ''}`, `data-svc-boost="${Number(b.id)}"`)),
+      plans: d.plans.map((p) => row('store', `«${p.plan.name}»${p.plan.trial ? ' · бесплатный' : ''}`, html`${who(p.user)} · до ${dateShort(p.plan.until)}`, `data-svc-plan="${Number(p.user.id)}" data-name="${p.user.name}"`))
+    };
+    const TABS = [['promos', 'Реклама над поиском', d.promos.length], ['boosts', 'Продвижение в ленте', d.boosts.length], ['plans', 'Тарифы', d.plans.length]];
+    const tu = target && target.user;
+    const has = (st) => target && target.listings.some((i) => st.includes(i.status));
+    box.innerHTML = String(html`<div class="adm-head"><h1>Реклама</h1><span class="muted">Тарифы, реклама над поиском, продвижение в ленте и подарки</span></div>
+      <div class="dash-tiles ads-tiles">
+        ${TABS.map(([k, t, n]) => html`<a class="dash-tile" href="/admin?status=ads&t=${k}${uid ? `&u=${uid}` : ''}#ads-now"><b>${NF.format(n)}</b><span>${t}</span><small>идёт сейчас</small></a>`)}
+        <a class="dash-tile" href="#ads-start"><b>${stt.on ? `${stt.used} / ${stt.limit}` : 'выкл.'}</b><span>Бесплатный старт</span><small>${stt.on ? `осталось мест: ${Math.max(0, stt.limit - stt.used)}` : 'выключен'}</small></a>
+      </div>
+
+      <section class="panel ads-gift">
+        <h2 class="h2" style="margin:0">${ic('gift', 20, 2)} Подарить</h2>
+        <form id="ads-find" class="search adm-search">${ic('search', 18)}<label class="sr" for="ads-q">Пользователь</label><input id="ads-q" name="q" placeholder="Email, имя или № пользователя" value="${tu ? tu.email : ''}" autocomplete="off"></form>
+        <div id="ads-found"></div>
+        ${uid && !tu ? html`<p class="muted" style="margin:0">Пользователь № ${uid} не найден.</p>` : ''}
+        ${tu ? html`<div class="ads-target">
+          <div class="ads-who">${ava(tu)}<span><b>${nameSeal(tu.name, { biz: tu.business && tu.business.status === 'verified' ? { kind: tu.business.kind === 'ip' ? 'ИП' : 'Компания', name: tu.business.name } : null })}</b><span class="muted">${tu.email} · № ${tu.id}${tu.plan ? ` · ${tu.plan.trial ? 'бесплатный ' : ''}«${tu.plan.name}» до ${dateShort(tu.plan.until)}` : ' · без тарифа'}</span></span>
+            <a class="btn btn-soft btn-sm" href="/admin/u/${tu.id}">Карточка</a></div>
+          ${tu.blocked ? html`<div class="banner danger">Пользователь заблокирован — дарить нельзя.</div>` : html`<div class="adm-person-act">
+            <button type="button" class="btn btn-dark btn-sm" data-gift-plan>${ic('store', 16)}Подарить тариф</button>
+            <button type="button" class="btn btn-soft btn-sm" data-gift-promo ${has(['active']) ? '' : raw('disabled title="Нет опубликованных объявлений"')}>${ic('megaphone', 16)}Подарить рекламу</button>
+            <button type="button" class="btn btn-soft btn-sm" data-gift-boost ${has(['active', 'pending', 'scheduled', 'rejected']) ? '' : raw('disabled title="Нет подходящих объявлений"')}>${ic('bolt', 16)}Подарить продвижение</button></div>`}
+          ${tu.plan || target.services.promos.length || target.services.boosts.length ? html`<div class="adm-svc">
+            ${tu.plan ? row('store', `${tu.plan.trial ? 'Бесплатный тариф' : 'Тариф'} «${tu.plan.name}»`, `до ${dateLong(tu.plan.until)}`, `data-svc-plan="${tu.id}" data-name="${tu.name}"`) : ''}
+            ${target.services.promos.map((p) => row('megaphone', 'Реклама над поиском', html`<a href="/admin/l/${p.listingId}">«${p.title}»</a> · до ${dateShort(p.endsAt)}`, `data-svc-promo="${Number(p.id)}"`))}
+            ${target.services.boosts.map((b) => row('bolt', `Продвижение${b.kinds.length ? `: ${b.kinds.join(', ')}` : ''}`, html`<a href="/admin/l/${b.listingId}">«${b.title}»</a> · ${b.status === 'active' ? `до ${dateShort(b.endsAt)}` : 'начнётся после проверки'}`, `data-svc-boost="${Number(b.id)}"`))}</div>` : ''}
+        </div>` : html`<p class="muted" style="margin:0;font-size:14px">Найдите пользователя — подарите тариф любому, а рекламу и продвижение — его объявлениям. Всё бесплатно, пользователь получит уведомление.</p>`}
+      </section>
+
+      <section class="panel" id="ads-now">
+        <h2 class="h2" style="margin:0">Идёт сейчас</h2>
+        <div class="seg adm-seg" role="tablist">${TABS.map(([k, t, n]) => html`<a role="tab" href="/admin?status=ads&t=${k}${uid ? `&u=${uid}` : ''}" class="${k === tab ? 'on' : ''}" aria-selected="${k === tab ? 'true' : 'false'}">${t} · ${n}</a>`)}</div>
+        ${lists[tab].length ? html`<div class="adm-svc">${lists[tab]}</div>` : html`<p class="muted" style="margin:0">Сейчас ничего не идёт.</p>`}
+        <p class="muted" style="margin:0;font-size:13px">Отключение не возвращает деньги — возврат оформляется в <a href="/admin?status=payments" style="text-decoration:underline">«Платежах»</a>.</p>
+      </section>
+
+      <div class="mail-grid">
+        <form class="panel settings" id="starter" style="max-width:none">
+          <div class="adm-head" style="margin:0" id="ads-start"><h2 class="h2" style="margin:0">Бесплатный старт</h2><span class="pf-badge ${stt.on ? 'ok' : ''}">${stt.on ? `занято ${stt.used} из ${stt.limit}` : 'выключено'}</span></div>
+          <p class="muted" style="margin:0;font-size:14px">Первые бизнес-аккаунты сами выбирают «Магазин» или «Магазин Про» за 0 ₽ на странице «Для бизнеса»; дальше — по обычной цене, если продлят. Один раз на аккаунт и на ИНН. Там же видно, сколько мест осталось.</p>
+          <label class="switch"><span>Бесплатный старт включён<small>Выключите — новые подключения прекратятся, выданные продолжат действовать</small></span><input type="checkbox" name="on" ${stt.on ? raw('checked') : ''}><span class="track"></span></label>
+          <div class="row stack-m">
+            <div class="field" style="flex:1"><label for="st-days">Дней бесплатно</label><input id="st-days" name="days" class="input" inputmode="numeric" value="${stt.days}"></div>
+            <div class="field" style="flex:1"><label for="st-limit">Мест</label><input id="st-limit" name="limit" class="input" inputmode="numeric" value="${stt.limit}"></div>
+          </div>
+          <div class="set-btns"><button class="btn btn-dark" type="submit">Сохранить</button></div>
+        </form>
+        <form class="panel settings" id="prices" style="max-width:none">
+          <h2 class="h2" style="margin:0">Цены</h2>
+          <p class="muted" style="margin:0;font-size:14px">Новые цены сразу видны на сайте; уже оплаченное не меняется.</p>
+          <h3 class="set-h3">${ic('store', 18, 2)}«Магазин»</h3><div class="price-row">${[1, 3, 12].map((m) => priceIn(`shop.${m}`, pr.shop[m], `${m} мес.`))}</div>
+          <h3 class="set-h3">${ic('store', 18, 2)}«Магазин Про»</h3><div class="price-row">${[1, 3, 12].map((m) => priceIn(`pro.${m}`, pr.pro[m], `${m} мес.`))}</div>
+          <h3 class="set-h3">${ic('bolt', 18, 2)}Продвижение в ленте · 7 дней</h3><div class="price-row">${[['xl', 'XL'], ['frame', 'Рамка'], ['tags', 'Метки'], ['all', 'Всё в одном']].map(([k, t]) => priceIn(`boost.${k}`, pr.boost[k], t))}</div>
+          <h3 class="set-h3">${ic('megaphone', 18, 2)}Реклама над поиском</h3><div class="price-row">${[3, 7, 30].map((dd) => priceIn(`promo.${dd}`, pr.promo[dd], `${dd} ${plural(dd, 'день', 'дня', 'дней')}`))}</div>
+          <div class="field"><label for="pd">Скидка на рекламу над поиском для «Магазин Про», %</label><input id="pd" name="proDiscount" class="input" inputmode="numeric" value="${pr.proDiscount}"></div>
+          <div class="set-btns"><button class="btn btn-dark" type="submit">Сохранить цены</button><button type="button" class="btn btn-soft" data-defaults>Цены по умолчанию</button></div>
+        </form>
+      </div>`);
+    const after = async (msg) => { S.config = await api('GET', '/api/config'); toast(msg); render(); };
+    $('#ads-find', box).onsubmit = async (e) => {
+      e.preventDefault();
+      const qv = e.target.q.value.trim();
+      const out = $('#ads-found', box);
+      if (!qv) { out.innerHTML = ''; return; }
+      try {
+        const r = await api('GET', `/api/admin/users?${new URLSearchParams({ q: qv })}`);
+        if (r.items.length === 1) { go(`/admin?status=ads&u=${r.items[0].id}`); return; }
+        out.innerHTML = String(r.items.length ? html`<div class="ads-found">${r.items.slice(0, 8).map((x) => html`<a href="/admin?status=ads&u=${x.id}">${ava(x)}<span><b>${x.name}</b><span class="muted">${x.email} · № ${x.id}</span></span></a>`)}</div>` : html`<p class="muted" style="margin:0">Никого не нашли.</p>`);
+      } catch (ex) { toast(ex.message, true); }
+    };
+    if (tu) bindGifts(box, tu, target.listings);
+    bindStops(box);
+    $('#starter', box).onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      try { await api('PUT', '/api/admin/starter', { on: f.on.checked, days: f.days.value, limit: f.limit.value }); await after('Сохранено'); } catch (ex) { toast(ex.message, true); }
+    };
+    const collect = (f) => { const b = { shop: {}, pro: {}, promo: {}, boost: {} }; for (const [k, v] of new FormData(f).entries()) { const [g, n] = k.split('.'); if (n) b[g][n] = v; else b[g] = parseInt(v, 10); } return b; };
+    $('#prices', box).onsubmit = async (e) => { e.preventDefault(); try { await api('PUT', '/api/admin/billing', { prices: collect(e.target) }); await after('Цены сохранены'); } catch (ex) { toast(ex.message, true); } };
+    $('[data-defaults]', box).onclick = async () => { try { await api('PUT', '/api/admin/billing', { prices: bill.defaults }); await after('Вернули цены по умолчанию'); } catch (ex) { toast(ex.message, true); } };
   }
 
   // ---------- журнал действий ----------
@@ -4771,7 +4855,7 @@
     'review-published': 'Опубликовал отзыв', 'review-rejected': 'Не опубликовал отзыв', 'review-hidden': 'Скрыл отзыв по жалобе', 'review-kept': 'Оставил отзыв после жалобы',
     'review-restored': 'Вернул отзыв', 'biz-verified': 'Подтвердил бизнес', 'biz-rejected': 'Отказал в подтверждении бизнеса', 'reply-published': 'Опубликовал ответ продавца', 'reply-rejected': 'Не опубликовал ответ продавца', 'support-reply': 'Ответил в поддержке',
     'billing-settings': 'Изменил настройки оплаты', 'billing-prices': 'Изменил цены', 'payment-refund': 'Оформил возврат', 'promo-erid': 'Указал erid и запустил рекламу',
-    'promo-stopped': 'Отключил рекламу над поиском', 'plan-stopped': 'Отключил тариф', 'boost-stopped': 'Отключил продвижение', 'user-deactivated': 'Временно удалил профиль', 'user-restored': 'Восстановил профиль', 'user-erased': 'Удалил профиль навсегда', 'seo-settings': 'Изменил настройки поиска и Метрики', 'ads-settings': 'Изменил настройки рекламы', 'shop-cleared': 'Очистил витрину магазина'
+    'promo-stopped': 'Отключил рекламу над поиском', 'plan-stopped': 'Отключил тариф', 'boost-stopped': 'Отключил продвижение', 'user-deactivated': 'Временно удалил профиль', 'user-restored': 'Восстановил профиль', 'user-erased': 'Удалил профиль навсегда', 'seo-settings': 'Изменил настройки поиска и Метрики', 'ads-settings': 'Изменил настройки рекламы', 'shop-cleared': 'Очистил витрину магазина', 'starter-settings': 'Изменил бесплатный старт'
   };
   const LOG_TONE = { 'promo-erid': 'ok', 'promo-stopped': 'bad', 'plan-stopped': 'bad', 'boost-stopped': 'bad', 'user-deactivated': 'bad', 'user-erased': 'bad', 'user-restored': 'ok', 'shop-cleared': 'bad', 'biz-verified': 'ok', 'biz-rejected': 'bad', rejected: 'bad', 'appeal-denied': 'bad', 'user-blocked': 'bad', 'review-rejected': 'bad', 'review-hidden': 'bad', 'reply-rejected': 'bad', approved: 'ok', restored: 'ok', 'appeal-approved': 'ok', 'user-unblocked': 'ok', 'review-published': 'ok', 'reply-published': 'ok', 'review-restored': 'ok' };
   function logRow(e) {
@@ -4948,13 +5032,12 @@
     });
   }
 
-  // ---------- оплата: подключение ЮKassa и цены ----------
+  // ---------- оплата: подключение ЮKassa (цены и бесплатный старт — в разделе «Реклама», 1.45.0) ----------
   async function renderBillingAdmin(box) {
-    const [d, stt] = await Promise.all([api('GET', '/api/admin/billing'), api('GET', '/api/admin/starter')]);
-    const c = d.config; const pr = d.prices;
+    const d = await api('GET', '/api/admin/billing');
+    const c = d.config;
     const opt = (map, cur) => Object.entries(map).map(([k, t]) => html`<option value="${k}" ${String(cur) === k ? raw('selected') : ''}>${t}</option>`);
-    const priceIn = (name, v, label) => html`<label class="price-in"><span>${label}</span><input class="input" name="${name}" inputmode="numeric" value="${v}"><em>₽</em></label>`;
-    box.innerHTML = String(html`<div class="adm-head"><h1>Оплата и цены</h1><span class="pf-badge ${c.ready ? 'ok' : ''}">${c.ready ? (c.test ? 'тестовый магазин' : 'ЮKassa подключена') : 'не подключена'}</span></div>
+    box.innerHTML = String(html`<div class="adm-head"><h1>Оплата</h1><span class="pf-badge ${c.ready ? 'ok' : ''}">${c.ready ? (c.test ? 'тестовый магазин' : 'ЮKassa подключена') : 'не подключена'}</span></div>
       <div class="mail-grid">
         <form class="panel settings" id="yk" style="max-width:none">
           <h2 class="h2" style="margin:0">ЮKassa</h2>
@@ -4969,33 +5052,7 @@
           <div class="field"><label for="yk-tax">Система налогообложения в чеке</label><select id="yk-tax" name="tax" class="select">${opt(d.tax, c.tax)}</select><span class="help">Нужна, только если у кассы несколько систем. Ставку НДС и систему налогообложения уточните у бухгалтера.</span></div>
           <div class="set-btns"><button class="btn btn-dark" type="submit">Сохранить</button>${c.ready ? html`<button type="button" class="btn btn-line" data-yk-off>Отключить</button>` : ''}</div>
         </form>
-        <form class="panel settings" id="prices" style="max-width:none">
-          <h2 class="h2" style="margin:0">Цены</h2>
-          <p class="muted" style="margin:0;font-size:14px">Новые цены сразу видны на странице «Для бизнеса»; уже оплаченное не меняется.</p>
-          <h3 class="set-h3">${ic('store', 18, 2)}«Магазин»</h3><div class="price-row">${[1, 3, 12].map((m) => priceIn(`shop.${m}`, pr.shop[m], `${m} мес.`))}</div>
-          <h3 class="set-h3">${ic('store', 18, 2)}«Магазин Про»</h3><div class="price-row">${[1, 3, 12].map((m) => priceIn(`pro.${m}`, pr.pro[m], `${m} мес.`))}</div>
-          <h3 class="set-h3">${ic('bolt', 18, 2)}Продвижение в ленте · 7 дней</h3><div class="price-row">${[['xl', 'XL'], ['frame', 'Рамка'], ['tags', 'Метки'], ['all', 'Всё в одном']].map(([k, t]) => priceIn(`boost.${k}`, pr.boost[k], t))}</div>
-          <h3 class="set-h3">${ic('megaphone', 18, 2)}Реклама над поиском</h3><div class="price-row">${[3, 7, 30].map((dd) => priceIn(`promo.${dd}`, pr.promo[dd], `${dd} ${plural(dd, 'день', 'дня', 'дней')}`))}</div>
-          <div class="field"><label for="pd">Скидка на продвижение для «Магазин Про», %</label><input id="pd" name="proDiscount" class="input" inputmode="numeric" value="${pr.proDiscount}"></div>
-          <div class="set-btns"><button class="btn btn-dark" type="submit">Сохранить цены</button><button type="button" class="btn btn-soft" data-defaults>Цены по умолчанию</button></div>
-        </form>
-        <form class="panel settings" id="starter" style="max-width:none">
-          <div class="adm-head" style="margin:0"><h2 class="h2" style="margin:0">Пробный тариф первым магазинам</h2><span class="pf-badge ${stt.on ? 'ok' : ''}">${stt.on ? `выдано ${stt.used} из ${stt.limit}` : 'выключено'}</span></div>
-          <p class="muted" style="margin:0;font-size:14px">Тариф включается сам, когда модератор подтверждает бизнес, — и сразу всем уже подтверждённым магазинам без тарифа. Один раз на компанию (по ИНН). Оплата не нужна. На странице «Для бизнеса» видно, сколько мест осталось.</p>
-          <label class="switch"><span>Дарить тариф первым магазинам<small>Выключите — новые подарки прекратятся, выданные продолжат действовать</small></span><input type="checkbox" name="on" ${stt.on ? raw('checked') : ''}><span class="track"></span></label>
-          <div class="row stack-m">
-            <div class="field" style="flex:2"><label for="st-plan">Тариф</label><select id="st-plan" name="plan" class="select"><option value="pro" ${stt.plan === 'pro' ? raw('selected') : ''}>«Магазин Про»</option><option value="shop" ${stt.plan === 'shop' ? raw('selected') : ''}>«Магазин»</option></select></div>
-            <div class="field" style="flex:1"><label for="st-days">Дней</label><input id="st-days" name="days" class="input" inputmode="numeric" value="${stt.days}"></div>
-            <div class="field" style="flex:1"><label for="st-limit">Мест</label><input id="st-limit" name="limit" class="input" inputmode="numeric" value="${stt.limit}"></div>
-          </div>
-          <div class="set-btns"><button class="btn btn-dark" type="submit">Сохранить</button></div>
-        </form>
       </div>`);
-    $('#starter', box).onsubmit = async (e) => {
-      e.preventDefault();
-      const f = e.target;
-      try { const r = await api('PUT', '/api/admin/starter', { on: f.on.checked, plan: f.plan.value, days: f.days.value, limit: f.limit.value }); await after(r.granted ? `Сохранено. Подарили тариф ${r.granted} ${plural(r.granted, 'магазину', 'магазинам', 'магазинам')}` : 'Сохранено'); } catch (ex) { toast(ex.message, true); }
-    };
     $$('[data-copy]', box).forEach((b) => { b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Скопировано'); } catch { toast(b.dataset.copy); } }; });
     const after = async (msg) => { S.config = await api('GET', '/api/config'); toast(msg); render(); };
     $('#yk', box).onsubmit = async (e) => {
@@ -5005,9 +5062,6 @@
     };
     const off = $('[data-yk-off]', box);
     if (off) off.onclick = async () => { if (!(await confirmModal('Отключить оплату?', 'Кнопки оплаты пропадут с сайта. Уже оплаченные тарифы и продвижение продолжат работать.', 'Отключить', true))) return; try { await api('PUT', '/api/admin/billing', { config: { clear: true } }); await after('Оплата отключена'); } catch (ex) { toast(ex.message, true); } };
-    const collect = (f) => { const b = { shop: {}, pro: {}, promo: {}, boost: {} }; for (const [k, v] of new FormData(f).entries()) { const [g, n] = k.split('.'); if (n) b[g][n] = v; else b[g] = parseInt(v, 10); } return b; };
-    $('#prices', box).onsubmit = async (e) => { e.preventDefault(); try { await api('PUT', '/api/admin/billing', { prices: collect(e.target) }); await after('Цены сохранены'); } catch (ex) { toast(ex.message, true); } };
-    $('[data-defaults]', box).onclick = async () => { try { await api('PUT', '/api/admin/billing', { prices: d.defaults }); await after('Вернули цены по умолчанию'); } catch (ex) { toast(ex.message, true); } };
   }
 
   // ---------- поиск и статистика: Вебмастер, Search Console, Метрика ----------

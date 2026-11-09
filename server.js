@@ -103,7 +103,7 @@ function publicUser(u) {
     id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, avatar: photoUrl(u.avatar), isAdmin: !!u.is_admin, isOwner: !!u.is_admin && u.email === OWNER_EMAIL, createdAt: u.created_at,
     emailVerified: !!u.email_verified, ...Object.fromEntries(Object.entries(NOTIFY_FIELDS).map(([k, col]) => [k, !!u[col]])),
     rating: reviews.ratingOf(u.id), badges: badgesOf(u), business: trust.bizOf(u), phoneVia: u.phone_verified ? u.phone_verified_via : '', oauth: oauth.linkedOf(u.id),
-    plan: business.planOf(u), deactivatedAt: u.deactivated_at || null
+    plan: business.planOf(u), bizAccount: !!u.biz_account, deactivatedAt: u.deactivated_at || null
   } : null;
 }
 
@@ -318,7 +318,7 @@ const oauth = require('./lib/oauth')({ route, db, h: helpers, auth, baseUrl: PUB
 helpers.logEvent = logEvent;
 helpers.categoryIds = CATEGORY_IDS;
 const billing = require('./lib/billing')({ route, db, h: helpers, mailer, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, testBase: process.env.YOOKASSA_TEST_BASE || '' });
-const business = require('./lib/business')({ route, db, h: helpers, billing, mailer, stats, trust });
+const business = require('./lib/business')({ route, db, h: helpers, billing, mailer, stats });
 const promo = require('./lib/promo')({ route, db, h: helpers, billing, business, stats, mailer, searchSpec, specSql, categoryIds: CATEGORY_IDS });
 // Продвижение в ленте и поиске для всех продавцов: XL-карточка, рамка, метки на фото (1.21.0).
 const boost = require('./lib/boost')({ route, db, h: helpers, billing });
@@ -376,7 +376,7 @@ route('PUT', '/api/admin/seo', async (ctx) => {
 route('GET', '/api/my/business', (ctx) => {
   const u = requireUser(ctx);
   return {
-    plan: business.planOf(u), prices: billing.prices(), ready: billing.ready(), biz: trust.bizOf(u),
+    plan: business.planOf(u), prices: billing.prices(), ready: billing.ready(), biz: trust.bizOf(u), bizAccount: !!u.biz_account, trial: business.trialBlock(u) === '', trialWhy: business.trialBlock(u),
     shop: { cover: photoUrl(u.shop_cover), about: u.shop_about, hours: u.shop_hours, address: u.shop_address, site: u.shop_site },
     feed: feed.publicFeed(u), promotions: promo.listFor(u.id), payments: billing.listFor(u.id)
   };

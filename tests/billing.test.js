@@ -187,7 +187,8 @@ test('продвижение: скидка «Про», запуск сразу �
   await payAndNotify(r);
   const cur = (await shop.get(`/api/listings/${id}`)).data.promo;
   assert.equal(cur.status, 'active', 'запускается сразу после оплаты');
-  assert.equal((await admin.get('/api/admin/ads')).status, 404, '1.40.0: очереди маркировки нет');
+  // 1.40.0: очереди маркировки нет; 1.45.0: /api/admin/ads — раздел «Реклама», оплаченное видно сразу как идущее.
+  assert.ok((await admin.get('/api/admin/ads')).data.promos.some((p) => p.listingId === id && !p.gift), 'в разделе «Реклама»');
   assert.ok(cur.endsAt - Date.now() > 6.9 * 86400000);
 
   const hit = (await client(srv.base).get(`/api/ads?${new URLSearchParams({ q: 'коляска', city: 'Казань' })}`)).data.items;

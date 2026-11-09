@@ -177,6 +177,8 @@ async function seed(base, browser) {
   await pay(await shop.post(`/api/listings/${s1}/promote`, { days: 7 }));
   await pay(await shop.post(`/api/listings/${s2}/promote`, { days: 30 }));
   const pendingPay = (await shop.post('/api/my/plan/pay', { plan: 'pro', months: 12 })).data.id;
+  // 1.45: бесплатный старт первым бизнес-аккаунтам — 0 ₽ и зачёркнутая цена на странице «Для бизнеса».
+  await admin.put('/api/admin/starter', { on: true, days: 90, limit: 100 });
   for (let i = 0; i < 3; i++) await client(base).post('/api/stats/impressions', { ids: [s1, s2] }, { origin: base, 'user-agent': ua(20 + i) });
   await client(base).post('/api/stats/view', { id: s1, src: 'ad' }, { origin: base, 'user-agent': ua(20) });
   // 1.20: проверенное объявление ждёт выбранного времени; обмен — у дивана.
@@ -281,8 +283,11 @@ function pages(d) {
     ['admin-ai', '/admin?status=ai', d.admin],
     ['admin-sources', '/admin?status=sources', d.admin],
     ['admin-user', `/admin/u/${d.seller.user.id}`, d.admin],
-    ['admin-gift-boost', `/admin/u/${d.seller.user.id}`, d.admin, '[data-gift-boost]'], // 1.44: подарить продвижение
-    ['admin-gift-promo', `/admin/u/${d.seller.user.id}`, d.admin, '[data-gift-promo]'],
+    // 1.45: «Реклама» в модерации — подарки, идущее, бесплатный старт и цены
+    ['admin-ads', `/admin?status=ads&u=${d.seller.user.id}`, d.admin],
+    ['admin-ads-plans', '/admin?status=ads&t=plans', d.admin],
+    ['admin-gift-boost', `/admin?status=ads&u=${d.seller.user.id}`, d.admin, '[data-gift-boost]'], // 1.44: подарить продвижение
+    ['admin-gift-promo', `/admin?status=ads&u=${d.seller.user.id}`, d.admin, '[data-gift-promo]'],
     // 1.39: удаление профиля — экран восстановления и карточка временно удалённого в модерации
     ['account-gone', '/profile', d.gone],
     ['admin-user-gone', `/admin/u/${d.gone.user.id}`, d.admin],
@@ -307,6 +312,7 @@ function pages(d) {
     ['business', '/business', null],
     ['business-pro', '/business?m=12', d.shop],
     ['business-nobiz', '/business', d.buyer],
+    ['business-free', '/business', d.seller], // 1.45: бизнес-аккаунт включён, бесплатный старт доступен
     ['biz-hub', '/profile/business', d.shop],
     ['biz-hub-empty', '/profile/business', d.buyer],
     ['biz-shop', '/profile/business/shop', d.shop],
