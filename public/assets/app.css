@@ -380,7 +380,6 @@ button { cursor: pointer; }
 .pub-acts .btn { flex: 1; }
 .pub-share { width: 48px; height: 48px; background: #fff; }
 .pub .seg-lg { align-self: flex-start; }
-.pub .shop-hero { margin: 0; }
 .pub-rv-sum { margin-bottom: 18px; padding: 20px; border-radius: 24px; background: var(--surface); }
 .switch small { display: block; font-size: 13px; color: var(--muted); font-weight: 400; margin-top: 2px; }
 .sheet-title { font-size: 17px; font-weight: 700; padding: 0 4px 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1293,18 +1292,11 @@ a.rep-line:hover { color: var(--text); text-decoration: underline; }
 .shop-cover-edit.has { border-style: solid; border-color: transparent; }
 .shop-cover-edit img { width: 100%; height: 100%; object-fit: cover; }
 .sce-hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 999px; background: rgba(255, 255, 255, .92); font-size: 14px; font-weight: 600; white-space: nowrap; }
-.shop-hero { margin-bottom: 20px; border: 1px solid var(--line); border-radius: var(--r-card); overflow: hidden; }
-.shop-cover { aspect-ratio: 3 / 1; max-height: 260px; width: 100%; background: radial-gradient(60% 120% at 100% 0%, rgba(46, 156, 116, .35), transparent 70%), linear-gradient(135deg, #121B17, #1F5E4A); }
-.shop-cover img { width: 100%; height: 100%; object-fit: cover; }
-.shop-body { display: flex; flex-direction: column; gap: 12px; padding: 22px 24px 24px; }
-.shop-name { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-.shop-name h2 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.03em; }
 .shop-about { margin: 0; font-size: 15px; line-height: 1.6; color: var(--text-2); white-space: pre-line; }
 .shop-facts { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 14px; color: var(--text-2); }
 .shop-facts > * { display: inline-flex; align-items: center; gap: 7px; }
 .shop-facts svg { flex: none; color: var(--accent); }
 .shop-facts a { color: var(--accent); font-weight: 600; }
-@media (max-width: 600px) { .shop-cover { aspect-ratio: 2 / 1; } .shop-body { padding: 18px; } .shop-hero { border-radius: 24px; } }
 
 /* Статистика магазина: список объявлений */
 .sst { display: flex; flex-direction: column; }
@@ -2961,3 +2953,22 @@ body.pv-open { overflow: hidden; }
 .pf-tools a { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; border-radius: 18px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 650; text-align: center; }
 .pf-tools a:hover { background: #D9E8E1; }
 @media (max-width: 760px) { .pf-cover { height: 104px; } }
+
+/* 1.46.1: шапка магазина в публичном профиле — одна карточка: обложка, тариф, фото поверх обложки, название, описание */
+.pub-hero.is-shop { position: relative; padding-top: 0; overflow: hidden; background: #fff; border: 1px solid var(--line); }
+.psh-cover { position: relative; flex: 1 1 100%; height: 220px; margin: 0 -32px; background: radial-gradient(60% 120% at 100% 0%, rgba(46, 156, 116, .45), transparent 70%), linear-gradient(135deg, #121B17, #1F5E4A); }
+.pub-hero.pro .psh-cover { background: radial-gradient(60% 120% at 100% 0%, rgba(143, 217, 188, .4), transparent 70%), linear-gradient(135deg, #0B0F0E, #17493A); }
+.psh-cover img { width: 100%; height: 100%; object-fit: cover; }
+.psh-cover .pf-plan { position: absolute; left: 20px; top: 18px; }
+.pub-hero.is-shop .pub-ava { position: relative; z-index: 1; align-self: flex-start; margin-top: -76px; }
+.pub-hero.is-shop .pub-ava .avatar { box-shadow: 0 0 0 5px #fff; }
+.pub-hero.is-shop .shop-about { max-width: 620px; }
+.pub-hero.is-shop .pf-num { background: var(--surface); }
+.pub-hero.is-shop .pf-badge:not(.dark):not(.seal) { background: var(--surface); }
+@media (max-width: 760px) {
+  .pub-hero.is-shop { gap: 14px; }
+  .psh-cover { height: 150px; margin: 0 -18px; }
+  .psh-cover .pf-plan { left: 14px; top: 14px; }
+  .pub-hero.is-shop .pub-ava { margin-top: -58px; }
+  .pub-hero.is-shop .pub-who { flex: 1 1 100%; margin-top: -4px; }
+}
