@@ -3587,7 +3587,6 @@
     $('#box').innerHTML = String(html`<div class="rep-page">
       ${repCard(d.rep)}${repHow()}
       ${d.against.length || d.mine.length ? html`<section class="rep-issues"><h2>Жалобы по сделкам</h2>${d.against.map((x) => row(x, false))}${d.mine.map((x) => row(x, true))}</section>` : ''}
-      ${S.user.rating && S.user.rating.count ? html`<a class="rep-old" href="/profile/reviews?old=1">${ic('star', 16, 2)}Отзывы до 9 ноября · ${S.user.rating.count}</a>` : ''}
     </div>`);
     $$('[data-issue-reply]').forEach((b) => {
       b.onclick = () => openModal(String(html`<h2>Ваше объяснение</h2><p class="muted" style="margin:0 0 12px">Увидит только модератор. Ответить можно один раз.</p>
@@ -4079,19 +4078,8 @@
     </div>`);
     $('[data-share]').onclick = () => shareLink(`${location.origin}/u/${u.id}`, `${u.name} на Торгане`);
     if (tab !== 'reviews') return;
-    // 1.46.0: репутация; старые отзывы — свёрнутым архивом.
-    let offset = 0; let acc = [];
-    const box = $('#box');
-    box.innerHTML = String(html`<div class="rep-page">${repCard(u.rep)}${repHow()}
-      ${u.rating.count ? html`<details class="rep-archive"><summary>${ic('star', 16, 2)}Отзывы до 9 ноября · ${u.rating.count}</summary><div data-old-rv><div class="loader"></div></div></details>` : ''}</div>`);
-    const arch = $('.rep-archive', box);
-    const load = async () => {
-      const d = await api('GET', `/api/users/${u.id}/reviews?offset=${offset}`);
-      acc = acc.concat(d.items); offset += d.items.length;
-      $('[data-old-rv]', box).innerHTML = String(html`<div class="rv-list">${acc.map((rv) => reviewCard(rv))}</div>${d.more ? html`<div class="more"><button class="btn btn-soft" type="button" data-more-rv>Показать ещё</button></div>` : ''}`);
-      const mb = $('[data-more-rv]', box); if (mb) mb.onclick = () => load().catch((e) => toast(e.message, true));
-    };
-    if (arch) arch.addEventListener('toggle', () => { if (arch.open && !acc.length) load().catch((e) => toast(e.message, true)); });
+    // 1.46.0: репутация; 1.47.2: старые отзывы в профиле больше не показываются.
+    $('#box').innerHTML = String(html`<div class="rep-page">${repCard(u.rep)}${repHow()}</div>`);
   }
 
   // ================= для бизнеса: тарифы, оплата, продвижение =================

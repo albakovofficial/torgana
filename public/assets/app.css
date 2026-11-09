@@ -2935,8 +2935,6 @@ body.pv-open { overflow: hidden; }
 }
 .rep-page { display: flex; flex-direction: column; gap: 14px; max-width: 720px; }
 .rep-link { display: block; color: inherit; }
-.rep-old, .rep-archive summary { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-2); cursor: pointer; }
-.rep-archive .rv-list { margin-top: 12px; }
 .rep-issues { display: flex; flex-direction: column; gap: 8px; }
 .rep-issues h2 { margin: 6px 0 2px; font-size: 18px; }
 .rep-issue { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px; border-radius: 18px; border: 1px solid var(--line); font-size: 14px; }
