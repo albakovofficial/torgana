@@ -3044,6 +3044,7 @@
           slot.dataset.state = JSON.stringify(st);
           slot.innerHTML = String(dealBar(st));
           bindDeal(slot, convId, async () => { const x = await api('GET', `/api/conversations/${convId}?after=999999999`); slot.dataset.state = ''; paintDeal(x.deal); });
+          dealWow(convId, st, slot);
         };
         paintDeal(r.deal);
         return r;
@@ -3140,7 +3141,7 @@
     const issue = st.issue ? html`<span class="deal-issue">${ic('warn', 14, 2)}${{ open: 'Жалоба у модератора', confirmed: 'Жалоба подтверждена', dismissed: 'Жалоба не подтвердилась' }[st.issue.status]}</span>` : '';
     const problem = st.canIssue && !st.issue ? html`<button type="button" class="link-btn deal-problem" data-deal-issue>Что-то пошло не так</button>` : '';
     if (st.confirmed && !st.praised) {
-      return html`<div class="deal-bar"><b>${ic('check', 16, 2.6)}Сделка засчитана. Что понравилось?</b>
+      return html`<div class="deal-bar"><b>${ic('check', 16, 2.6)}Сделка подтверждена. Что понравилось?</b>
         <div class="deal-tags">${st.tags.map((t) => html`<button type="button" class="chip" data-deal-tag="${t}" aria-pressed="false">${t}</button>`)}</div>
         <div class="deal-acts"><button type="button" class="btn btn-dark btn-sm" data-deal-praise disabled>Отправить</button>${problem}${issue}</div></div>`;
     }
@@ -3150,8 +3151,57 @@
     return html`<div class="deal-bar ask"><b>Сделка состоялась?${st.other ? html` <span class="muted">${st.role === 'buyer' ? 'Продавец' : 'Покупатель'} уже подтвердил</span>` : ''}</b>
       <div class="deal-acts"><button type="button" class="btn btn-dark btn-sm" data-deal="yes">Да</button><button type="button" class="btn btn-soft btn-sm" data-deal="no">Нет</button>${problem}${issue}</div></div>`;
   }
+  // 1.47.2: экран «Сделка состоялась» — один раз на сделку, когда её подтвердили обе стороны
+  // (тому, кто подтвердил вторым, — сразу; первому — когда откроет чат). Что уже показали — в localStorage.
+  const DW_KEY = 'tg-deal-wow';
+  const dealWowSeen = (id) => { try { return (localStorage.getItem(DW_KEY) || '').split(',').includes(String(id)); } catch { return false; } };
+  const dealWowMark = (id) => { try { const a = (localStorage.getItem(DW_KEY) || '').split(',').filter(Boolean); a.push(String(id)); localStorage.setItem(DW_KEY, a.slice(-200).join(',')); } catch { /* приватный режим */ } };
+  // Картинка экрана: аватарка Торганы (как у «Поддержки Торганы») и наша галочка проверки, мягкое свечение и искры.
+  const dealWowArt = () => raw(`<svg class="dw-svg" viewBox="0 0 240 210" width="240" height="210" aria-hidden="true">
+      <defs>
+        <radialGradient id="dwH" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#DCE6FF"/><stop offset=".6" stop-color="#ECE8FF" stop-opacity=".7"/><stop offset="1" stop-color="#F3F1FF" stop-opacity="0"/></radialGradient>
+        <linearGradient id="dwA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4C86E0"/><stop offset=".55" stop-color="#3D67D0"/><stop offset="1" stop-color="#6A63D8"/></linearGradient>
+        <linearGradient id="dwG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".32"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+        <filter id="dwS" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#3D4FB8" flood-opacity=".28"/></filter>
+      </defs>
+      <circle cx="120" cy="104" r="104" fill="url(#dwH)"/>
+      <g class="dw-rings" fill="none" stroke="#B9B4F5"><circle cx="120" cy="104" r="86" stroke-opacity=".35"/><circle cx="120" cy="104" r="72" stroke-opacity=".5" stroke-dasharray="2 6" stroke-linecap="round"/></g>
+      <g class="dw-ava" filter="url(#dwS)">
+        <circle cx="120" cy="104" r="56" fill="url(#dwA)"/>
+        <ellipse cx="112" cy="76" rx="40" ry="22" fill="url(#dwG)"/>
+        <circle cx="120" cy="104" r="55" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="2"/>
+        <g transform="translate(64 48) scale(2.3333) translate(6.5 6.5) scale(.73)"><path d="M13.5 11H34.5a4.5 4.5 0 0 1 0 9H13.5L9 15.5z" fill="#fff" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/><rect x="19.5" y="15" width="9" height="24" rx="4.5" fill="#fff"/><circle cx="14.6" cy="15.5" r="1.7" fill="#4566D2"/></g>
+      </g>
+      <g class="dw-seal"><circle cx="164" cy="146" r="29" fill="#fff"/>${String(verifiedSeal(50)).replace('<svg class="vseal"', '<svg class="vseal" x="139" y="121"')}</g>
+      <g class="dw-sp"><path d="M200 50l3.5 8.5 8.5 3.5-8.5 3.5-3.5 8.5-3.5-8.5-8.5-3.5 8.5-3.5z" fill="#8FA8FF"/><path d="M38 136l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#B3A4F7"/><path d="M48 40l2.5 6 6 2.5-6 2.5-2.5 6-2.5-6-6-2.5 6-2.5z" fill="#9CC0FF"/><circle cx="206" cy="122" r="3.5" fill="#C9BEFF"/><circle cx="70" cy="178" r="3" fill="#9CC0FF"/></g>
+    </svg>`);
+  function dealWow(convId, st, slot) {
+    if (!st || !st.confirmed || dealWowSeen(convId) || $('.dw')) return;
+    dealWowMark(convId);
+    const back = document.createElement('div');
+    back.className = 'dw';
+    back.innerHTML = String(html`<div class="dw-card" role="dialog" aria-modal="true" aria-labelledby="dw-t" tabindex="-1">
+      <button type="button" class="dw-x" data-dw-x aria-label="Закрыть">${ic('close', 24, 2)}</button>
+      <div class="dw-art">${dealWowArt()}</div>
+      <h2 id="dw-t">Сделка состоялась</h2>
+      <p>Вы оба подтвердили её в чате. Спасибо — так репутация на Торгане остаётся честной</p>
+      <div class="dw-acts">${st.praised ? html`<button type="button" class="btn btn-accent" data-dw-x>Вернуться в чат</button>`
+        : html`<button type="button" class="btn btn-soft" data-dw-x>Позже</button><button type="button" class="btn btn-accent" data-dw-praise>${ic('sparkle', 18, 2)}Отметить, что понравилось</button>`}</div>
+    </div>`);
+    document.body.appendChild(back);
+    document.documentElement.classList.add('dw-open');
+    const prev = document.activeElement;
+    const close = () => { back.remove(); document.documentElement.classList.remove('dw-open'); document.removeEventListener('keydown', onKey); if (prev && prev.focus) prev.focus(); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    back.addEventListener('mousedown', (e) => { if (e.target === back) close(); });
+    $$('[data-dw-x]', back).forEach((b) => { b.onclick = close; });
+    const pr = $('[data-dw-praise]', back);
+    if (pr) pr.onclick = () => { close(); const t = slot && $('[data-deal-tag]', slot); if (t) { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); t.focus({ preventScroll: true }); } };
+    $('.dw-card', back).focus(); // фокус в окне, без рамки на кнопке; Tab — к кнопкам
+  }
   function bindDeal(slot, convId, reset) {
-    $$('[data-deal]', slot).forEach((b) => { b.onclick = async () => { try { await api('POST', `/api/conversations/${convId}/deal`, { answer: b.dataset.deal }); if (b.dataset.deal === 'yes') toast('Отмечено'); reset(); } catch (e) { toast(e.message, true); } }; });
+    $$('[data-deal]', slot).forEach((b) => { b.onclick = async () => { try { const r = await api('POST', `/api/conversations/${convId}/deal`, { answer: b.dataset.deal }); if (b.dataset.deal === 'yes' && !(r && r.deal && r.deal.confirmed)) toast('Отмечено'); reset(); } catch (e) { toast(e.message, true); } }; });
     const tags = $$('[data-deal-tag]', slot); const send = $('[data-deal-praise]', slot);
     tags.forEach((b) => {
       b.onclick = () => {
@@ -4974,17 +5024,16 @@
   const LOG_TEXT = {
     approved: 'Опубликовал объявление', restored: 'Восстановил объявление', 'appeal-approved': 'Одобрил апелляцию', 'appeal-denied': 'Отказал по апелляции',
     'reports-dismissed': 'Закрыл жалобы на объявление', 'plan-gift': 'Подарил тариф', 'promo-gift': 'Подарил рекламу над поиском', 'boost-gift': 'Подарил продвижение в ленте', 'avatar-removed': 'Убрал фото профиля', 'user-blocked': 'Заблокировал пользователя', 'user-unblocked': 'Разблокировал пользователя',
-    'review-published': 'Опубликовал отзыв', 'review-rejected': 'Не опубликовал отзыв', 'review-hidden': 'Скрыл отзыв по жалобе', 'review-kept': 'Оставил отзыв после жалобы',
-    'review-restored': 'Вернул отзыв', 'biz-verified': 'Подтвердил бизнес', 'biz-rejected': 'Отказал в подтверждении бизнеса', 'reply-published': 'Опубликовал ответ продавца', 'reply-rejected': 'Не опубликовал ответ продавца', 'support-reply': 'Ответил в поддержке',
+    'biz-verified': 'Подтвердил бизнес', 'biz-rejected': 'Отказал в подтверждении бизнеса', 'support-reply': 'Ответил в поддержке',
     'billing-settings': 'Изменил настройки оплаты', 'billing-prices': 'Изменил цены', 'payment-refund': 'Оформил возврат', 'promo-erid': 'Указал erid и запустил рекламу',
     'promo-stopped': 'Отключил рекламу над поиском', 'plan-stopped': 'Отключил тариф', 'boost-stopped': 'Отключил продвижение', 'user-deactivated': 'Временно удалил профиль', 'user-restored': 'Восстановил профиль', 'user-erased': 'Удалил профиль навсегда', 'seo-settings': 'Изменил настройки поиска и Метрики', 'ads-settings': 'Изменил настройки рекламы', 'shop-cleared': 'Очистил витрину магазина', 'starter-settings': 'Изменил бесплатный старт', 'issue-confirmed': 'Подтвердил жалобу по сделке', 'issue-dismissed': 'Закрыл жалобу по сделке', 'deal-counted': 'Засчитал подозрительную сделку', 'deal-dropped': 'Не засчитал подозрительную сделку', 'tm-verified': 'Выдал галочку бренда', 'tm-rejected': 'Вернул заявку на галочку на исправление', 'tm-doc-viewed': 'Открыл документ заявки на галочку'
   };
-  const LOG_TONE = { 'promo-erid': 'ok', 'promo-stopped': 'bad', 'plan-stopped': 'bad', 'boost-stopped': 'bad', 'user-deactivated': 'bad', 'user-erased': 'bad', 'user-restored': 'ok', 'shop-cleared': 'bad', 'biz-verified': 'ok', 'biz-rejected': 'bad', 'tm-verified': 'ok', 'tm-rejected': 'bad', rejected: 'bad', 'appeal-denied': 'bad', 'user-blocked': 'bad', 'review-rejected': 'bad', 'review-hidden': 'bad', 'reply-rejected': 'bad', approved: 'ok', restored: 'ok', 'appeal-approved': 'ok', 'user-unblocked': 'ok', 'review-published': 'ok', 'reply-published': 'ok', 'review-restored': 'ok' };
+  const LOG_TONE = { 'promo-erid': 'ok', 'promo-stopped': 'bad', 'plan-stopped': 'bad', 'boost-stopped': 'bad', 'user-deactivated': 'bad', 'user-erased': 'bad', 'user-restored': 'ok', 'shop-cleared': 'bad', 'biz-verified': 'ok', 'biz-rejected': 'bad', 'tm-verified': 'ok', 'tm-rejected': 'bad', rejected: 'bad', 'appeal-denied': 'bad', 'user-blocked': 'bad', approved: 'ok', restored: 'ok', 'appeal-approved': 'ok', 'user-unblocked': 'ok' };
   function logRow(e) {
     const act = e.action === 'rejected' ? (e.data.from === 'pending' ? 'Отклонил объявление' : 'Снял с публикации') : LOG_TEXT[e.action] || e.action;
     const target = e.listing ? html`<a href="/admin/l/${e.listing.id}">«${e.listing.title}»</a>`
-      : e.action.startsWith('review') || e.action.startsWith('reply') ? html`по «${e.data.title}»` : '';
-    const who = e.user && !e.listing && !e.action.startsWith('review') && !e.action.startsWith('reply') ? html`<a href="/admin/u/${e.user.id}">${e.user.name}</a>` : '';
+      : '';
+    const who = e.user && !e.listing ? html`<a href="/admin/u/${e.user.id}">${e.user.name}</a>` : '';
     const reason = e.data.reason || e.data.comment || e.data.text;
     return html`<div class="adm-log-row">
       <span class="adm-log-dot ${LOG_TONE[e.action] || ''}"></span>
@@ -5530,7 +5579,7 @@
   function renderMailAdmin(box, { config: c, stats: st, codes }) {
     const SECURITY = [['ssl', 'SSL (обычно порт 465)'], ['starttls', 'STARTTLS (порт 587 или 2525)']];
     const STATUS = { pending: 'в очереди', sent: 'отправлено', failed: 'не доставлено' };
-    const KIND = { device: 'Код для модерации', ops: 'Владельцу о сбое', verify: 'Подтверждение email', reset: 'Восстановление пароля', message: 'Новое сообщение', moderation: 'Модерация', review: 'Отзывы', support: 'Ответ поддержки', account: 'Блокировка аккаунта', mod: 'Модератору о новом', billing: 'Оплата и тарифы', code: 'Код подтверждения', test: 'Проверка' };
+    const KIND = { device: 'Код для модерации', ops: 'Владельцу о сбое', verify: 'Подтверждение email', reset: 'Восстановление пароля', message: 'Новое сообщение', moderation: 'Модерация', support: 'Ответ поддержки', account: 'Блокировка аккаунта', mod: 'Модератору о новом', billing: 'Оплата и тарифы', code: 'Код подтверждения', test: 'Проверка' };
     const domain = (c.from || 'no-reply@torgana.ru').split('@')[1];
     box.innerHTML = String(html`
       <div class="stats">

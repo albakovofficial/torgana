@@ -197,6 +197,7 @@ async function seed(base, browser, srv) {
   // Регистраций с одного адреса — не больше 10 за 10 минут: трое уже есть, двое новых.
   const askers = [buyer, critic, shop];
   for (let i = 0; i < 2; i++) askers.push(await registerUser(base, { name: `Покупатель ${i + 1}`, email: `buyer${i + 1}@test.local` }));
+  let wowConv = 0;
   for (const b of askers) {
     const c = (await b.post('/api/conversations', { listingId: car })).data.id;
     await b.post(`/api/conversations/${c}/messages`, { body: 'Здравствуйте! Машина ещё продаётся?' });
@@ -205,7 +206,8 @@ async function seed(base, browser, srv) {
     for (let i = 0; i < 2; i++) { await b.post(`/api/conversations/${c}/messages`, { body: 'Договорились' }); await seller.post(`/api/conversations/${c}/messages`, { body: 'Жду' }); }
     await b.post(`/api/conversations/${c}/deal`, { answer: 'yes' });
     await seller.post(`/api/conversations/${c}/deal`, { answer: 'yes' });
-    await b.post(`/api/conversations/${c}/praise`, { tags: ['Всё как на фото', 'Быстро отвечает'] });
+    // 1.47.2: у последнего — без комплиментов: на его экране «Сделка состоялась» кнопка «Отметить, что понравилось»
+    if (b === shop) wowConv = c; else await b.post(`/api/conversations/${c}/praise`, { tags: ['Всё как на фото', 'Быстро отвечает'] });
   }
   // 1.46: жалоба по сделке — в модерации «Репутация»
   await critic.post(`/api/conversations/${c2}/issue`, { reason: 'Не пришёл на встречу', text: 'Ждал у метро полчаса' });
@@ -222,7 +224,7 @@ async function seed(base, browser, srv) {
   const gone2 = client(base);
   await gone2.post('/api/auth/login', { email: 'gleb@test.local', password: 'password123' });
   gone2.user = gone.user;
-  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay, scheduled, boostPay, gone: gone2, convGone };
+  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, wowConv, shop, s1, planPay, pendingPay, scheduled, boostPay, gone: gone2, convGone };
 }
 
 function pages(d) {
@@ -271,6 +273,7 @@ function pages(d) {
     ['reputation-old-link', '/profile/reviews', d.seller], // 1.47.2: старая ссылка ведёт на репутацию
     ['user-rep', `/u/${d.seller.user.id}?tab=rep`, null],
     ['chat-deal', `/messages/${d.convReview}`, d.buyer],
+    ['chat-deal-wow', `/messages/${d.wowConv}`, d.shop], // 1.47.2: экран «Сделка состоялась»
     ['admin-rep', '/admin?status=rep', d.admin],
     ['search-trusted', '/search?trusted=1', null],
     ['stats', `/profile/stats/${d.ids[1]}`, d.seller],

@@ -307,7 +307,6 @@ const { logEvent, audit } = require('./lib/moderation')({ route, db, mailer, h: 
 helpers.audit = audit; // журнал модерации нужен и отзывам, и поддержке
 const supportChat = require('./lib/support')({ route, db, mailer, h: helpers });
 const stats = require('./lib/stats')({ route, db, h: helpers });
-require('./lib/reviews')({ db }); // 1.47.2: только хранение старых отзывов, на сайте их нет
 const trust = require('./lib/trust')({ route, db, h: helpers, mailer, dataDir: DATA_DIR }); // «Телефон подтверждён», проверенный бизнес
 require('./lib/admin')({ route, db, h: helpers, trust }); // сводка, пользователи, журнал, письма модератору
 helpers.sources = require('./lib/sources')({ route, db, h: helpers }); // откуда пришли люди (1.38)

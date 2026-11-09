@@ -4,7 +4,8 @@
 // уровни, фильтр «Надёжные продавцы» и защита от накрутки.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, registerUser, publish, client, seedReview } = require('./helpers');
+const path = require('node:path');
+const { startServer, registerUser, publish, client } = require('./helpers');
 
 let srv; let admin; let seller; const buyers = [];
 before(async () => {
@@ -117,11 +118,9 @@ test('уровень «Надёжный» от 5 сделок, фильтр «Н
   assert.ok((await seller.get('/api/notices')).data.items.some((n) => /подтверждена/.test(n.title)));
 });
 
-// 1.47.2: отзывы убраны целиком — API отзывов нет, в профиле нет оценки; старые отзывы лежат в базе.
-test('отзывов на сайте нет: ни API, ни оценки в профиле', async () => {
+// 1.47.2: отзывы удалены целиком — ни API, ни оценки в профиле, ни таблиц и настроек в базе.
+test('отзывов нет: ни API, ни оценки в профиле, ни таблиц в базе', async () => {
   const sid = seller.user.id;
-  const bid = buyers[0].user.id;
-  seedReview(srv, { listingId: first.id, conversationId: first.cid, authorId: bid, sellerId: sid, title: 'Старый отзыв' });
   assert.equal((await buyers[0].post('/api/reviews', { conversationId: first.cid, rating: 5, received: true, text: 'Всё отлично, спасибо!' })).status, 404);
   assert.equal((await client(srv.base).get(`/api/users/${sid}/reviews`)).status, 404);
   assert.equal((await seller.get('/api/my/reviews')).status, 404);
@@ -131,6 +130,12 @@ test('отзывов на сайте нет: ни API, ни оценки в пр
   assert.ok(pub.rep);
   assert.equal((await seller.get('/api/me')).data.user.rating, undefined);
   assert.equal((await admin.get('/api/admin/stats')).data.reviews, undefined);
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(path.join(srv.tmp, 'data', 'torgana.db'), { readOnly: true });
+  try {
+    assert.deepEqual(db.prepare("SELECT name FROM sqlite_master WHERE name LIKE '%review%' AND name NOT LIKE '%deals%'").all(), []);
+    assert.deepEqual(db.prepare("SELECT name FROM pragma_table_info('users') WHERE name LIKE '%review%'").all(), []);
+  } finally { db.close(); }
 });
 
 test('защита: новые аккаунты без подтверждённого телефона чужую репутацию не поднимают', async () => {
