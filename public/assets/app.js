@@ -2751,8 +2751,20 @@
 
   // ================= сообщения =================
   const SCAM_RE = /(telegram|телеграм|телеграмм|\btg\b|whats\s?app|ватсап|вотсап|вацап|viber|вайбер|t\.me|wa\.me|номер карты|данные карты|код из смс|код из sms|cvv|cvc|предоплат|переведите|перевод на карту|ссылк[ауи] на оплату|оплат[аиу] по ссылке)/i;
-  const supportAva = (size = 52) => html`<span class="conv-img support-ava" style="width:${size}px;height:${size}px" aria-hidden="true"><svg width="${Math.round(size * 0.55)}" height="${Math.round(size * 0.55)}" viewBox="0 0 48 48">${raw(MARK)}</svg></span>`;
-  const SUPPORT_NAME = html`Поддержка Торганы <span class="verified" title="Официальный аккаунт">${ic('check', 12, 3)}</span>`;
+  // 1.47.2: аватарка Торганы — объёмный круг «небо → сирень» с бликом и знаком (та же, что на экране «Сделка состоялась»).
+  let avaN = 0;
+  const torganaAva = (size) => {
+    const k = `ta${++avaN}`;
+    return raw(`<svg width="${size}" height="${size}" viewBox="0 0 112 112" aria-hidden="true"><defs>
+      <linearGradient id="${k}a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4C86E0"/><stop offset=".55" stop-color="#3D67D0"/><stop offset="1" stop-color="#6A63D8"/></linearGradient>
+      <linearGradient id="${k}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".32"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>
+      <circle cx="56" cy="56" r="56" fill="url(#${k}a)"/><ellipse cx="48" cy="28" rx="40" ry="22" fill="url(#${k}g)"/>
+      <circle cx="56" cy="56" r="55" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="2"/>
+      <g transform="scale(2.3333) translate(6.5 6.5) scale(.73)">${MARK.replace(/fill="#[0-9A-Fa-f]{6}"\/>$/, 'fill="#4566D2"/>')}</g></svg>`);
+  };
+  const supportAva = (size = 52) => html`<span class="conv-img support-ava" style="width:${size}px;height:${size}px" aria-hidden="true">${torganaAva(size)}</span>`;
+  // Функция, а не готовая строка: галочка (verifiedSeal) объявлена ниже и у каждой — свои id градиентов.
+  const supportName = () => html`Поддержка Торганы<span class="name-seal" title="Официальный аккаунт Торганы">${verifiedSeal(18)}</span>`;
   const SUPPORT_TOPICS = ['Почему отклонили объявление?', 'Не приходит письмо', 'Подозреваю мошенника', 'Как удалить аккаунт?'];
 
   // Один чат на весь сайт: диалоги по объявлениям, поддержка у пользователя и у модератора.
@@ -2977,7 +2989,7 @@
       <div class="inbox-list"><h1>Сообщения</h1>
         <a href="/messages/support" class="conv support ${isSupport ? 'on' : ''}" id="support-row">
           ${supportAva(44)}
-          <span class="conv-body"><span class="support-name">${SUPPORT_NAME}</span><span class="conv-sub">Отвечают люди, а не боты</span></span>
+          <span class="conv-body"><span class="support-name">${supportName()}</span><span class="conv-sub">Отвечают люди, а не боты</span></span>
           <span class="badge hidden" id="support-badge"></span>
           <span class="pin" title="Закреплено">${ic('pushpin', 16)}<span class="sr">Закреплено</span></span>
         </a>
@@ -3017,7 +3029,7 @@
 
     if (isSupport) {
       stopChat = mountChat($('#chat'), {
-        head: html`${supportAva(44)}<div style="flex:1;min-width:0"><div class="support-name">${SUPPORT_NAME}</div><span class="muted" style="font-size:14px">Отвечают люди, а не боты</span></div>`,
+        head: html`${supportAva(44)}<div style="flex:1;min-width:0"><div class="support-name">${supportName()}</div><span class="muted" style="font-size:14px">Отвечают люди, а не боты</span></div>`,
         load: (after) => api('GET', `/api/support?after=${after}`),
         send: async (msg) => (await api('POST', '/api/support/messages', msg)).message,
         empty: supportWelcome(),
@@ -3160,18 +3172,11 @@
   const dealWowArt = () => raw(`<svg class="dw-svg" viewBox="0 0 240 210" width="240" height="210" aria-hidden="true">
       <defs>
         <radialGradient id="dwH" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#DCE6FF"/><stop offset=".6" stop-color="#ECE8FF" stop-opacity=".7"/><stop offset="1" stop-color="#F3F1FF" stop-opacity="0"/></radialGradient>
-        <linearGradient id="dwA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4C86E0"/><stop offset=".55" stop-color="#3D67D0"/><stop offset="1" stop-color="#6A63D8"/></linearGradient>
-        <linearGradient id="dwG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".32"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
         <filter id="dwS" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#3D4FB8" flood-opacity=".28"/></filter>
       </defs>
       <circle cx="120" cy="104" r="104" fill="url(#dwH)"/>
       <g class="dw-rings" fill="none" stroke="#B9B4F5"><circle cx="120" cy="104" r="86" stroke-opacity=".35"/><circle cx="120" cy="104" r="72" stroke-opacity=".5" stroke-dasharray="2 6" stroke-linecap="round"/></g>
-      <g class="dw-ava" filter="url(#dwS)">
-        <circle cx="120" cy="104" r="56" fill="url(#dwA)"/>
-        <ellipse cx="112" cy="76" rx="40" ry="22" fill="url(#dwG)"/>
-        <circle cx="120" cy="104" r="55" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="2"/>
-        <g transform="translate(64 48) scale(2.3333) translate(6.5 6.5) scale(.73)"><path d="M13.5 11H34.5a4.5 4.5 0 0 1 0 9H13.5L9 15.5z" fill="#fff" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/><rect x="19.5" y="15" width="9" height="24" rx="4.5" fill="#fff"/><circle cx="14.6" cy="15.5" r="1.7" fill="#4566D2"/></g>
-      </g>
+      <g class="dw-ava" filter="url(#dwS)">${String(torganaAva(112)).replace('<svg ', '<svg x="64" y="48" ')}</g>
       <g class="dw-seal"><circle cx="164" cy="146" r="29" fill="#fff"/>${String(verifiedSeal(50)).replace('<svg class="vseal"', '<svg class="vseal" x="139" y="121"')}</g>
       <g class="dw-sp"><path d="M200 50l3.5 8.5 8.5 3.5-8.5 3.5-3.5 8.5-3.5-8.5-8.5-3.5 8.5-3.5z" fill="#8FA8FF"/><path d="M38 136l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#B3A4F7"/><path d="M48 40l2.5 6 6 2.5-6 2.5-2.5 6-2.5-6-6-2.5 6-2.5z" fill="#9CC0FF"/><circle cx="206" cy="122" r="3.5" fill="#C9BEFF"/><circle cx="70" cy="178" r="3" fill="#9CC0FF"/></g>
     </svg>`);
