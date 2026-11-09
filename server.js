@@ -102,8 +102,8 @@ function publicUser(u) {
   return u ? {
     id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, avatar: photoUrl(u.avatar), isAdmin: !!u.is_admin, isOwner: !!u.is_admin && u.email === OWNER_EMAIL, createdAt: u.created_at,
     emailVerified: !!u.email_verified, ...Object.fromEntries(Object.entries(NOTIFY_FIELDS).map(([k, col]) => [k, !!u[col]])),
-    rating: reviews.ratingOf(u.id), badges: badgesOf(u), business: trust.bizOf(u), trademark: trust.tmOf(u), phoneVia: u.phone_verified ? u.phone_verified_via : '', oauth: oauth.linkedOf(u.id),
-    plan: business.planOf(u), bizAccount: !!u.biz_account, deactivatedAt: u.deactivated_at || null
+    rating: reviews.ratingOf(u.id), rep: helpers.reputation ? helpers.reputation.levelOf(u.id) : null, badges: badgesOf(u), business: trust.bizOf(u), trademark: trust.tmOf(u), phoneVia: u.phone_verified ? u.phone_verified_via : '', oauth: oauth.linkedOf(u.id),
+    plan: business.planOf(u), shop: business.shopOf(u), bizAccount: !!u.biz_account, deactivatedAt: u.deactivated_at || null
   } : null;
 }
 
@@ -149,14 +149,12 @@ function cardFromRow(r) {
   };
 }
 
-// Продавец в карточке: имя (у проверенного бизнеса — название), фото и средняя оценка по опубликованным отзывам.
-// seller_rating из CARD_SELECT — строка «среднее:число отзывов».
+// Продавец в карточке: имя (у проверенного бизнеса — название), фото и уровень репутации (1.46.0, вместо оценки).
 function sellerOfCard(r) {
   if (!r.seller_id) return null;
-  const [avg, n] = String(r.seller_rating || '').split(':').map(Number);
   const name = r.seller_biz_status === 'verified' && r.seller_biz_name ? r.seller_biz_name : r.seller_name;
   const shop = !!(r.seller_plan && r.seller_plan_until > now()); // 1.32: тариф «Магазин»/«Про» — значок магазина в карточке
-  return { id: r.seller_id, name: name || 'Продавец', avatar: photoUrl(r.seller_avatar), rating: n ? avg : 0, reviews: n || 0, shop };
+  return { id: r.seller_id, name: name || 'Продавец', avatar: photoUrl(r.seller_avatar), level: r.seller_level || 0, shop };
 }
 
 // Сколько объявлений подходит под условие выдачи — из памяти, пока объявления не менялись (db.memo в lib/db.js).
@@ -171,7 +169,7 @@ const CARD_SELECT = `
     (SELECT json_object('xl', MAX(b.xl), 'frame', MAX(b.frame)) FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active') AS boost,
     (SELECT b.tags FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active' AND b.tags != '[]' ORDER BY b.id DESC LIMIT 1) AS boost_tags,
     u.id AS seller_id, u.name AS seller_name, u.avatar AS seller_avatar, u.biz_status AS seller_biz_status, u.biz_name AS seller_biz_name, u.plan AS seller_plan, u.plan_until AS seller_plan_until,
-    (SELECT ROUND(AVG(rv.rating), 1) || ':' || COUNT(*) FROM reviews rv WHERE rv.seller_id = u.id AND rv.status = 'published') AS seller_rating
+    u.rep_level AS seller_level
   FROM listings l JOIN users u ON u.id = l.user_id`;
 
 // Текст для поиска: название, описание, подкатегория и характеристики из списков («Toyota», «Автомат»).
@@ -325,6 +323,8 @@ const boost = require('./lib/boost')({ route, db, h: helpers, billing });
 boostApi = boost;
 const feed = require('./lib/feed')({ route, db, h: helpers, business });
 const deals = require('./lib/deals')({ route, db, h: helpers, alerts }); // предложение цены, быстрые ответы, подписки
+const reputation = require('./lib/reputation')({ route, db, h: helpers, replyStats }); // 1.46.0: репутация вместо отзывов
+helpers.reputation = reputation;
 // Коды по почте (6 цифр при регистрации и входе, код для модерации) можно временно выключить в «Модерация → Почта»,
 // например пока письма не доходят. Выключены — вход без кода, как до 1.14.
 const codesOn = () => {
@@ -706,7 +706,7 @@ route('GET', '/api/listings/:id', (ctx) => {
       rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : '',
       appealReply: (isOwner || isAdmin) ? l.appeal_reply : '', flags: (isOwner || isAdmin) ? l.flags : ''
     },
-    seller: { id: seller.id, name: seller.name, city: seller.city, avatar: photoUrl(seller.avatar), createdAt: seller.created_at, activeCount: sellerActive, rating: reviews.ratingOf(seller.id), badges: badgesOf(seller),
+    seller: { id: seller.id, name: seller.name, city: seller.city, avatar: photoUrl(seller.avatar), createdAt: seller.created_at, activeCount: sellerActive, rep: reputation.repOf(seller.id), badges: badgesOf(seller),
       followers: deals.followers(seller.id), following: deals.isFollowing(ctx.user ? ctx.user.id : 0, seller.id), reply: replyStats(seller.id) },
     similar,
     market,
@@ -1099,10 +1099,10 @@ route('GET', '/api/conversations/:id', (ctx) => {
   const photo = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position LIMIT 1').get(c.listing_id);
   return {
     conversation: { id: c.id, role: c.buyer_id === u.id ? 'buyer' : 'seller' },
-    review: reviews.chatState(u.id, c),
+    deal: reputation.chatState(u.id, c), // 1.46.0: «Сделка состоялась?», комплименты, «Что-то пошло не так»
     listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, bargain: !!l.bargain, delivery: !!l.delivery, city: l.city, metro: l.metro || '', photo: photoUrl(photo && photo.file) },
     // 1.27: оценка собеседника — для колонки «Объявление и продавец» справа от чата
-    other: { id: other.id, name: other.name, avatar: photoUrl(other.avatar), createdAt: other.created_at, rating: reviews.ratingOf(other.id) },
+    other: { id: other.id, name: other.name, avatar: photoUrl(other.avatar), createdAt: other.created_at, rep: reputation.levelOf(other.id) },
     offers: deals.offersOf(c.id), // состояния всех предложений — обновляются при каждом опросе
     messages
   };
@@ -1134,7 +1134,7 @@ route('GET', '/api/users/:id', (ctx) => {
   const items = db.prepare(`${CARD_SELECT} WHERE l.user_id = ? AND l.status = 'active' ORDER BY l.created_at DESC LIMIT 60`).all(uid, id)
     .map((r) => ({ ...cardFromRow(r), seller: null })); // в профиле продавца все объявления его — строка продавца не нужна
   const sold = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ? AND status = \'sold\'').get(id).n;
-  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rating: reviews.ratingOf(u.id), badges: badgesOf(u), shop: business.shopOf(u),
+  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rating: reviews.ratingOf(u.id), rep: reputation.repOf(u.id), badges: badgesOf(u), shop: business.shopOf(u),
     followers: deals.followers(u.id), following: deals.isFollowing(uid, u.id) }, items };
 });
 
