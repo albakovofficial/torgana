@@ -731,7 +731,7 @@
   // ================= карточки =================
   // it.ad — карточка из блока «Реклама»: пометка и рекламодатель по кнопке «Реклама».
   // it.boost — продвижение в ленте (lib/boost.js): XL — на две ячейки (на телефоне — во всю ширину) с ещё двумя фото
-  // и началом описания, рамка — изумрудная обводка, tags — метки на фото. Подпись «Продвигается» — всегда.
+  // и началом описания, рамка — изумрудная обводка, tags — метки на фото. Подписи «Продвигается» на карточке нет (1.43.1).
   const boostImg = (src, cls = '', extra = '') => html`<span class="xl-ph ${cls}${src ? ' ph' : ''}"${src ? raw(` style="--ph:url('${esc(src)}')"`) : ''}>${src ? html`<img src="${src}" alt="" loading="lazy">` : svg(P.image, 28, 1.2)}${extra}</span>`;
   // 1.26 (вариант 7 «С продавцом»): под описанием карточки — фото и имя продавца, ★ оценка, если есть отзывы.
   const cardSeller = (s) => html`<span class="card-seller">${ava(s, 'xs')}<span class="cs-name">${s.name}</span>${s.shop ? html`<span class="cs-shop" title="Магазин на Торгане">${ic('store', 12, 2.2)}<span class="sr">Магазин</span></span>` : ''}${s.reviews ? html`<span class="cs-rate" title="${NF.format(s.reviews)} ${plural(s.reviews, 'отзыв', 'отзыва', 'отзывов')}">${starSvg(true, 12)}${fmtAvg({ avg: s.rating })}</span>` : ''}</span>`;
@@ -742,9 +742,7 @@
     const xl = !!(bo && bo.xl);
     const tags = bo && bo.tags && bo.tags.length ? bo.tags : null;
     const side = xl ? [...(bo.photos || [])] : [];
-    // 1.43: «Продвигается» — значком на фото: у XL сверху с метками (внизу цена), у обычной — внизу слева,
-    // под «Новое» / «Цена упала», где ему не мешает сердечко и он виден целиком даже в узкой карточке.
-    const mark = bo ? html`<span class="b-tag mark">${ic('bolt', 12, 2.4)}Продвигается</span>` : '';
+    // «Новое» / «Цена упала» — внизу слева на фото, где им не мешает сердечко.
     const low = tags || ad || it.status === 'sold' ? '' : it.fresh ? html`<span class="tag drop-badge">Новое</span>`
       : it.priceWas ? html`<span class="tag drop-badge is-drop" title="Цена упала, было ${price(it.priceWas, it.priceUnit)}">Цена упала</span>` : '';
     return html`<div class="card${ad ? ' is-ad' : ''}${xl ? ' is-xl' : ''}${bo && bo.frame ? ' is-frame' : ''}">
@@ -752,9 +750,9 @@
         <div class="card-img${xl ? ' xl-img' : it.photo ? ' ph' : ''}"${!xl && it.photo ? raw(` style="--ph:url('${esc(it.photo)}')"`) : ''}>
           ${xl ? boostImg(it.photo, 'main') : it.photo ? html`<img src="${it.photo}" alt="" loading="lazy">` : svg(P.image, 40, 1.2)}
           ${xl ? html`<span class="xl-side">${boostImg(side[0])}${boostImg(side[1], '', bo.more ? html`<em>+${bo.more} фото</em>` : '')}</span>` : ''}
-          ${xl || tags ? html`<span class="b-tags">${xl ? mark : ''}${(tags || []).map((t, i) => html`<span class="b-tag${i ? ' alt' : ''}" title="${t}"><span>${t}</span></span>`)}</span>` : ''}
+          ${tags ? html`<span class="b-tags">${tags.map((t, i) => html`<span class="b-tag${i ? ' alt' : ''}" title="${t}"><span>${t}</span></span>`)}</span>` : ''}
           ${!ad && it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : ''}
-          ${low || (mark && !xl) ? html`<span class="b-low">${low}${xl ? '' : mark}</span>` : ''}
+          ${low ? html`<span class="b-low">${low}</span>` : ''}
           ${xl ? html`<span class="price-pill">${price(it.price, it.priceUnit)}</span>` : ''}
           ${it.hasVideo ? html`<span class="vid-badge" title="Есть видео">${ic('play', 14, 0)}<span class="sr">Есть видео</span></span>` : ''}
         </div>
@@ -1881,7 +1879,7 @@
     openModal(String(html`<div class="bm"><h2>Продвижение</h2><p class="muted bm-sub">«${title}»${all ? '' : ` · ${d.days}\u00a0дней${d.status === 'active' ? '' : ' с публикации'}`}</p>
       ${boostCard(d.current)}
       ${all ? '' : d.ready ? boostPicker(busy, true) : html`<p class="muted">Оплата пока не подключена.</p>`}
-      <p class="bm-note">${all ? 'Все виды продвижения уже включены. ' : ''}Порядок выдачи не меняется — карточка заметнее и подписана «Продвигается».${all ? '' : ` Оплата на странице ЮKassa, чек — на ${S.user.email}.`} <a href="/page/terms#paid">Условия</a></p>
+      <p class="bm-note">${all ? 'Все виды продвижения уже включены. ' : ''}Порядок выдачи не меняется — карточка просто заметнее.${all ? '' : ` Оплата на странице ЮKassa, чек — на ${S.user.email}.`} <a href="/page/terms#paid">Условия</a></p>
       <button type="button" class="bm-biz" data-biz>${ic('megaphone', 18, 2)}<span><b>Реклама над поиском</b><small>${promo ? PROMO_STATUS[promo.status][1].toLowerCase() : 'отдельный блок над выдачей'}</small></span>${ic('right', 18, 2)}</button>
       <div class="modal-actions"><button class="btn btn-soft" data-x>Закрыть</button>${!all && d.ready ? html`<button class="btn btn-accent" data-ok disabled>Выберите</button>` : ''}</div></div>`), (m, close) => {
       $('[data-x]', m).onclick = close;
@@ -4025,7 +4023,7 @@
               <li><span>Яркая рамка</span><b>${rub(bp.frame)}</b></li>
               <li><span>Метки на фото — одна или две</span><b>${rub(bp.tags)}</b></li>
               <li class="all"><span>Всё в одном</span><b>${rub(bp.all)}</b></li></ul>
-            <p>Порядок выдачи не меняется — карточка подписана «Продвигается». Не опубликовали объявление за 7 дней после оплаты — деньги вернутся автоматически.</p>
+            <p>Порядок выдачи не меняется — карточка просто заметнее. Не опубликовали объявление за 7 дней после оплаты — деньги вернутся автоматически.</p>
           </div>
           <div class="bz-pcard">
             <span class="bz-ic blue">${ic('megaphone', 20, 1.9)}</span>
@@ -5472,7 +5470,7 @@
         <ul><li><b>Избранное.</b> Нажмите на сердечко — объявление сохранится в «Избранном». Если продавец снизит цену, придёт уведомление.</li>
           <li><b>Подписка на продавца.</b> Кнопка «Подписаться» в профиле продавца — узнаете о его новых объявлениях.</li></ul>
         <h2>Честная выдача</h2>
-        <p>Платное продвижение не меняет порядок объявлений: такие карточки подписаны «Продвигается». Реклама показывается отдельным блоком с пометкой «Реклама».</p>`],
+        <p>Платное продвижение не меняет порядок объявлений: такие карточки только заметнее — крупнее, в рамке или с метками на фото. Реклама показывается отдельным блоком с пометкой «Реклама».</p>`],
       safety: ['Безопасность', html`
         <p class="help-lead">Большинство мошеннических схем строится на одном: увести вас из чата площадки и получить деньги или данные карты.</p>
         <section class="help-box bad"><h2>Чего никогда не делать</h2><ul>
