@@ -4,7 +4,7 @@
 // уведомления о сообщениях и решениях модерации, отписка, ошибки почтового сервиса.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, startSmtp, client, registerUser, publish, codeOf, seedReview } = require('./helpers');
+const { startServer, startSmtp, client, registerUser, publish, codeOf } = require('./helpers');
 
 let srv; let smtp; let admin; let anna; let boris;
 const link = (mail, path) => {
@@ -234,33 +234,12 @@ test('письмо не ушло — повтор, затем «не доста�
   await admin.put('/api/admin/mail', mailCfg());
 });
 
-test('отзывы: продавцу — «Новый отзыв», автору — решение; отдельная отписка от писем об отзывах', async () => {
-  const id = await publish(boris, admin, { title: 'Гитара акустическая', category: 'hobby', city: 'Казань', price: '7000' });
-  const conv = (await anna.post('/api/conversations', { listingId: id })).data.id;
-  await anna.post(`/api/conversations/${conv}/messages`, { body: 'Добрый день! Можно посмотреть?' });
-  await boris.post(`/api/conversations/${conv}/messages`, { body: 'Да, приезжайте.' });
-  const meId = async (c) => (await c.get('/api/me')).data.user.id;
-  const rid = seedReview(srv, { listingId: id, conversationId: conv, authorId: await meId(anna), sellerId: await meId(boris), title: 'Гитара акустическая', text: 'Гитара отличная, всё честно.' }); // 1.46.0: архивный отзыв
-  let n = smtp.inbox.length;
-  await admin.post(`/api/admin/reviews/${rid}/publish`);
-  const toSeller = await smtp.waitFor((x) => smtp.inbox.indexOf(x) >= n && x.to === 'boris@test.local' && /Новый отзыв о вас/.test(x.subject));
-  assert.match(toSeller.html, /Гитара отличная/);
-  assert.match(toSeller.html, /\/profile\/reviews/);
-  assert.match(toSeller.headers, /k=reviews/);
-  await smtp.waitFor((x) => smtp.inbox.indexOf(x) >= n && x.to === 'anna@test.local' && /Отзыв опубликован/.test(x.subject));
-  // отписка только от отзывов: сообщения и модерация остаются
-  const was = (await boris.get('/api/me')).data.user;
-  const u = new URL(/List-Unsubscribe: <([^>]+)>/.exec(toSeller.headers)[1]);
-  await fetch(`${srv.base}${u.pathname}${u.search}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'List-Unsubscribe=One-Click' });
+// 1.47.2: отзывы убраны с сайта — ни писем о них, ни шаблона, ни отписки «от отзывов».
+test('писем об отзывах нет', async () => {
+  const { T } = require('../lib/emails');
+  assert.equal(T.review, undefined);
   const me = (await boris.get('/api/me')).data.user;
-  assert.equal(me.notifyReviews, false);
-  assert.equal(me.notifyMessages, was.notifyMessages, 'письма о сообщениях не тронуты');
-  assert.equal(me.notifyModeration, was.notifyModeration, 'письма о модерации не тронуты');
-  n = smtp.inbox.length;
-  await boris.post(`/api/reviews/${rid}/complaint`, { reason: 'Другое', text: 'Проверяю, что писем об отзывах больше нет.' });
-  await admin.post(`/api/admin/reviews/${rid}/complaint/keep`, { reason: 'Нарушений нет' });
-  await new Promise((r) => setTimeout(r, 600));
-  assert.ok(!smtp.inbox.slice(n).some((x) => x.to === 'boris@test.local' && /отзыв/i.test(x.subject)), 'после отписки писем об отзывах нет');
+  assert.equal(me.notifyReviews, undefined);
 });
 
 // 1.41.0: подборка за день без сохранённых поисков — кнопка ведёт туда, о чём письмо.

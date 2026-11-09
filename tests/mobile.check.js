@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const { chromium } = require('playwright');
-const { startServer, registerUser, client, fakeS3, seedReview } = require('./helpers');
+const { startServer, registerUser, client, fakeS3 } = require('./helpers');
 
 const SHOTS = path.join(__dirname, 'screenshots');
 // UI_WIDTHS=320,390,768,1440 — проверить на других ширинах (до 430 — телефон, до 1024 — планшет, шире — компьютер).
@@ -124,18 +124,10 @@ async function seed(base, browser, srv) {
   const thread = (await admin.get('/api/admin/support')).data.items[0].id;
   await admin.post(`/api/admin/support/${thread}/messages`, { body: 'Все объявления проверяются перед публикацией — обычно несколько часов.' });
   await buyer.post(`/api/listings/${ids[1]}/report`, { reason: 'Мошенничество', text: 'Просит предоплату' });
-  // отзывы (архив до 1.46): опубликованный с ответом продавца, второй — с жалобой
-  const rv1 = seedReview(srv, { listingId: ids[0], conversationId: conv.data.id, authorId: buyer.user.id, sellerId: seller.user.id, title: 'Детская коляска Cybex Priam 2 в 1', text: 'Коляска как в описании, всё проверили на месте. Продавец вежливый, рекомендую!' });
-  await admin.post(`/api/admin/reviews/${rv1}/publish`);
-  await seller.post(`/api/reviews/${rv1}/reply`, { text: 'Спасибо! Пусть служит долго.' });
-  await admin.post(`/api/admin/reviews/${rv1}/reply/publish`);
   const critic = await registerUser(base, { name: 'Сергей', email: 'sergey@test.local' });
   const c2 = (await critic.post('/api/conversations', { listingId: ids[3] })).data.id;
   await critic.post(`/api/conversations/${c2}/messages`, { body: 'Велосипед ещё продаётся?' });
   await seller.post(`/api/conversations/${c2}/messages`, { body: 'Да.' });
-  const rv2 = seedReview(srv, { listingId: ids[3], conversationId: c2, authorId: critic.user.id, sellerId: seller.user.id, title: 'Велосипед', rating: 1, received: false, text: 'Договорились о встрече, но продавец не пришёл и перестал отвечать.' });
-  await admin.post(`/api/admin/reviews/${rv2}/publish`);
-  await seller.post(`/api/reviews/${rv2}/complaint`, { reason: 'Ложные сведения', text: 'Я ждала у метро до семи вечера и писала в чат — покупатель не пришёл.' });
   const c3 = (await buyer.post('/api/conversations', { listingId: ids[4] })).data.id;
   await buyer.post(`/api/conversations/${c3}/messages`, { body: 'Добрый день! Можно забрать завтра?' });
   await seller.post(`/api/conversations/${c3}/messages`, { body: 'Да, после обеда.' });
@@ -275,15 +267,12 @@ function pages(d) {
     ['profile-listings', '/profile/listings', d.seller],
     ['profile-rejected', '/profile/listings?status=rejected', d.seller],
     ['settings', '/profile/settings', d.seller],
-    ['reviews-about', '/profile/reviews', d.seller], // 1.46: репутация
-    ['reviews-old', '/profile/reviews?old=1', d.seller],
-    ['reviews-mine', '/profile/reviews?old=1&tab=mine', d.buyer],
-    ['user-reviews', `/u/${d.seller.user.id}?tab=reviews`, null],
+    ['reputation', '/profile/reputation', d.seller], // 1.46: репутация
+    ['reputation-old-link', '/profile/reviews', d.seller], // 1.47.2: старая ссылка ведёт на репутацию
+    ['user-rep', `/u/${d.seller.user.id}?tab=rep`, null],
     ['chat-deal', `/messages/${d.convReview}`, d.buyer],
     ['admin-rep', '/admin?status=rep', d.admin],
     ['search-trusted', '/search?trusted=1', null],
-    ['admin-reviews', '/admin?status=reviews', d.admin],
-    ['admin-review-complaints', '/admin?status=reviews&rt=complaints', d.admin],
     ['stats', `/profile/stats/${d.ids[1]}`, d.seller],
     ['stats-week', `/profile/stats/${d.ids[1]}?days=7`, d.seller],
     ['settings-old-link', '/profile?tab=settings', d.seller],

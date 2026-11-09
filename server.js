@@ -94,15 +94,15 @@ const badgesOf = (u) => ({ ...trust.badgesOf(u), shop: !!business.planOf(u) });
 
 // Переключатели уведомлений: поле API → колонка users (письма и push по видам).
 const NOTIFY_FIELDS = {
-  notifyMessages: 'notify_messages', notifyModeration: 'notify_moderation', notifyReviews: 'notify_reviews', notifyDigest: 'notify_digest',
-  pushMessages: 'push_messages', pushSearches: 'push_searches', pushPrices: 'push_prices', pushModeration: 'push_moderation', pushReviews: 'push_reviews'
+  notifyMessages: 'notify_messages', notifyModeration: 'notify_moderation', notifyDigest: 'notify_digest',
+  pushMessages: 'push_messages', pushSearches: 'push_searches', pushPrices: 'push_prices', pushModeration: 'push_moderation'
 };
 
 function publicUser(u) {
   return u ? {
     id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, avatar: photoUrl(u.avatar), isAdmin: !!u.is_admin, isOwner: !!u.is_admin && u.email === OWNER_EMAIL, createdAt: u.created_at,
     emailVerified: !!u.email_verified, ...Object.fromEntries(Object.entries(NOTIFY_FIELDS).map(([k, col]) => [k, !!u[col]])),
-    rating: reviews.ratingOf(u.id), rep: helpers.reputation ? helpers.reputation.levelOf(u.id) : null, badges: badgesOf(u), business: trust.bizOf(u), trademark: trust.tmOf(u), phoneVia: u.phone_verified ? u.phone_verified_via : '', oauth: oauth.linkedOf(u.id),
+    rep: helpers.reputation ? helpers.reputation.levelOf(u.id) : null, badges: badgesOf(u), business: trust.bizOf(u), trademark: trust.tmOf(u), phoneVia: u.phone_verified ? u.phone_verified_via : '', oauth: oauth.linkedOf(u.id),
     plan: business.planOf(u), shop: business.shopOf(u), bizAccount: !!u.biz_account, deactivatedAt: u.deactivated_at || null
   } : null;
 }
@@ -307,9 +307,9 @@ const { logEvent, audit } = require('./lib/moderation')({ route, db, mailer, h: 
 helpers.audit = audit; // журнал модерации нужен и отзывам, и поддержке
 const supportChat = require('./lib/support')({ route, db, mailer, h: helpers });
 const stats = require('./lib/stats')({ route, db, h: helpers });
-const reviews = require('./lib/reviews')({ route, db, mailer, h: helpers });
+require('./lib/reviews')({ db }); // 1.47.2: только хранение старых отзывов, на сайте их нет
 const trust = require('./lib/trust')({ route, db, h: helpers, mailer, dataDir: DATA_DIR }); // «Телефон подтверждён», проверенный бизнес
-require('./lib/admin')({ route, db, h: helpers, reviews, trust }); // сводка, пользователи, журнал, письма модератору
+require('./lib/admin')({ route, db, h: helpers, trust }); // сводка, пользователи, журнал, письма модератору
 helpers.sources = require('./lib/sources')({ route, db, h: helpers }); // откуда пришли люди (1.38)
 const oauth = require('./lib/oauth')({ route, db, h: helpers, auth, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, secureCookies: SECURE_COOKIES, adminEmails: ADMIN_EMAILS, testBase: process.env.OAUTH_TEST_BASE || '' });
 // Платные услуги для бизнеса: оплата через ЮKassa, тарифы «Магазин» и «Магазин Про», продвижение, автозагрузка из фида.
@@ -1134,7 +1134,7 @@ route('GET', '/api/users/:id', (ctx) => {
   const items = db.prepare(`${CARD_SELECT} WHERE l.user_id = ? AND l.status = 'active' ORDER BY l.created_at DESC LIMIT 60`).all(uid, id)
     .map((r) => ({ ...cardFromRow(r), seller: null })); // в профиле продавца все объявления его — строка продавца не нужна
   const sold = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ? AND status = \'sold\'').get(id).n;
-  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rating: reviews.ratingOf(u.id), rep: reputation.repOf(u.id), badges: badgesOf(u), shop: business.shopOf(u),
+  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rep: reputation.repOf(u.id), badges: badgesOf(u), shop: business.shopOf(u),
     followers: deals.followers(u.id), following: deals.isFollowing(uid, u.id) }, items };
 });
 

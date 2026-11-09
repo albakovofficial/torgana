@@ -155,10 +155,10 @@ test('устройство отписалось в браузере (410) — п
   assert.equal((await boris.get('/api/push')).data.devices, 1);
 });
 
-test('push об отзывах — свой переключатель, отдельно от модерации', async () => {
-  assert.equal((await anna.get('/api/me')).data.user.pushReviews, true);
-  const r = await anna.patch('/api/me', { pushReviews: false });
-  assert.equal(r.data.user.pushReviews, false);
-  assert.equal(r.data.user.pushModeration, true);
-  await anna.patch('/api/me', { pushReviews: true });
+// 1.47.2: отзывов нет — и переключателей уведомлений о них тоже.
+test('переключателей об отзывах нет', async () => {
+  const me = (await anna.get('/api/me')).data.user;
+  assert.equal(me.pushReviews, undefined);
+  assert.equal(me.notifyReviews, undefined);
+  assert.equal(me.pushModeration, true);
 });

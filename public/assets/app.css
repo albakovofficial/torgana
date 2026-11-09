@@ -667,7 +667,7 @@ a.pf-num:hover { color: var(--text); box-shadow: 0 6px 18px rgba(16, 16, 16, .07
   /* «Мой профиль» на телефоне: шестерёнка в карточке и четыре раздела плитками вместо меню. */
   .pf2.is-hub .pf-gear { display: inline-flex; }
   .pf2.is-hub .pf-side .pf-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .pf2.is-hub .pf-side .pf-nav > :not([data-k="msg"]):not([data-k="fav"]):not([data-k="following"]):not([data-k="reviews"]) { display: none; }
+  .pf2.is-hub .pf-side .pf-nav > :not([data-k="msg"]):not([data-k="fav"]):not([data-k="following"]):not([data-k="rep"]) { display: none; }
   .pf2.is-hub .pf-side .pf-nav a { min-height: 56px; padding: 0 12px; gap: 10px; border: 1px solid var(--line); border-radius: 18px; font-weight: 600; }
   .pf2.is-hub .pf-side .pf-nav a > svg:first-child { color: var(--accent); }
   .pub { gap: 16px; padding-top: 12px; }
@@ -767,84 +767,28 @@ a.pf-num:hover { color: var(--text); box-shadow: 0 6px 18px rgba(16, 16, 16, .07
   .st-img { width: 56px; height: 56px; }
 }
 
-/* ---------- отзывы и оценка ---------- */
-.stars { display: inline-flex; gap: 2px; flex: none; }
-.st-on { fill: #E39A00; }
-.st-off { fill: #E2E2DE; }
+/* ---------- строка репутации, сегменты, причины жалобы ---------- */
 .rep-line { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text); }
 a.rep-line:hover { color: var(--text); text-decoration: underline; }
 .rep-line b { font-weight: 800; }
 .rep-line span { color: var(--muted); }
 .panel .rep-line { margin: 2px 0; }
 .nav-rating { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; }
-.rv-sum { display: flex; gap: 22px; align-items: center; }
-.rv-sum-big { display: flex; flex-direction: column; gap: 6px; flex: none; }
-.rv-sum-big b { font-size: 46px; font-weight: 800; letter-spacing: -0.05em; line-height: 1; }
-.rv-sum-big span { font-size: 13px; color: var(--muted); }
-.rv-bars { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
-.rv-bar { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-2); }
-.rv-bar > span:first-child { width: 12px; text-align: right; font-weight: 600; }
-.rv-bar > div { flex: 1; height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
-.rv-bar i { display: block; height: 100%; border-radius: inherit; background: #E39A00; }
-.rv-bar .n { width: 24px; color: var(--muted); }
-.rv { display: flex; flex-direction: column; gap: 16px; }
-.rv-top { display: flex; gap: 16px; flex-wrap: wrap; }
-.rv-top-sum { flex: 2 1 340px; padding: 22px 24px; border: 1px solid var(--line); border-radius: var(--r-card); }
-.rv-rules { flex: 1 1 240px; display: flex; gap: 12px; align-items: flex-start; padding: 16px 18px; border-radius: 22px; background: var(--surface); font-size: 13px; line-height: 1.5; color: var(--text-2); }
-.rv-rules > svg { flex: none; color: var(--accent); margin-top: 1px; }
-.rv-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; align-items: start; }
-.rv-card { padding: 18px; border: 1px solid var(--line); border-radius: 24px; background: #fff; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.rv-head { display: flex; align-items: center; gap: 12px; }
-.rv-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.rv-who b { font-size: 15px; overflow-wrap: anywhere; }
-.rv-who span { font-size: 12px; color: var(--muted); }
-.rv-text { margin: 0; font-size: 15px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
-.rv-meta { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; font-size: 12px; }
-.rv-item { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 28px; padding: 0 10px; border-radius: 999px; background: var(--surface); color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.rv-item a { color: inherit; overflow: hidden; text-overflow: ellipsis; }
-.rv-deal { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
-.rv-deal.ok { color: var(--accent); }
-.rv-deal.no { color: var(--danger); }
-.rv-reply { padding: 12px 14px; border-radius: 16px; background: var(--surface); font-size: 14px; }
-.rv-reply b { font-size: 13px; }
-.rv-reply p { margin: 4px 0 0; white-space: pre-line; overflow-wrap: anywhere; }
-.rv-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
-.rv-card .ml-note { grid-column: auto; }
 .ml-note.ok { background: var(--accent-soft); }
 .ml-note.soft { background: var(--surface); }
 .seg-lg { width: max-content; }
 .seg-lg a { height: 44px; padding: 0 18px; gap: 8px; font-size: 15px; }
 .seg .n { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--surface-2); font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
 .seg a.on .n { background: var(--text); color: #fff; }
-.rv-f { border: 0; margin: 0 0 16px; padding: 0; }
-.rv-f legend { margin-bottom: 8px; font-size: 15px; font-weight: 700; }
-.rv-deal-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.rv-deal-pick label, .rv-reasons label { position: relative; cursor: pointer; }
-.rv-deal-pick input, .rv-reasons input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.rv-deal-pick span { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 48px; padding: 0 8px; border-radius: 16px; background: var(--surface); font-size: 14px; font-weight: 600; text-align: center; white-space: nowrap; }
-.rv-deal-pick input:checked + span { background: var(--text); color: #fff; }
-.rv-deal-pick input:focus-visible + span, .rv-reasons input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
-.rv-stars-pick { display: flex; gap: 4px; justify-content: center; }
-.rv-stars-pick button { width: 52px; height: 52px; border: 0; padding: 0; background: transparent; display: flex; align-items: center; justify-content: center; border-radius: 12px; }
-.rv-star-label { margin-top: 4px; text-align: center; font-size: 14px; font-weight: 600; color: var(--accent); }
 .rv-reasons { display: flex; flex-direction: column; gap: 6px; }
 .rv-reasons span { display: flex; align-items: center; min-height: 46px; padding: 0 14px; border-radius: 14px; background: var(--surface); font-size: 15px; }
 .rv-reasons input:checked + span { background: var(--accent-soft); font-weight: 600; box-shadow: inset 0 0 0 2px var(--accent); }
-.rv-lock { display: flex; gap: 10px; align-items: flex-start; margin-top: 4px; padding: 12px 14px; border-radius: 16px; background: var(--warn-soft); font-size: 13px; line-height: 1.5; color: #5C3D00; }
-.rv-lock > svg { flex: none; color: #8A5A00; }
-.adm-rv-list { display: flex; flex-direction: column; gap: 16px; }
-.adm-rv { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
-.adm-rv-side { display: flex; flex-direction: column; gap: 10px; }
-.adm-rv-act { display: flex; gap: 8px; flex-wrap: wrap; }
-@media (max-width: 900px) { .adm-rv { grid-template-columns: 1fr; } }
+.rv-reasons label { position: relative; cursor: pointer; }
+.rv-reasons input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.rv-reasons input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 600px) {
-  .rv-list { grid-template-columns: 1fr; }
-  .rv-top-sum { padding: 18px; }
-  .rv-sum { gap: 16px; }
-  .rv-sum-big b { font-size: 38px; }
   .seg-lg { width: 100%; }
   .seg-lg a { flex: 1; justify-content: center; padding: 0 10px; }
-  .rv-stars-pick button { width: 46px; height: 46px; }
 }
 
 /* ---------- подвал (1.30, вариант 2): светло-серая плита, справа карточка «Нужна помощь?» ---------- */
@@ -2653,7 +2597,7 @@ body.pv-open { overflow: hidden; }
 .rv-nophoto svg { color: var(--accent); }
 .rv-nophoto b { color: var(--text); font-size: 15px; }
 .rv-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.rv-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rv-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .rv-price { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
 .rv-edit { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--surface); color: var(--text); font-size: 13px; font-weight: 650; cursor: pointer; flex: none; }
 .rv-body h3 { margin: 0; font-size: 18px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }

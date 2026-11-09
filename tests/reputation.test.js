@@ -4,7 +4,7 @@
 // уровни, фильтр «Надёжные продавцы» и защита от накрутки.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, registerUser, publish, client } = require('./helpers');
+const { startServer, registerUser, publish, client, seedReview } = require('./helpers');
 
 let srv; let admin; let seller; const buyers = [];
 before(async () => {
@@ -117,8 +117,20 @@ test('уровень «Надёжный» от 5 сделок, фильтр «Н
   assert.ok((await seller.get('/api/notices')).data.items.some((n) => /подтверждена/.test(n.title)));
 });
 
-test('новые отзывы не принимаются', async () => {
-  assert.equal((await buyers[0].post('/api/reviews', { conversationId: first.cid, rating: 5, received: true, text: 'Всё отлично, спасибо!' })).status, 410);
+// 1.47.2: отзывы убраны целиком — API отзывов нет, в профиле нет оценки; старые отзывы лежат в базе.
+test('отзывов на сайте нет: ни API, ни оценки в профиле', async () => {
+  const sid = seller.user.id;
+  const bid = buyers[0].user.id;
+  seedReview(srv, { listingId: first.id, conversationId: first.cid, authorId: bid, sellerId: sid, title: 'Старый отзыв' });
+  assert.equal((await buyers[0].post('/api/reviews', { conversationId: first.cid, rating: 5, received: true, text: 'Всё отлично, спасибо!' })).status, 404);
+  assert.equal((await client(srv.base).get(`/api/users/${sid}/reviews`)).status, 404);
+  assert.equal((await seller.get('/api/my/reviews')).status, 404);
+  assert.equal((await admin.get('/api/admin/reviews')).status, 404);
+  const pub = (await client(srv.base).get(`/api/users/${sid}`)).data.user;
+  assert.equal(pub.rating, undefined);
+  assert.ok(pub.rep);
+  assert.equal((await seller.get('/api/me')).data.user.rating, undefined);
+  assert.equal((await admin.get('/api/admin/stats')).data.reviews, undefined);
 });
 
 test('защита: новые аккаунты без подтверждённого телефона чужую репутацию не поднимают', async () => {
