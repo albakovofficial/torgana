@@ -305,6 +305,9 @@ function pages(d) {
     ['admin-user-gone', `/admin/u/${d.gone.user.id}`, d.admin],
     ['admin-log', '/admin?status=log', d.admin],
     ['admin-notify', '/admin?status=notify', d.admin],
+    ['admin-settings', '/admin?status=settings', d.admin], // 1.47.2: настройки — плитками
+    ['admin-listings-sold', '/admin?status=sold', d.admin], // 1.47.2: статусы объявлений — вкладками
+    ['admin-menu', '/admin?status=pending', d.admin, 'adm-menu'], // 1.47.2: телефон — разделы в нижней панели
     ['admin-pending', '/admin?status=pending', d.admin],
     ['admin-check', `/admin/l/${d.pending}`, d.admin],
     ['admin-reports', '/admin?status=reports', d.admin],
@@ -529,6 +532,16 @@ async function main() {
           if (!/a_gearbox=/.test(page.url())) errors.push(`фильтр не применился: ${page.url()}`);
           const n = await page.textContent('#count');
           if (!/^1 объявление$/.test(n)) errors.push(`после фильтра «Автомат» должно быть 1 объявление, а не «${n}»`);
+        } else if (open === 'adm-menu') {
+          const b = await page.$('[data-adm-menu]');
+          if (vp.viewport.width <= 900) {
+            if (!b || !(await b.isVisible())) errors.push('нет кнопки разделов модерации');
+            else {
+              await b.click(); await page.waitForTimeout(300);
+              if ((await page.$$('.adm-tiles a')).length !== 14) errors.push(`в панели разделов не 14 плиток, а ${(await page.$$('.adm-tiles a')).length}`);
+              await page.screenshot({ path: path.join(SHOTS, `${vpName}-admin-menu-open.png`) });
+            }
+          } else if ((await page.$$('.adm-nav a')).length !== 14) errors.push(`в меню модерации не 14 пунктов, а ${(await page.$$('.adm-nav a')).length}`);
         } else if (open === 'push-ask') {
           // Первый заход вошедшего: один раз спрашиваем про уведомления; после «Не сейчас» — больше никогда.
           // Если браузер проверки не умеет push (так бывает в GitHub Actions), вопроса быть не должно — но метка ставится.

@@ -4549,27 +4549,68 @@
   const STATUS_LABEL = { pending: 'На проверке', scheduled: 'Запланировано', active: 'Опубликовано', rejected: 'Отклонено', sold: 'Продано', archived: 'Снято', deleted: 'Удалено автором' };
 
   // ---------- оболочка модерации: меню слева (на телефоне — лента сверху) ----------
+  // 1.47.2: меню модерации проще — 14 пунктов вместо 24. Статусы объявлений — вкладки одного раздела,
+  // «Оплата» — вкладка «Платежей», все настройки — один раздел с плитками.
   const ADMIN_NAV = [
     ['', [['dash', 'chart', 'Сводка']]],
-    ['Проверка', [['pending', 'inbox', 'На проверке', 'pending'], ['reports', 'flag', 'Жалобы', 'reports'], ['appeals', 'reply', 'Апелляции', 'appeals'], ['rep', 'star', 'Репутация', 'rep'], ['support', 'headset', 'Поддержка', 'support'], ['biz', 'shield', 'Бизнес', 'biz']]],
-    ['Объявления', [['active', 'tag', 'Опубликованные'], ['rejected', 'close', 'Отклонённые'], ['sold', 'check', 'Проданные'], ['archived', 'pause', 'Снятые']]],
-    ['Люди', [['users', 'users', 'Пользователи'], ['sources', 'chart', 'Откуда приходят'], ['log', 'list', 'Журнал действий']]],
-    ['Деньги', [['ads', 'megaphone', 'Реклама'], ['payments', 'card', 'Платежи'], ['billing', 'tag', 'Оплата']]],
-    ['Настройки', [['notify', 'bell', 'Мои уведомления'], ['mail', 'mail', 'Почта'], ['oauth', 'lock', 'Вход через сервисы'], ['ai', 'sparkle', 'ИИ по фото'], ['seo', 'search', 'Поиск и статистика'], ['backup', 'shield', 'Копии и безопасность'], ['site', 'refresh', 'Версия сайта']]]
+    ['Ждут решения', [['pending', 'inbox', 'На проверке', 'pending'], ['reports', 'flag', 'Жалобы', 'reports'], ['appeals', 'reply', 'Апелляции', 'appeals'], ['rep', 'star', 'Репутация', 'rep'], ['support', 'headset', 'Поддержка', 'support'], ['biz', 'shield', 'Бизнес', 'biz']]],
+    ['Сайт', [['active', 'tag', 'Объявления'], ['users', 'users', 'Пользователи'], ['sources', 'trend', 'Откуда приходят'], ['log', 'list', 'Журнал действий']]],
+    ['Деньги', [['ads', 'megaphone', 'Реклама'], ['payments', 'card', 'Платежи']]],
+    ['', [['settings', 'gear', 'Настройки']]]
   ];
+  // Подразделы → пункт меню, который подсвечивается.
+  const ADMIN_PARENT = { rejected: 'active', sold: 'active', archived: 'active', billing: 'payments', notify: 'settings', mail: 'settings', oauth: 'settings', ai: 'settings', seo: 'settings', backup: 'settings', site: 'settings' };
+  const LISTING_STATUS_TABS = [['active', 'Опубликованные'], ['rejected', 'Отклонённые'], ['sold', 'Проданные'], ['archived', 'Снятые']];
+  const ADMIN_SETTINGS = [['notify', 'bell', 'Мои уведомления', 'Push и письма о новом'], ['mail', 'mail', 'Почта', 'Отправка писем, коды, очередь'], ['oauth', 'lock', 'Вход через сервисы', 'Яндекс ID и VK ID'],
+    ['ai', 'sparkle', 'ИИ по фото', 'Заполнение объявления по фото'], ['seo', 'search', 'Поиск и статистика', 'Вебмастер, Метрика, карта сайта'], ['backup', 'shield', 'Копии и безопасность', 'Резервные копии базы, защита входа'], ['site', 'refresh', 'Версия сайта', 'Обновления и откат']];
+  const adminLabel = (k) => { const x = ADMIN_NAV.flatMap((g) => g[1]).find(([key]) => key === k) || ADMIN_SETTINGS.find(([key]) => key === k); return x ? x[2] : ({ rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые', billing: 'Настройки оплаты' }[k] || 'Модерация'); };
   const LISTING_TABS = ['pending', 'reports', 'appeals', 'active', 'rejected', 'sold', 'archived'];
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-adm-menu]') && S.adm) adminMenu(S.adm.active, S.adm.stats); });
   function adminShell(active, stats, body) {
+    const on = ADMIN_PARENT[active] || active;
+    S.adm = { active, stats };
     const badge = (k) => (k && stats[k] ? html`<span class="badge">${stats[k]}</span>` : '');
+    const waiting = ADMIN_NAV[1][1].filter(([, , , cnt]) => stats[cnt]);
+    const cur = ADMIN_NAV.flatMap((g) => g[1]).find(([k]) => k === on);
     return html`<div class="wrap adm">
       <aside class="adm-side">
         <div class="adm-title">Модерация</div>
         <nav class="pf-nav adm-nav" aria-label="Разделы модерации">${ADMIN_NAV.map(([group, items]) => html`
           ${group ? html`<div class="pf-nav-h">${group}</div>` : ''}
-          ${items.map(([k, icon, label, cnt]) => navLink(`/admin?status=${k}`, icon, k === 'mail' && !S.config.mail ? `${label} · не подключена` : label, k === active, badge(cnt)))}`)}
+          ${items.map(([k, icon, label, cnt]) => navLink(`/admin?status=${k}`, icon, label, k === on, badge(cnt)))}`)}
         </nav>
       </aside>
-      <section class="adm-main">${body}</section>
+      <section class="adm-main">
+        <div class="adm-mbar">
+          <button type="button" class="adm-switch" data-adm-menu aria-haspopup="dialog">${ic(cur ? cur[1] : 'list', 18, 2)}<span>${cur ? cur[2] : 'Модерация'}</span>${ic('down', 16, 2.2)}</button>
+          ${waiting.length ? html`<nav class="adm-quick" aria-label="Ждут решения">${waiting.map(([k, icon, label, cnt]) => html`<a href="/admin?status=${k}" class="${k === on ? 'on' : ''}">${ic(icon, 15, 2)}${label}<b>${stats[cnt]}</b></a>`)}</nav>` : ''}
+        </div>
+        ${body}
+      </section>
     </div>`;
+  }
+  // Телефон: все разделы — плитками в нижней панели (вместо длинной ленты кнопок).
+  function adminMenu(active, stats) {
+    const on = ADMIN_PARENT[active] || active;
+    openModal(String(html`<div class="nt-top"><h2>Модерация</h2><button type="button" class="icon-btn" data-x aria-label="Закрыть">${ic('close', 20, 2)}</button></div>
+      <div class="adm-sheet">${ADMIN_NAV.map(([group, items]) => html`${group ? html`<div class="adm-sheet-h">${group}</div>` : ''}<div class="adm-tiles">${items.map(([k, icon, label, cnt]) => html`<a href="/admin?status=${k}" class="${k === on ? 'on' : ''}"><span class="adm-tile-ic">${ic(icon, 20, 2)}</span><span>${label}</span>${cnt && stats[cnt] ? html`<b>${stats[cnt]}</b>` : ''}</a>`)}</div>`)}</div>`), (m, close) => {
+      m.classList.add('adm-sheet-modal'); m.setAttribute('aria-label', 'Разделы модерации');
+      $('[data-x]', m).onclick = close;
+      m.addEventListener('click', (e) => { if (e.target.closest('a[href]')) close(); });
+    });
+  }
+  // Раздел «Настройки» — плитки; внутри каждой настройки — ссылка назад.
+  function renderSettingsHub(box) {
+    box.innerHTML = String(html`<div class="adm-head"><h1>Настройки</h1></div>
+      <div class="set-hub">${ADMIN_SETTINGS.map(([k, icon, t, sub]) => html`<a class="set-tile" href="/admin?status=${k}"><span class="set-tile-ic">${ic(icon, 22, 2)}</span><span class="set-tile-t"><b>${t}</b><small>${k === 'mail' && !S.config.mail ? 'Не подключена — письма не уходят' : sub}</small></span>${k === 'mail' && !S.config.mail ? html`<i class="set-tile-warn">${ic('warn', 14, 2.4)}</i>` : ''}${ic('right', 18, 2)}</a>`)}</div>`);
+  }
+  // Подвкладки: статусы объявлений, «Платежи / Настройки оплаты»; у настроек — «← Настройки».
+  function adminSubNav(box, status) {
+    const tabs = (list) => html`<nav class="seg adm-tabs" aria-label="Подразделы">${list.map(([k, t]) => html`<a href="/admin?status=${k}" class="${k === status ? 'on' : ''}"${k === status ? raw(' aria-current="page"') : ''}>${t}</a>`)}</nav>`;
+    const headEl = $('.adm-head', box);
+    if (ADMIN_PARENT[status] === 'settings') box.insertAdjacentHTML('afterbegin', String(html`<a class="pf-back always adm-back" href="/admin?status=settings">${ic('left', 18, 2)}Настройки</a>`));
+    else if (['active', 'rejected', 'sold', 'archived'].includes(status) && headEl) headEl.insertAdjacentHTML('afterend', String(tabs(LISTING_STATUS_TABS)));
+    else if (['payments', 'billing'].includes(status) && headEl) headEl.insertAdjacentHTML('afterend', String(tabs([['payments', 'Платежи'], ['billing', 'Настройки оплаты']])));
   }
   // Длительность по-человечески: «40 мин», «3 ч 20 мин», «2 дн 4 ч».
   function fmtDur(ms) {
@@ -4586,8 +4627,8 @@
     if (!requireAuth()) return;
     if (!S.user.isAdmin) { viewNotFound(); return; }
     const status = q.get('status') || 'dash';
-    const title = ADMIN_NAV.flatMap((g) => g[1]).find(([k]) => k === status);
-    setTitle(title ? `${title[2]} — модерация` : 'Модерация');
+    if (status === 'listings') { go('/admin?status=active', true); return; }
+    setTitle(`${adminLabel(status)} — модерация`);
     const [stats, dev] = await Promise.all([api('GET', '/api/admin/stats'), api('GET', '/api/admin/device').catch(() => null)]);
     const arm = dev && dev.required && !dev.armed ? html`<div class="banner warn adm-arm">${ic('shield', 20, 2)}<div><b>Защита входа в модерацию не включена.</b> Подтвердите это устройство кодом из письма — после этого на новых устройствах модерация будет открываться только по коду.</div><a class="btn btn-dark btn-sm" href="/admin/device">Включить</a></div>` : '';
     app.innerHTML = String(adminShell(status, stats, html`${arm}<div id="adm-box" class="adm-box"><div class="loader"></div></div>`));
@@ -4613,10 +4654,12 @@
       site: () => { box.innerHTML = String(head('Версия сайта')); box.insertAdjacentHTML('beforeend', '<div id="special-box"></div>'); renderSiteAdmin($('#special-box'), extra.update); },
       support: async () => { box.innerHTML = String(head('Поддержка')); box.insertAdjacentHTML('beforeend', '<div id="special-box"></div>'); await renderSupportAdmin($('#special-box'), q.get('t')); },
       rep: () => renderRepAdmin(box),
+      settings: () => renderSettingsHub(box),
     };
-    if (R[status]) { await R[status](); return; }
+    if (R[status]) { await R[status](); adminSubNav(box, status); return; }
     if (!LISTING_TABS.includes(status)) { go('/admin', true); return; }
-    await renderListingsAdmin(box, status, q.get('q') || '', head(title[2]));
+    await renderListingsAdmin(box, status, q.get('q') || '', head(['active', 'rejected', 'sold', 'archived'].includes(status) ? 'Объявления' : adminLabel(status)));
+    adminSubNav(box, status);
   }
 
   // Замечания автопроверки и «похоже на запрещённое» — плашками в очереди и на странице проверки.
