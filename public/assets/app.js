@@ -3247,7 +3247,7 @@
   }
 
   // Значки доверия продавца: «Телефон подтверждён», «ИП проверен» / «Компания проверена».
-  // 1.45.0: объёмный цветной значок проверенного бизнеса (ИНН и ОГРН сверены модератором) — рядом с именем в профиле.
+  // 1.45.0: объёмная цветная галочка проверенного бренда (товарный знак сверен с реестром Роспатента) — рядом с именем.
   // У каждого значка свои id градиентов: общие id ломаются, если первый значок на странице скрыт.
   let sealN = 0;
   const SEAL_PATH = 'M12 1L14.48 2.73L17.5 2.47L18.79 5.21L21.53 6.5L21.27 9.52L23 12L21.27 14.48L21.53 17.5L18.79 18.79L17.5 21.53L14.48 21.27L12 23L9.52 21.27L6.5 21.53L5.21 18.79L2.47 17.5L2.73 14.48L1 12L2.73 9.52L2.47 6.5L5.21 5.21L6.5 2.47L9.52 2.73Z';
@@ -3262,9 +3262,9 @@
       <path d="M7.6 12.6l3 3 6-6.4" fill="none" stroke="#1B2A8A" stroke-opacity=".35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 .7)"/>
       <path d="M7.6 12.6l3 3 6-6.4" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`);
   }
-  // Имя с объёмным значком, если бизнес проверен.
-  const nameSeal = (name, b) => (b && b.biz ? html`${name}<span class="name-seal" title="${b.biz.kind === 'ИП' ? 'ИП проверен' : 'Компания проверена'}: ${b.biz.name}">${verifiedSeal(22)}</span>` : name);
-  const trustBadges = (b) => (b ? html`${b.shop ? html`<span class="pf-badge dark">${ic('store', 13, 2)} Магазин</span>` : ''}${b.biz ? html`<span class="pf-badge seal" title="${b.biz.name}">${verifiedSeal(15)} ${b.biz.kind === 'ИП' ? 'ИП проверен' : 'Компания проверена'}</span>` : ''}${b.phone ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Телефон подтверждён</span>` : ''}` : '');
+  // Имя с галочкой — только у проверенного бренда (товарный знак из реестра Роспатента).
+  const nameSeal = (name, b) => (b && b.tm ? html`${name}<span class="name-seal" title="Проверенный бренд «${b.tm.name}» — товарный знак № ${b.tm.number} в реестре Роспатента">${verifiedSeal(22)}</span>` : name);
+  const trustBadges = (b) => (b ? html`${b.shop ? html`<span class="pf-badge dark">${ic('store', 13, 2)} Магазин</span>` : ''}${b.tm ? html`<span class="pf-badge seal" title="Товарный знак «${b.tm.name}», свидетельство Роспатента № ${b.tm.number}">${verifiedSeal(15)} Проверенный бренд</span>` : ''}${b.biz ? html`<span class="pf-badge ok" title="${b.biz.name}">${ic('shield', 13, 2)} ${b.biz.kind === 'ИП' ? 'ИП проверен' : 'Компания проверена'}</span>` : ''}${b.phone ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Телефон подтверждён</span>` : ''}` : '');
 
   // Разделы аккаунта и «Выйти» — одно меню для левой колонки профиля (на компьютере) и для панели ≡ (full).
   // В панели вместо пункта «Настройки» — все группы настроек, публичный профиль и помощь.
@@ -3621,28 +3621,112 @@
     const tst = $('[data-test]', el); if (tst) tst.onclick = () => act(async () => { const r = await api('POST', '/api/push/test'); if (!r.ok) throw new Error('Не получилось отправить — выключите и включите уведомления'); }, 'Отправили проверочное уведомление');
   }
 
-  // Для бизнеса (1.45.0): переключатель бизнес-аккаунта (для всех, открывает тарифы) и, по желанию,
-  // проверка ИП или компании (ИНН, ОГРН/ОГРНИП) — ради объёмного значка рядом с именем.
-  function bizBlock(b, on, hasPlan) {
+  // Для бизнеса (1.45.0): переключатель бизнес-аккаунта (для всех, открывает тарифы) и получение галочки —
+  // объёмного значка «Проверенный бренд». Галочка — только правообладателю товарного знака из реестра Роспатента:
+  // шаг 1 — компания или ИП (ИНН, ОГРН/ОГРНИП, сверка с ЕГРЮЛ/ЕГРИП, даёт плашку «ИП/Компания проверена»),
+  // шаг 2 — номер свидетельства на товарный знак (модератор сверяет запись в реестре ФИПС), шаг 3 — галочка у имени.
+  const TM_REGISTRY = 'https://fips.ru/registers-web/';
+  const dateIn = (ts) => (ts ? new Date(ts).toISOString().slice(0, 10) : '');
+  function bizBlock(b, on, hasPlan, tm) {
     const acc = html`<label class="switch biz-switch"><span>Бизнес-аккаунт<small>${on ? 'Включён — тарифы для магазина доступны' : 'Бесплатно. Открывает тарифы: витрину, статистику, автозагрузку'}</small></span><input type="checkbox" data-biz-acc ${on ? raw('checked') : ''} ${on && hasPlan ? raw('disabled') : ''}><span class="track"></span></label>
-      ${on ? html`<div class="set-btns"><a class="btn btn-soft btn-sm" href="/business">${ic('store', 16, 2)}Тарифы</a><a class="btn btn-soft btn-sm" href="/profile/business">Мой магазин</a></div>` : ''}
-      <h3 class="set-h3 seal-h">${verifiedSeal(20)}Проверенный бизнес <span class="muted">— по желанию</span></h3>`;
-    if (b && b.status === 'verified') return html`${acc}<div class="biz-ok">${verifiedSeal(26)}<span><b>${b.name} — ${b.kind === 'ip' ? 'ИП проверен' : 'компания проверена'}</b><span>ИНН ${b.inn} · ${b.kind === 'ip' ? 'ОГРНИП' : 'ОГРН'} ${b.ogrn}. Значок видят покупатели рядом с вашим именем.</span></span></div>
-      <div class="set-btns"><button type="button" class="btn btn-line btn-sm" data-biz-del>Убрать данные бизнеса</button></div>`;
-    const stage = b && b.status === 'pending' ? 2 : 1;
-    const step = (n, icon, t, sub) => html`<li class="${n === stage ? 'on' : n < stage ? 'done' : ''}"><span class="bs-n">${n}</span><span class="bs-ic">${ic(n < stage ? 'check' : icon, 20)}</span><b>${t}</b><small>${sub}</small></li>`;
-    return html`${acc}<ol class="biz-steps">${step(1, 'edit', 'Заполните данные', 'Название, ИНН и ОГРН')}${step(2, 'shield', 'Проверка модератором', 'Сверим с ЕГРЮЛ или ЕГРИП')}${step(3, 'check', 'Значок в профиле', 'Объёмный значок рядом с именем')}</ol>
-      ${b && b.status === 'pending' ? html`<div class="banner warn">Заявка отправлена ${when(b.at)} — модератор сверит данные по ЕГРЮЛ/ЕГРИП, обычно в течение дня.</div>` : ''}
-      ${b && b.status === 'rejected' ? html`<div class="banner danger"><strong>Проверка не пройдена:</strong> ${b.note}</div>` : ''}
-      <p class="muted" style="margin:0;font-size:14px">Модератор сверит данные с ЕГРЮЛ/ЕГРИП. Покупатели увидят значок и название, ИНН — только модератор.</p>
+      ${on ? html`<div class="set-btns"><a class="btn btn-soft btn-sm" href="/business">${ic('store', 16, 2)}Тарифы</a><a class="btn btn-soft btn-sm" href="/profile/business">Мой магазин</a></div>` : ''}`;
+    const bizDone = b && b.status === 'verified';
+    const bizSent = b && ['pending', 'verified'].includes(b.status);
+    const tmDone = tm && tm.live;
+    // Каждый шаг — со своим статусом: «готово», «на проверке» или «сейчас».
+    const tmWait = bizSent && tm && tm.status === 'pending';
+    const s1 = bizDone ? 'done' : bizSent ? 'on' : 'on';
+    const s2 = tmDone ? 'done' : bizSent ? 'on' : '';
+    const step = (cls, n, icon, t, sub) => html`<li class="${cls}"><span class="bs-n">${n}</span><span class="bs-ic">${cls === 'done' ? ic('check', 20) : n === 3 ? verifiedSeal(22) : ic(icon, 20)}</span><b>${t}</b><small>${sub}</small></li>`;
+    const head = html`<h3 class="set-h3 seal-h">${verifiedSeal(22)}Галочка проверенного бренда</h3>
+      <p class="muted" style="margin:0;font-size:14px">Только для правообладателей товарного знака, зарегистрированного в Роспатенте. Покупатели видят галочку рядом с вашим именем.</p>
+      <ol class="biz-steps">${step(s1, 1, 'shield', 'Компания или ИП', bizDone ? 'Подтверждено' : bizSent ? 'На проверке' : 'ИНН и ОГРН — сверим с ЕГРЮЛ/ЕГРИП')}${step(s2, 2, 'edit', 'Товарный знак и документы', tmDone ? 'Подтверждено' : tmWait ? 'На проверке' : 'Свидетельство Роспатента и письмо с кодом')}${step(tmDone ? 'done' : '', 3, 'check', 'Галочка у имени', tmDone ? 'Выдана модератором' : 'Выдаёт только модератор')}</ol>`;
+    // Шаг 1 — данные компании (как раньше, отдельная плашка «ИП проверен / Компания проверена»).
+    const bizStatus = bizDone ? html`<div class="biz-ok">${ic('shield', 22, 2)}<span><b>${b.name} — ${b.kind === 'ip' ? 'ИП проверен' : 'компания проверена'}</b><span>ИНН ${b.inn} · ${b.kind === 'ip' ? 'ОГРНИП' : 'ОГРН'} ${b.ogrn}</span></span><button type="button" class="btn btn-line btn-sm" data-biz-del>Убрать</button></div>`
+      : b && b.status === 'pending' ? html`<div class="banner warn"><strong>${b.name}</strong> — данные на проверке с ${when(b.at)}, обычно в течение дня. <button type="button" class="link-btn" data-biz-del>Отозвать</button></div>` : '';
+    const bizForm = html`${b && b.status === 'rejected' ? html`<div class="banner danger"><strong>Проверка не пройдена:</strong> ${b.note}</div>` : ''}
       <form id="bf" class="biz-form" novalidate>
         <div class="field"><label for="b-name">Название</label><input id="b-name" name="name" class="input" maxlength="120" value="${(b && b.name) || ''}" placeholder="ИП Иванов И. И. или ООО «Ромашка»"></div>
         <div class="row">
           <div class="field" style="flex:1"><label for="b-inn">ИНН</label><input id="b-inn" name="inn" class="input" inputmode="numeric" maxlength="12" value="${(b && b.inn) || ''}" placeholder="10 или 12 цифр"></div>
           <div class="field" style="flex:1"><label for="b-ogrn">ОГРН или ОГРНИП</label><input id="b-ogrn" name="ogrn" class="input" inputmode="numeric" maxlength="15" value="${(b && b.ogrn) || ''}" placeholder="13 или 15 цифр"></div>
         </div>
-        <div class="set-btns"><button class="btn btn-dark" type="submit">${b && b.status === 'pending' ? 'Обновить заявку' : 'Отправить на проверку'}</button>${b ? html`<button type="button" class="btn btn-soft" data-biz-del>Отозвать</button>` : ''}</div>
+        <p class="muted" style="margin:0;font-size:13px">Название и ИНН — те же, что у правообладателя товарного знака. ИНН видит только модератор.</p>
+        <div class="set-btns"><button class="btn btn-dark" type="submit">Отправить на проверку</button>${b ? html`<button type="button" class="btn btn-soft" data-biz-del>Отозвать</button>` : ''}</div>
       </form>`;
+    // Шаг 2 — товарный знак с документами: грузится отдельно (renderTmBox), нужен код заявки и список файлов.
+    return html`${acc}${head}
+      ${bizSent ? bizStatus : bizForm}
+      ${bizSent ? html`<div id="tm-box" class="tm-box"><div class="loader"></div></div>` : ''}`;
+  }
+  const TM_STATUS = { pending: ['wait', 'На проверке'], rejected: ['bad', 'Нужно исправить'], verified: ['ok', 'Подтверждено'] };
+  const fileData = (f) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('Не удалось прочитать файл')); r.readAsDataURL(f); });
+  const fmtSize = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1).replace('.', ',')} МБ` : `${Math.max(1, Math.round(n / 1024))} КБ`);
+  async function renderTmBox(reload) {
+    const box = $('#tm-box');
+    if (!box) return;
+    const d = await api('GET', '/api/me/trademark');
+    const tm = d.trademark; const b = S.user.business;
+    const st = tm && (tm.status === 'verified' && !tm.live ? ['bad', 'Срок истёк'] : TM_STATUS[tm.status]);
+    const lock = tm && tm.status === 'pending';
+    const has = (k) => d.docs.some((x) => x.kind === k);
+    const letter = `Подтверждаю, что аккаунт ${S.user.email} на сайте torgana.ru принадлежит ${b.name} (ИНН ${b.inn}, ${b.kind === 'ip' ? 'ОГРНИП' : 'ОГРН'} ${b.ogrn}) — правообладателю товарного знака № ${(tm && tm.number) || '______'} «${(tm && tm.name) || '______'}», и прошу подтвердить бренд.\nКод заявки: ${d.code}\nДата, должность, ФИО, подпись${b.kind === 'ip' ? '' : ', печать (если есть)'}.`;
+    const docRow = (x) => html`<div class="tm-doc"><span class="tm-doc-ic">${ic(x.mime === 'application/pdf' ? 'list' : 'image', 18, 2)}</span><span><b>${x.kindName}</b><small>${x.name || 'файл'} · ${fmtSize(x.size)}</small></span>
+      <a class="btn btn-soft btn-sm" href="/api/me/verify-docs/${x.id}" target="_blank" rel="noopener">Открыть</a>${lock ? '' : html`<button type="button" class="btn btn-line btn-sm" data-doc-del="${x.id}">Удалить</button>`}</div>`;
+    box.innerHTML = String(html`
+      <div class="tm-head"><b>Товарный знак</b>${st ? html`<span class="ml-tag ${st[0]}"><i></i>${st[1]}</span>` : ''}</div>
+      ${tm && tm.live ? html`<div class="biz-ok tm-ok">${verifiedSeal(30)}<span><b>«${tm.name}» — бренд подтверждён</b><span>Свидетельство № ${tm.number} · действует до ${dateLong(tm.until)}. Галочка видна рядом с вашим именем.</span></span><button type="button" class="btn btn-line btn-sm" data-tm-del>Убрать</button></div>` : ''}
+      ${lock ? html`<div class="banner warn"><strong>«${tm.name}», № ${tm.number} — на проверке</strong> с ${when(tm.at)}. Модератор сверит реестр Роспатента и документы. Пока заявка на проверке, её нельзя менять. <button type="button" class="link-btn" data-tm-del>Отозвать</button></div>` : ''}
+      ${tm && tm.status === 'rejected' ? html`<div class="banner danger"><strong>Нужно исправить:</strong> ${tm.note}</div>` : ''}
+      ${tm && tm.status === 'verified' && !tm.live ? html`<div class="banner danger">Срок регистрации «${tm.name}» истёк — галочка снята. Продлите регистрацию в Роспатенте и отправьте заявку снова.</div>` : ''}
+      ${tm && tm.live ? '' : html`
+      <form id="tmf" class="biz-form" novalidate>
+        <div class="row stack-m">
+          <div class="field" style="flex:1"><label for="tm-num">Номер свидетельства</label><input id="tm-num" name="number" class="input" inputmode="numeric" maxlength="9" value="${(tm && tm.number) || ''}" placeholder="Например, 912345" ${lock ? raw('disabled') : ''}></div>
+          <div class="field" style="flex:1.4"><label for="tm-name">Обозначение</label><input id="tm-name" name="name" class="input" maxlength="100" value="${(tm && tm.name) || ''}" placeholder="Название бренда, как в свидетельстве" ${lock ? raw('disabled') : ''}></div>
+        </div>
+        <div class="field"><label for="tm-until">Срок действия — до</label><input id="tm-until" name="until" type="date" class="input" value="${dateIn(tm && tm.until)}" ${lock ? raw('disabled') : ''}><span class="help">Есть в свидетельстве и в <a href="${TM_REGISTRY}" target="_blank" rel="noopener" style="text-decoration:underline">открытом реестре Роспатента</a> (ФИПС, «Товарные знаки»).</span></div>
+        <div class="tm-docs">
+          <b class="tm-sub">Документы <span class="muted">— видят только вы и модератор</span></b>
+          <ol class="tm-need">
+            <li class="${has('cert') ? 'done' : ''}">${ic(has('cert') ? 'check' : 'image', 16, 2.2)}<span><b>Свидетельство на товарный знак</b> или выписка из реестра Роспатента</span></li>
+            <li class="${has('letter') ? 'done' : ''}">${ic(has('letter') ? 'check' : 'edit', 16, 2.2)}<span><b>Письмо-подтверждение с кодом ${d.code}</b> — текст ниже, подпись ${b.kind === 'ip' ? 'ИП' : 'руководителя'}${b.kind === 'ip' ? '' : ' и печать, если есть'}</span></li>
+            ${b.kind === 'ip' ? '' : html`<li class="${has('power') ? 'done' : ''}">${ic(has('power') ? 'check' : 'list', 16, 2.2)}<span><b>Доверенность</b> — только если письмо подписал не руководитель</span></li>`}
+          </ol>
+          <details class="tm-letter"><summary>Текст письма-подтверждения</summary><pre>${letter}</pre><button type="button" class="btn btn-soft btn-sm" data-copy-letter>Скопировать текст</button></details>
+          ${d.docs.length ? html`<div class="tm-doc-list">${d.docs.map(docRow)}</div>` : ''}
+          ${lock ? '' : html`<div class="row stack-m tm-up">
+            <div class="field" style="flex:1"><label for="doc-kind">Что загружаете</label><select id="doc-kind" class="select">${Object.entries(d.kinds).filter(([k]) => k !== 'power' || b.kind !== 'ip').map(([k, t]) => html`<option value="${k}" ${!has('cert') ? (k === 'cert' ? raw('selected') : '') : !has('letter') && k === 'letter' ? raw('selected') : ''}>${t}</option>`)}</select></div>
+            <label class="btn btn-soft tm-file">${ic('plus', 16, 2)}Загрузить файл<input type="file" id="doc-file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden></label></div>
+            <p class="muted" style="margin:0;font-size:13px">PDF, JPG, PNG или WebP до 8 МБ. Скан или чёткое фото, весь документ целиком.</p>`}
+        </div>
+        <p class="muted" style="margin:0;font-size:13px">Правообладателем в реестре должна быть ${b.name}. Лицензиатов и знаки, которые ещё не зарегистрированы, не подтверждаем. Галочку выдаёт только модератор после проверки.</p>
+        ${lock ? '' : html`<div class="set-btns"><button class="btn btn-dark" type="submit">Отправить на проверку</button></div>`}
+      </form>`}`);
+    const tf = $('#tmf', box);
+    if (tf) {
+      tf.onsubmit = async (e) => {
+        e.preventDefault();
+        try { await api('POST', '/api/me/trademark', Object.fromEntries(new FormData(tf).entries())); toast('Заявка отправлена — статус «На проверке»'); await refreshMe(); reload(); } catch (ex) { toast(ex.message, true); }
+      };
+    }
+    const fi = $('#doc-file', box);
+    if (fi) {
+      fi.onchange = async () => {
+        const f = fi.files[0]; if (!f) return;
+        if (f.size > 8 * 1024 * 1024) { toast('Файл больше 8 МБ', true); return; }
+        try { await api('POST', '/api/me/verify-docs', { kind: $('#doc-kind', box).value, name: f.name, data: await fileData(f) }); toast('Документ загружен'); renderTmBox(reload); } catch (ex) { toast(ex.message, true); }
+      };
+    }
+    $$('[data-doc-del]', box).forEach((x) => { x.onclick = async () => { try { await api('DELETE', `/api/me/verify-docs/${x.dataset.docDel}`); renderTmBox(reload); } catch (ex) { toast(ex.message, true); } }; });
+    const cl = $('[data-copy-letter]', box);
+    if (cl) cl.onclick = async () => { try { await navigator.clipboard.writeText(letter); toast('Текст скопирован'); } catch { toast('Не удалось скопировать — выделите текст вручную', true); } };
+    $$('[data-tm-del]', box).forEach((x) => {
+      x.onclick = async () => {
+        if (!(await confirmModal(tm && tm.live ? 'Убрать галочку?' : 'Отозвать заявку?', 'Данные знака и загруженные документы удалятся. Отправить заявку можно будет заново.', tm && tm.live ? 'Убрать' : 'Отозвать', true))) return;
+        try { await api('DELETE', '/api/me/trademark'); toast('Готово'); await refreshMe(); reload(); } catch (ex) { toast(ex.message, true); }
+      };
+    });
   }
   function bindBizForm(reload) {
     const acc = $('[data-biz-acc]');
@@ -3662,9 +3746,10 @@
         try { await api('POST', '/api/me/business', Object.fromEntries(new FormData(f).entries())); toast('Заявка отправлена модератору'); await refreshMe(); reload(); } catch (ex) { toast(ex.message, true); }
       };
     }
+    renderTmBox(reload).catch((ex) => { const x = $('#tm-box'); if (x) x.innerHTML = String(html`<div class="banner danger">${ex.message}</div>`); });
     $$('[data-biz-del]').forEach((b) => {
       b.onclick = async () => {
-        if (!(await confirmModal('Убрать данные бизнеса?', 'Значок проверенного бизнеса пропадёт. Бизнес-аккаунт и тариф останутся. Отправить заявку можно будет заново.', 'Убрать', true))) return;
+        if (!(await confirmModal('Убрать данные бизнеса?', 'Плашка проверенного бизнеса и галочка бренда пропадут. Бизнес-аккаунт и тариф останутся. Отправить заявку можно будет заново.', 'Убрать', true))) return;
         try { await api('DELETE', '/api/me/business'); toast('Данные убраны'); await refreshMe(); reload(); } catch (ex) { toast(ex.message, true); }
       };
     });
@@ -3811,7 +3896,7 @@
           </div>
           <div class="set-foot"><span>Минимум 8 символов. На других устройствах потребуется войти заново</span><button class="btn btn-accent" type="submit">Сменить пароль</button></div>
         </form>`,
-      's-biz': () => html`${head('Для бизнеса', 'Бизнес-аккаунт открывает тарифы. Проверка ИНН — по желанию, ради значка в профиле')}${bizBlock(u.business, u.bizAccount, !!u.plan)}`,
+      's-biz': () => html`${head('Для бизнеса', 'Бизнес-аккаунт открывает тарифы. Галочка у имени — правообладателям товарного знака')}${bizBlock(u.business, u.bizAccount, !!u.plan, u.trademark)}`,
       's-acc': () => html`${head('Аккаунт', 'Почта для входа и писем от Торганы')}
         <div class="set-list">
           ${row('mail', 'Почта', u.email, S.config.mail ? (u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 14, 2.4)} Подтверждена</span>` : html`<button type="button" class="btn btn-soft btn-sm" id="verify-again">Подтвердить</button>`) : '')}
@@ -3996,7 +4081,7 @@
         </div>
         <div class="bz-mini" aria-hidden="true">
           <div class="bzm-cover"></div>
-          <div class="bzm-head"><span class="bzm-ava">${ic('store', 22, 2)}</span><span><b>Ваш магазин</b><span class="bzm-badges"><i class="g">${ic('store', 11, 2.4)}Магазин</i><i>${verifiedSeal(13)}Проверен</i></span></span></div>
+          <div class="bzm-head"><span class="bzm-ava">${ic('store', 22, 2)}</span><span><b>Ваш магазин</b><span class="bzm-badges"><i class="g">${ic('store', 11, 2.4)}Магазин</i><i>${verifiedSeal(13)}Бренд</i></span></span></div>
           <div class="bzm-grid">${['#DCE3DF', '#E9E6E0', '#DDE4EC'].map((c) => html`<span class="bzm-card"><span style="background:${c}"></span><i></i><i class="s"></i></span>`)}</div>
           <span class="bzm-tag">Пример</span>
         </div>
@@ -4569,7 +4654,7 @@
   const userBadges = (u) => html`${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}
     ${u.blocked ? html`<span class="pf-badge bad">${ic('lock', 13, 2)} Заблокирован</span>` : ''}
     ${u.reports ? html`<span class="pf-badge warn">${ic('flag', 13, 2)} Жалоб: ${u.reports}</span>` : ''}
-    ${u.bizPending ? html`<span class="pf-badge warn">${ic('shield', 13, 2)} Заявка бизнеса</span>` : ''}
+    ${u.bizPending ? html`<span class="pf-badge warn">${ic('shield', 13, 2)} Заявка бизнеса</span>` : ''}${u.tmPending ? html`<span class="pf-badge warn">${verifiedSeal(13)} Заявка на бренд</span>` : ''}
     ${S.config.mail && !u.emailVerified ? html`<span class="pf-badge">Почта не подтверждена</span>` : ''}`;
 
   async function renderUsersAdmin(box, q, title = 'Пользователи') {
@@ -4631,7 +4716,7 @@
       <a class="pf-back always" href="/admin?status=users">${ic('left', 18, 2)}Пользователи</a>
       <div class="adm-person panel">
         <div class="adm-person-top">${ava(u, 'xl')}
-          <div class="adm-person-txt"><h1>${u.name}</h1>
+          <div class="adm-person-txt"><h1>${nameSeal(u.name, { tm: u.trademark && u.trademark.live ? u.trademark : null })}</h1>
             <div class="muted">№ ${u.id} · на Торгане с ${since(u.createdAt)}</div>
             ${u.rating && u.rating.count ? ratingLine(u.rating, `/u/${u.id}`) : ''}
             <div class="pf-badges">${userBadges({ ...u, reports: d.reports.against.filter((r) => !r.resolvedAt).length })}${trustBadges({ phone: u.phoneVerified, biz: u.business && u.business.status === 'verified' ? { kind: u.business.kind === 'ip' ? 'ИП' : 'Компания', name: u.business.name } : null })}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}</div>
@@ -4647,6 +4732,19 @@
             ${u.business.status !== 'rejected' ? html`<button class="btn btn-line btn-sm" data-biz-no="${u.id}">${u.business.status === 'verified' ? 'Снять подтверждение' : 'Отказать'}</button>` : ''}
           </div>
           <p class="muted" style="margin:0;font-size:13px">Найдите ИНН в выписке ФНС и сверьте название, ОГРН(ИП) и что организация или ИП действуют.</p>
+        </div>` : ''}
+        ${u.trademark ? html`<div class="adm-biz is-${u.trademark.status}">
+          <div class="adm-biz-head"><b>${verifiedSeal(18)} Галочка бренда: «${u.trademark.name}»</b><span class="pf-badge ${u.trademark.live ? 'ok' : u.trademark.status === 'pending' ? 'warn' : 'bad'}">${u.trademark.live ? 'галочка выдана' : u.trademark.status === 'pending' ? 'на проверке' : u.trademark.status === 'rejected' ? 'нужно исправить' : 'срок истёк'}</span></div>
+          <div class="adm-facts"><div><span>Свидетельство</span><b>№ ${u.trademark.number}</b></div><div><span>Действует до</span><b>${dateLong(u.trademark.until)}</b></div><div><span>Код заявки</span><b>${d.user.tmReview.code}</b></div><div><span>Правообладатель должен быть</span><b>${u.business ? `${u.business.name}, ИНН ${u.business.inn}` : '—'}${u.business && u.business.status !== 'verified' ? ' (ИНН ещё не подтверждён)' : ''}</b></div></div>
+          ${d.user.tmReview.sameNumber.length || d.user.tmReview.sameInn.length ? html`<div class="banner danger"><strong>Совпадения с другими аккаунтами.</strong> ${d.user.tmReview.sameNumber.map((x) => html`Знак № ${u.trademark.number} — <a href="/admin/u/${x.id}">${x.name}</a> (${x.email}). `)}${d.user.tmReview.sameInn.map((x) => html`ИНН — <a href="/admin/u/${x.id}">${x.name}</a> (${x.email}). `)}Проверьте, не попытка ли это выдать себя за чужой бизнес.</div>` : ''}
+          <div class="tm-doc-list">${d.user.tmReview.docs.length ? d.user.tmReview.docs.map((x) => html`<div class="tm-doc"><span class="tm-doc-ic">${ic(x.mime === 'application/pdf' ? 'list' : 'image', 18, 2)}</span><span><b>${x.kindName}</b><small>${x.name || 'файл'} · ${when(x.at)}</small></span><a class="btn btn-soft btn-sm" href="/api/admin/verify-docs/${x.id}" target="_blank" rel="noopener">Открыть</a></div>`) : html`<p class="muted" style="margin:0">Документов нет.</p>`}</div>
+          ${u.trademark.note ? html`<div class="muted" style="font-size:14px">Что нужно исправить: ${u.trademark.note}</div>` : ''}
+          <div class="adm-person-act">
+            <a class="btn btn-soft btn-sm" href="${d.user.tmReview.fips}" target="_blank" rel="noopener">${ic('search', 16)}Реестр Роспатента</a>
+            <a class="btn btn-soft btn-sm" href="https://egrul.nalog.ru/index.html" target="_blank" rel="noopener">${ic('search', 16)}ЕГРЮЛ/ЕГРИП</a>
+            ${u.trademark.status === 'pending' ? html`<button class="btn btn-accent btn-sm" data-tm-ok ${u.business && u.business.status === 'verified' ? '' : raw('disabled title="Сначала подтвердите ИНН"')}>Проверить и выдать галочку</button>` : ''}
+            ${u.trademark.status !== 'rejected' ? html`<button class="btn btn-line btn-sm" data-tm-no>${u.trademark.live ? 'Снять галочку' : 'Вернуть на исправление'}</button>` : ''}
+          </div>
         </div>` : ''}
         ${u.plan ? html`<div class="adm-biz is-verified"><div class="adm-biz-head"><b>${u.plan.trial ? 'Пробный ' : 'Тариф '}«${u.plan.name}»</b><span class="pf-badge ok">до ${dateLong(u.plan.until)}</span></div>
           ${u.shop && (u.shop.about || u.shop.cover || u.shop.site) ? html`<div class="muted" style="font-size:14px">Витрина: ${u.shop.about ? `«${u.shop.about.slice(0, 140)}${u.shop.about.length > 140 ? '…' : ''}»` : 'без описания'}${u.shop.site ? ` · ${u.shop.site}` : ''}</div>
@@ -4685,6 +4783,22 @@
     if (bizOk) bizOk.onclick = async () => { try { await api('POST', `/api/admin/users/${u.id}/business`, { decision: 'approve' }); toast('Бизнес подтверждён'); render(); } catch (e) { toast(e.message, true); } };
     const bizNo = $('[data-biz-no]');
     if (bizNo) bizNo.onclick = () => reasonModal({ title: 'Отказать в подтверждении', hint: 'Причину увидит пользователь — он сможет исправить данные и отправить заявку снова.', url: `/api/admin/users/${u.id}/business`, okLabel: 'Отказать', extra: { decision: 'reject' }, reasons: ['ИНН не найден в ЕГРЮЛ/ЕГРИП', 'Название не совпадает с выпиской', 'ИП или организация прекратили деятельность', 'ОГРН не совпадает с ИНН'], placeholder: 'Что не так — для пользователя' });
+    const tmOk = $('[data-tm-ok]');
+    if (tmOk) tmOk.onclick = () => openModal(String(html`<h2>Выдать галочку «${u.trademark.name}»</h2>
+        <p class="muted" style="margin:0">Свидетельство № ${u.trademark.number}, код заявки ${d.user.tmReview.code}. Отметьте каждый пункт — только после того, как сами проверили.</p>
+        <fieldset class="g-kinds tm-checks">${Object.entries(d.user.tmReview.checks).map(([k, t]) => html`<label class="g-opt"><input type="checkbox" name="${k}"> ${t}</label>`)}</fieldset>
+        <div class="field"><label for="tm-u">Действует до (по реестру)</label><input id="tm-u" type="date" class="input" value="${new Date(u.trademark.until).toISOString().slice(0, 10)}"></div>
+        <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-accent" data-ok disabled>Выдать галочку</button></div>`), (m, close) => {
+      const boxes = $$('.tm-checks input', m); const ok = $('[data-ok]', m);
+      boxes.forEach((x) => { x.onchange = () => { ok.disabled = !boxes.every((y) => y.checked); }; });
+      $('[data-x]', m).onclick = close;
+      ok.onclick = async () => {
+        ok.disabled = true;
+        try { await api('POST', `/api/admin/users/${u.id}/trademark`, { decision: 'approve', until: $('#tm-u', m).value, checks: Object.fromEntries(boxes.map((x) => [x.name, x.checked])) }); close(); toast('Галочка выдана — продавец получил уведомление'); render(); } catch (ex) { toast(ex.message, true); ok.disabled = false; }
+      };
+    });
+    const tmNo = $('[data-tm-no]');
+    if (tmNo) tmNo.onclick = () => reasonModal({ title: u.trademark.live ? 'Снять галочку бренда' : 'Вернуть заявку на исправление', hint: 'Причину увидит пользователь — он сможет исправить данные и документы и отправить заявку снова.', url: `/api/admin/users/${u.id}/trademark`, okLabel: u.trademark.live ? 'Снять' : 'Вернуть', extra: { decision: 'reject' }, reasons: ['Номер не найден в реестре Роспатента', 'Правообладатель — другая компания', 'Регистрация прекращена или срок истёк', 'Нет кода заявки в письме или письмо подписал не руководитель', 'Документ нечитаемый или не целиком', 'Вы лицензиат, а не правообладатель'], placeholder: 'Что не так — для пользователя' });
     $('[data-support]').onclick = async () => {
       try { const r = await api('POST', `/api/admin/users/${u.id}/support`); go(`/admin?status=support&t=${r.thread}`); } catch (e) { toast(e.message, true); }
     };
@@ -4782,7 +4896,7 @@
         <div id="ads-found"></div>
         ${uid && !tu ? html`<p class="muted" style="margin:0">Пользователь № ${uid} не найден.</p>` : ''}
         ${tu ? html`<div class="ads-target">
-          <div class="ads-who">${ava(tu)}<span><b>${nameSeal(tu.name, { biz: tu.business && tu.business.status === 'verified' ? { kind: tu.business.kind === 'ip' ? 'ИП' : 'Компания', name: tu.business.name } : null })}</b><span class="muted">${tu.email} · № ${tu.id}${tu.plan ? ` · ${tu.plan.trial ? 'бесплатный ' : ''}«${tu.plan.name}» до ${dateShort(tu.plan.until)}` : ' · без тарифа'}</span></span>
+          <div class="ads-who">${ava(tu)}<span><b>${nameSeal(tu.name, { tm: tu.trademark && tu.trademark.live ? tu.trademark : null })}</b><span class="muted">${tu.email} · № ${tu.id}${tu.plan ? ` · ${tu.plan.trial ? 'бесплатный ' : ''}«${tu.plan.name}» до ${dateShort(tu.plan.until)}` : ' · без тарифа'}</span></span>
             <a class="btn btn-soft btn-sm" href="/admin/u/${tu.id}">Карточка</a></div>
           ${tu.blocked ? html`<div class="banner danger">Пользователь заблокирован — дарить нельзя.</div>` : html`<div class="adm-person-act">
             <button type="button" class="btn btn-dark btn-sm" data-gift-plan>${ic('store', 16)}Подарить тариф</button>
@@ -4855,9 +4969,9 @@
     'review-published': 'Опубликовал отзыв', 'review-rejected': 'Не опубликовал отзыв', 'review-hidden': 'Скрыл отзыв по жалобе', 'review-kept': 'Оставил отзыв после жалобы',
     'review-restored': 'Вернул отзыв', 'biz-verified': 'Подтвердил бизнес', 'biz-rejected': 'Отказал в подтверждении бизнеса', 'reply-published': 'Опубликовал ответ продавца', 'reply-rejected': 'Не опубликовал ответ продавца', 'support-reply': 'Ответил в поддержке',
     'billing-settings': 'Изменил настройки оплаты', 'billing-prices': 'Изменил цены', 'payment-refund': 'Оформил возврат', 'promo-erid': 'Указал erid и запустил рекламу',
-    'promo-stopped': 'Отключил рекламу над поиском', 'plan-stopped': 'Отключил тариф', 'boost-stopped': 'Отключил продвижение', 'user-deactivated': 'Временно удалил профиль', 'user-restored': 'Восстановил профиль', 'user-erased': 'Удалил профиль навсегда', 'seo-settings': 'Изменил настройки поиска и Метрики', 'ads-settings': 'Изменил настройки рекламы', 'shop-cleared': 'Очистил витрину магазина', 'starter-settings': 'Изменил бесплатный старт'
+    'promo-stopped': 'Отключил рекламу над поиском', 'plan-stopped': 'Отключил тариф', 'boost-stopped': 'Отключил продвижение', 'user-deactivated': 'Временно удалил профиль', 'user-restored': 'Восстановил профиль', 'user-erased': 'Удалил профиль навсегда', 'seo-settings': 'Изменил настройки поиска и Метрики', 'ads-settings': 'Изменил настройки рекламы', 'shop-cleared': 'Очистил витрину магазина', 'starter-settings': 'Изменил бесплатный старт', 'tm-verified': 'Выдал галочку бренда', 'tm-rejected': 'Вернул заявку на галочку на исправление', 'tm-doc-viewed': 'Открыл документ заявки на галочку'
   };
-  const LOG_TONE = { 'promo-erid': 'ok', 'promo-stopped': 'bad', 'plan-stopped': 'bad', 'boost-stopped': 'bad', 'user-deactivated': 'bad', 'user-erased': 'bad', 'user-restored': 'ok', 'shop-cleared': 'bad', 'biz-verified': 'ok', 'biz-rejected': 'bad', rejected: 'bad', 'appeal-denied': 'bad', 'user-blocked': 'bad', 'review-rejected': 'bad', 'review-hidden': 'bad', 'reply-rejected': 'bad', approved: 'ok', restored: 'ok', 'appeal-approved': 'ok', 'user-unblocked': 'ok', 'review-published': 'ok', 'reply-published': 'ok', 'review-restored': 'ok' };
+  const LOG_TONE = { 'promo-erid': 'ok', 'promo-stopped': 'bad', 'plan-stopped': 'bad', 'boost-stopped': 'bad', 'user-deactivated': 'bad', 'user-erased': 'bad', 'user-restored': 'ok', 'shop-cleared': 'bad', 'biz-verified': 'ok', 'biz-rejected': 'bad', 'tm-verified': 'ok', 'tm-rejected': 'bad', rejected: 'bad', 'appeal-denied': 'bad', 'user-blocked': 'bad', 'review-rejected': 'bad', 'review-hidden': 'bad', 'reply-rejected': 'bad', approved: 'ok', restored: 'ok', 'appeal-approved': 'ok', 'user-unblocked': 'ok', 'review-published': 'ok', 'reply-published': 'ok', 'review-restored': 'ok' };
   function logRow(e) {
     const act = e.action === 'rejected' ? (e.data.from === 'pending' ? 'Отклонил объявление' : 'Снял с публикации') : LOG_TEXT[e.action] || e.action;
     const target = e.listing ? html`<a href="/admin/l/${e.listing.id}">«${e.listing.title}»</a>`

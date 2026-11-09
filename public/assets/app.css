@@ -2869,3 +2869,34 @@ body.pv-open { overflow: hidden; }
   .adm-svc-brief .btn { width: 100%; }
   .ads-who { flex-wrap: wrap; }
 }
+
+/* 1.45.0: заявка на товарный знак */
+.link-btn { padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: inherit; text-decoration: underline; cursor: pointer; }
+.biz-ok .btn { margin-left: auto; flex: none; }
+.biz-ok > span { flex: 1; min-width: 0; }
+.tm-ok { background: linear-gradient(135deg, #E9F6FF, #EEEAFF); color: #2B3FB8; }
+.adm-biz-head b .vseal { margin-right: 4px; vertical-align: -3px; }
+@media (max-width: 520px) { .biz-ok { flex-wrap: wrap; } .biz-ok .btn { margin-left: 0; } }
+
+.tm-box { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; padding: 18px; border-radius: 22px; border: 1px solid var(--line); }
+.tm-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 16px; }
+.tm-docs { display: flex; flex-direction: column; gap: 10px; }
+.tm-sub { font-size: 15px; }
+.tm-sub .muted { font-weight: 500; font-size: 13px; }
+.tm-need { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.tm-need li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 14px; background: var(--surface); font-size: 14px; color: var(--text-2); }
+.tm-need li svg { flex: none; margin-top: 2px; color: var(--muted); }
+.tm-need li.done { background: var(--accent-soft); }
+.tm-need li.done svg { color: var(--accent); }
+.tm-need b { color: var(--text); }
+.tm-letter summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--accent); }
+.tm-letter pre { margin: 10px 0; padding: 14px; border-radius: 14px; background: var(--surface); white-space: pre-wrap; font: 14px/1.55 inherit; font-family: inherit; }
+.tm-doc-list { display: grid; gap: 8px; }
+.tm-doc { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--surface); }
+.tm-doc > span:nth-child(2) { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.tm-doc small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-doc-ic { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; background: #fff; color: var(--text-2); }
+.tm-up { align-items: flex-end; }
+.tm-file { cursor: pointer; }
+.tm-checks { display: grid; gap: 8px; }
+@media (max-width: 520px) { .tm-doc { flex-wrap: wrap; } .tm-file { width: 100%; } }
