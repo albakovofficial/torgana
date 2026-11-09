@@ -496,7 +496,7 @@ async function main() {
         } else if (open === 'city') {
           // Подсказки города — красивым списком (1.34), а не системным datalist; набор текста сужает список.
           // фильтры за кнопкой — до 900 px (телефон и планшет)
-          { const t = await page.$('#filters-toggle'); if (t && await t.isVisible()) { await t.click(); await page.waitForTimeout(200); } }
+          { const t = await page.$('#filters-open'); if (t && await t.isVisible()) { await t.click(); await page.waitForTimeout(200); } }
           await page.click('#f-city');
           await page.waitForTimeout(200);
           if (!(await page.$('.city-sug .pick-it'))) errors.push('список городов не открылся');
@@ -507,8 +507,10 @@ async function main() {
           if (!/Воронеж/.test(first || '')) errors.push(`первым должен быть Воронеж, а не «${first}»`);
         } else if (open === 'filters') {
           // 1.35: компьютер — выбор в фильтрах применяется сразу, без «Показать»; телефон — «Показать N» с числом и видна на экране.
-          const toggle = await page.$('#filters-toggle');
-          if (toggle && await toggle.isVisible()) {
+          // 1.47.2: фильтры закрыты и на компьютере — открываются кнопкой «Фильтры» в строке под заголовком.
+          const toggle = await page.$('#filters-open');
+          if (vp.viewport.width > 900) { await toggle.click(); await page.waitForTimeout(200); }
+          if (vp.viewport.width <= 900) {
             await toggle.click(); await page.waitForTimeout(200);
             await page.click('#f-extra [data-field="gearbox"] [data-av="Автомат"]');
             await page.waitForFunction(() => /\d/.test(document.querySelector('#f-show').textContent), null, { timeout: 5000 }).catch(() => {}); // число приходит с сервера
@@ -522,6 +524,7 @@ async function main() {
             await page.evaluate(() => window.scrollTo(0, 200));
             await page.click('#f-extra [data-field="gearbox"] [data-av="Автомат"]'); await page.waitForTimeout(700);
             if (await page.evaluate(() => window.scrollY) < 150) errors.push('после выбора фильтра страница прыгнула наверх');
+            if (await page.$('#filters.collapsed')) errors.push('после выбора фильтра панель закрылась');
           }
           if (!/a_gearbox=/.test(page.url())) errors.push(`фильтр не применился: ${page.url()}`);
           const n = await page.textContent('#count');

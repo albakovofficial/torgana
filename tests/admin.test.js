@@ -101,7 +101,7 @@ test('журнал: кто и что сделал, фильтры', async () => 
 
 test('письма модератору: сразу — одним письмом о новом, «не присылать» — тишина', async () => {
   const s = await admin.put('/api/admin/me/notify', { mode: 'instant', kinds: ['pending', 'support'] });
-  assert.deepEqual(s.data, { mode: 'instant', kinds: ['pending', 'support'] });
+  assert.deepEqual(s.data, { mode: 'instant', kinds: ['pending', 'support'], push: ['pending', 'reports', 'support', 'biz', 'rep', 'pay'] });
   await new Promise((r) => setTimeout(r, 300));
   await boris.post('/api/listings', { ...base, title: 'Велосипед Stels', price: 12000 });
   await boris.post('/api/support/messages', { body: 'Когда проверят объявление?' });

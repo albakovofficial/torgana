@@ -729,6 +729,7 @@ function createListing(u, v) {
   if (!u.city) db.prepare('UPDATE users SET city = ? WHERE id = ?').run(v.city, u.id);
   logEvent(id, u.id, 'created', { flags: v.flags, ...(v.via ? { via: v.via } : {}) });
   autoChecks.run(id);
+  alerts.notifyAdmins('pending', { title: 'Новое объявление на проверку', body: `«${v.title}» — ${u.name}. В очереди: ${alerts.pendingCount()}`, url: `/admin/l/${id}` }, u.id);
   return id;
 }
 
@@ -754,6 +755,7 @@ function updateListing(u, l, v) {
   if (oldPhotos.join() !== newPhotos.join()) changes.photos = [oldPhotos.length, newPhotos.length];
   logEvent(l.id, u.id, 'edited', { changes, flags: v.flags, from: l.status, ...(v.via ? { via: v.via } : {}) });
   autoChecks.run(l.id);
+  alerts.notifyAdmins('pending', { title: 'Объявление изменено — на проверку', body: `«${v.title}» — ${u.name}. В очереди: ${alerts.pendingCount()}`, url: `/admin/l/${l.id}` }, u.id);
 }
 helpers.createListing = createListing;
 helpers.updateListing = updateListing;
@@ -780,6 +782,17 @@ function listingTick() {
     publishListing(id, true);
     logEvent(id, null, 'published', { scheduled: true });
     alerts.moderation(id, 'approved');
+  }
+  // 1.47.2: за 3 дня до снятия — push и колокольчик «объявление скоро снимется» (один раз на срок).
+  const soon = db.prepare(`SELECT id, user_id, title, expires_at FROM listings WHERE status = 'active' AND expires_at > ? AND expires_at <= ?
+    AND (expire_warned_for IS NULL OR expire_warned_for != expires_at)
+    AND id NOT IN (SELECT listing_id FROM feed_items WHERE gone = 0 AND listing_id IS NOT NULL)
+    AND id NOT IN (SELECT listing_id FROM promotions WHERE status = 'active' AND listing_id IS NOT NULL)
+    AND id NOT IN (SELECT listing_id FROM boosts WHERE status = 'active' AND listing_id IS NOT NULL) LIMIT 500`).all(t, t + 3 * 24 * 3600 * 1000);
+  for (const l of soon) {
+    db.prepare('UPDATE listings SET expire_warned_for = ? WHERE id = ?').run(l.expires_at, l.id);
+    const day = new Date(l.expires_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' });
+    alerts.notify(l.user_id, 'moderation', { title: 'Объявление скоро снимется', body: `«${l.title}» — ${day}. Потом его можно опубликовать снова, бесплатно`, url: `/l/${l.id}`, icon: 'clock', tone: 'wait', tag: `soon-${l.id}` });
   }
   const expired = db.prepare(`SELECT id FROM listings WHERE status = 'active' AND expires_at <= ?
     AND id NOT IN (SELECT listing_id FROM feed_items WHERE gone = 0 AND listing_id IS NOT NULL)

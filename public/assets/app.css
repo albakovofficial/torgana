@@ -2088,6 +2088,7 @@ body.pv-open { overflow: hidden; }
 .nt-ic.gray, .nt-badge.gray { background: #8A8A86; }
 .nt-ph { position: relative; width: 48px; height: 48px; flex: none; }
 .nt-ph img { width: 100%; height: 100%; object-fit: cover; border-radius: 14px; background: var(--surface); }
+.nt-ph.brand { display: grid; place-items: center; border-radius: 14px; background: radial-gradient(90% 60% at 35% 10%, rgba(255, 255, 255, .28), transparent 70%), linear-gradient(135deg, #4C86E0, #3D67D0 55%, #6A63D8); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18); }
 .nt-badge { position: absolute; right: -5px; bottom: -5px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; border: 2.5px solid #fff; color: #fff; }
 .nt-it { align-items: flex-start; }
 .nt-t b { font-weight: 700; }
@@ -2989,3 +2990,41 @@ html.dw-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .dw, .dw-card, .dw-ava, .dw-seal, .dw-rings, .dw-sp > * { animation: none; }
 }
+
+/* ---------- 1.47.2: шапка поиска — заголовок и одна строка: «Фильтры», сортировка, «Список / Карта» (телефон и компьютер) ---------- */
+.rh-title { min-width: 0; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.rh-title #count { font-size: 15px; }
+.results-head { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 14px; margin-bottom: 18px; }
+.rh-tools { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rh-filters { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border: 0; border-radius: 999px; background: var(--surface); color: var(--text); font: inherit; font-size: 15px; font-weight: 650; cursor: pointer; transition: background .15s; }
+.rh-filters:hover { background: var(--surface-2); }
+.rh-filters[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.rh-filters .f-count { min-width: 20px; height: 20px; padding: 0 6px; display: inline-grid; place-items: center; border-radius: 999px; background: var(--grad); color: #fff; font-size: 12px; font-weight: 700; }
+.results-head .pick-btn { width: auto; flex: none; min-width: 0; height: 44px; padding: 0 14px 0 18px; gap: 8px; border: 0; border-radius: 999px; background: var(--surface); font-size: 15px; font-weight: 600; }
+.results-head .pick-btn:hover { background: var(--surface-2); }
+.view-sw { flex: none; }
+.view-sw a { gap: 6px; }
+.view-sw a svg { flex: none; }
+.filters.collapsed { display: none; }
+.search-page:has(.filters.collapsed) .results { flex-basis: 100%; }
+@media (max-width: 900px) {
+  .filters #filters-toggle { display: none; }
+  .filters:not(.collapsed) { padding: 18px; }
+  .search-page { gap: 12px; padding-top: 14px; }
+  .results-head { gap: 12px; margin-bottom: 14px; }
+  .results-head h1 { font-size: 24px; line-height: 1.15; }
+  .rh-title #count { font-size: 14px; }
+  .rh-tools { gap: 6px; }
+  .rh-filters { gap: 6px; height: 40px; padding: 0 12px; font-size: 14px; }
+  .results-head .pick-btn { flex: 1 1 auto; min-width: 0; height: 40px; padding: 0 8px 0 12px; gap: 4px; border: 0; background: var(--surface); font-size: 14px; font-weight: 600; }
+  .results-head .pick-btn > svg { display: none; }
+  .results-head .pick-btn > span { text-align: center; }
+  .view-sw { flex: none; height: 40px; padding: 3px; }
+  .view-sw a { height: 34px; width: 36px; padding: 0; justify-content: center; }
+  .view-sw a span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .results-head select[hidden] + .pick-btn, .results-head .pick-btn[hidden] { display: none; }
+}
+
+.f-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.f-close { display: none; }
+.f-close { display: inline-grid; }

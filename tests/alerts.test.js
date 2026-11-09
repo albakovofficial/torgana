@@ -162,3 +162,30 @@ test('переключателей об отзывах нет', async () => {
   assert.equal(me.notifyReviews, undefined);
   assert.equal(me.pushModeration, true);
 });
+
+// 1.47.2: push модераторам — сразу, о выбранном; свои действия себе не присылаем.
+test('push модератору: новое на проверку и поддержка; выключенный вид и свои действия — нет', async () => {
+  const phone = fakeBrowser();
+  await admin.post('/api/push/subscribe', { subscription: { endpoint: `http://127.0.0.1:${pushPort}/sub/admin`, keys: phone.keys } });
+  const mine = () => inbox.filter((m) => m.path === '/sub/admin').map((m) => phone.decrypt(m.body));
+  const waitAdm = async (fn) => {
+    for (let t = 0; t < 4000; t += 50) { const hit = mine().find(fn); if (hit) return hit; await new Promise((r) => setTimeout(r, 50)); }
+    throw new Error(`push модератору не пришёл; есть: ${mine().map((x) => x.title).join('; ')}`);
+  };
+  assert.deepEqual((await admin.get('/api/admin/me/notify')).data.push, ['pending', 'reports', 'support', 'biz', 'rep', 'pay']);
+  const id = (await anna.post('/api/listings', { title: 'Комод из дуба', category: 'hobby', city: 'Казань', price: '5000' })).data.id;
+  const m = await waitAdm((x) => x.title === 'Новое объявление на проверку');
+  assert.match(m.body, /«Комод из дуба» — Анна\. В очереди: \d+/);
+  assert.equal(m.url, `/admin/l/${id}`);
+  await anna.post('/api/support/messages', { body: 'Здравствуйте! Как поднять объявление?' });
+  const s = await waitAdm((x) => x.title === 'Поддержка: Анна');
+  assert.match(s.body, /Как поднять объявление/);
+  // Выключил жалобы — о жалобе не приходит; своё объявление — тоже нет.
+  assert.deepEqual((await admin.put('/api/admin/me/notify', { push: ['pending', 'support'] })).data.push, ['pending', 'support']);
+  await boris.post(`/api/listings/${bike}/report`, { reason: 'Мошенничество', text: 'Просит предоплату' });
+  await new Promise((r) => setTimeout(r, 500));
+  assert.ok(!mine().some((x) => x.title.startsWith('Жалоба')), 'жалобы выключены');
+  assert.equal((await admin.get('/api/admin/me/notify')).data.mode, 'hourly', 'письма не тронуты');
+  const user = await anna.get('/api/me');
+  assert.equal(user.status, 200);
+});

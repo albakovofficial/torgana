@@ -637,6 +637,7 @@
     S.notices = n || 0;
     $$('[data-notices]').forEach((el) => { el.textContent = S.notices > 99 ? '99+' : S.notices; el.classList.toggle('hidden', !S.notices); });
   }
+  // 1.47.2: у всех уведомлений один вид — картинка (фото объявления или знак Торганы) и цветной значок события в углу.
   // Цвет события (1.25): зелёный — опубликовано, красный — нужно исправить, жёлтый — сроки,
   // синий — оплата и возвраты, фиолетовый — продвижение.
   const NOTICE_COLOR = { check: 'green', warn: 'red', clock: 'amber', star: 'amber', store: 'amber', card: 'blue', megaphone: 'violet', tag: 'violet', bolt: 'violet', down: 'green', shield: 'green' };
@@ -658,9 +659,8 @@
       const groups = [];
       d.items.forEach((n) => { const k = noticeDay(n.at); const g = groups[groups.length - 1]; if (g && g[0] === k) g[1].push(n); else groups.push([k, [n]]); });
       $('#nt-body', m).innerHTML = String(d.items.length ? html`${groups.map(([day, list]) => html`<div class="nt-day">${day}</div>
-        ${list.map((n) => { const col = noticeColor(n); const icn = ic(P[n.icon] ? n.icon : 'bell', n.photo ? 12 : 19, n.photo ? 2.6 : 2); return html`<a class="nt-it${n.read ? '' : ' new'}" href="${n.url || '#'}">${n.photo
-    ? html`<span class="nt-ph"><img src="${n.photo}" alt="" loading="lazy"><i class="nt-badge ${col}">${icn}</i></span>`
-    : html`<span class="nt-ic ${col}">${icn}</span>`}
+        ${list.map((n) => { const col = noticeColor(n); const icn = ic(P[n.icon] ? n.icon : 'bell', 12, 2.6); return html`<a class="nt-it${n.read ? '' : ' new'}" href="${n.url || '#'}">
+          <span class="nt-ph${n.photo ? '' : ' brand'}">${n.photo ? html`<img src="${n.photo}" alt="" loading="lazy">` : html`<svg width="30" height="30" viewBox="0 0 48 48" aria-hidden="true">${raw(MARK)}</svg>`}<i class="nt-badge ${col}">${icn}</i></span>
           <span class="nt-t"><b>${n.title}</b>${n.body ? html`<span>${n.body}</span>` : ''}<small>${hm(n.at)}</small></span></a>`; })}`)}`
         : html`<div class="nt-empty"><span class="nt-empty-ic">${ic('bell', 30, 1.6)}</span><b>Здесь будут уведомления</b><p>Напишем, когда объявление опубликуют или подешевеет товар из избранного.</p></div>`);
       if (d.unread) { api('POST', '/api/notices/read', {}).then((r) => setNotices(r.unread)).catch(() => {}); }
@@ -854,6 +854,8 @@
 
   // ================= роутер =================
   let cleanup = null;
+  // 1.47.2: фильтры поиска закрыты и на компьютере; открытые остаются открытыми при смене фильтра (страница перерисовывается).
+  let filtersOpen = false;
   function go(url, replace = false) {
     history[replace ? 'replaceState' : 'pushState']({}, '', url);
     render();
@@ -1186,10 +1188,10 @@
     const onMap = S.config.maps && params.view === 'map';
     const nFilters = ['category', 'city', 'min', 'max', 'delivery', 'bargain', 'exchange', 'trusted', 'metro'].filter((k) => params[k]).length + (sub ? 1 : 0) + Object.keys(params).filter((k) => k.startsWith('a_') && params[k]).length;
     app.innerHTML = String(html`<div class="wrap search-page">
-      <aside class="filters collapsed" id="filters">
+      <aside class="filters ${filtersOpen && !window.matchMedia('(max-width: 900px)').matches ? '' : 'collapsed'}" id="filters">
         <button type="button" class="btn btn-soft btn-block" id="filters-toggle" aria-controls="filter-form" aria-expanded="false">${ic('filter', 18)}Фильтры${nFilters ? html`<span class="f-count">${nFilters}</span>` : ''}</button>
         <form id="filter-form" class="filters-body">
-          <h3>Фильтры</h3>
+          <div class="f-head"><h3>Фильтры</h3><button type="button" class="icon-btn f-close" data-f-close aria-label="Скрыть фильтры">${ic('close', 20, 2)}</button></div>
           <input type="hidden" name="q" value="${params.q || ''}">
           <div class="field"><label for="f-cat">Категория</label>
             <select id="f-cat" name="category" class="select"><option value="">Все категории</option>
@@ -1209,14 +1211,17 @@
       </aside>
       <section class="results">
         <div class="results-head">
-          <div><h1>${title}</h1><div class="muted" id="count">&nbsp;</div></div>
-          ${S.config.maps ? html`<nav class="seg view-sw" aria-label="Вид">${[['', 'Список'], ['map', 'Карта']].map(([v, t]) => html`<a href="/search?${new URLSearchParams(Object.entries({ ...params, view: v }).filter(([, x]) => x))}" class="${(params.view === 'map') === (v === 'map') ? 'on' : ''}" ${(params.view === 'map') === (v === 'map') ? raw('aria-current="page"') : ''}>${t}</a>`)}</nav>` : ''}
-          <label class="sr" for="sort">Сортировка</label>
-          <select id="sort" ${onMap ? raw('hidden') : ''} class="select" style="width:auto;min-width:200px;height:44px;border-radius:999px">
-            <option value="">Сначала новые</option>
-            <option value="cheap" ${params.sort === 'cheap' ? raw('selected') : ''}>Сначала дешевле</option>
-            <option value="expensive" ${params.sort === 'expensive' ? raw('selected') : ''}>Сначала дороже</option>
-          </select>
+          <div class="rh-title"><h1>${title}</h1><div class="muted" id="count">&nbsp;</div></div>
+          <div class="rh-tools">
+            <button type="button" class="rh-filters" id="filters-open" aria-controls="filter-form" aria-expanded="false">${ic('sliders', 17, 2)}<span>Фильтры</span>${nFilters ? html`<span class="f-count">${nFilters}</span>` : ''}</button>
+            <label class="sr" for="sort">Сортировка</label>
+            <select id="sort" ${onMap ? raw('hidden') : ''} class="select">
+              <option value="">Сначала новые</option>
+              <option value="cheap" ${params.sort === 'cheap' ? raw('selected') : ''}>Сначала дешевле</option>
+              <option value="expensive" ${params.sort === 'expensive' ? raw('selected') : ''}>Сначала дороже</option>
+            </select>
+            ${S.config.maps ? html`<nav class="seg view-sw" aria-label="Вид">${[['', 'Список', 'list'], ['map', 'Карта', 'pin']].map(([v, t, i]) => html`<a href="/search?${new URLSearchParams(Object.entries({ ...params, view: v }).filter(([, x]) => x))}" class="${(params.view === 'map') === (v === 'map') ? 'on' : ''}" ${(params.view === 'map') === (v === 'map') ? raw('aria-current="page"') : ''} aria-label="${t}">${ic(i, 17, 2)}<span>${t}</span></a>`)}</nav>` : ''}
+          </div>
         </div>
         ${subChips.length ? html`<nav class="sub-chips" aria-label="Разделы">${subChips.map((x) => html`<a class="chip" href="/search?${new URLSearchParams({ ...params, category, sub: x.id })}">${x.name}</a>`)}</nav>` : ''}
         ${activeChips.length ? html`<div class="active-chips">${activeChips.map(([t, href]) => html`<a class="chip on" href="${href}" aria-label="Убрать: ${t}">${t}${ic('close', 14, 2.2)}</a>`)}</div>` : ''}
@@ -1274,7 +1279,11 @@
     // на телефоне панель открывается кнопкой «Фильтры», а «Показать» внизу сразу пишет, сколько найдётся.
     const narrow = () => window.matchMedia('(max-width: 900px)').matches;
     const toggle = $('#filters-toggle');
-    toggle.onclick = () => { const open = $('#filters').classList.toggle('collapsed') === false; toggle.setAttribute('aria-expanded', String(open)); };
+    toggle.onclick = () => { const open = $('#filters').classList.toggle('collapsed') === false; filtersOpen = open; toggle.setAttribute('aria-expanded', String(open)); $('#filters-open').setAttribute('aria-expanded', String(open)); };
+    $('#filters-open').setAttribute('aria-expanded', String(!$('#filters').classList.contains('collapsed')));
+    // 1.47.2: на телефоне «Фильтры» — в одной строке с сортировкой и «Список / Карта»; панель открывается над результатами.
+    $('[data-f-close]').onclick = () => { toggle.onclick(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    $('#filters-open').onclick = () => { toggle.onclick(); if (narrow() && !$('#filters').classList.contains('collapsed')) $('#filters').scrollIntoView({ block: 'start', behavior: 'smooth' }); };
     const formParams = () => {
       const next = {};
       for (const [k, v] of new FormData(ff).entries()) {
@@ -3655,7 +3664,7 @@
     ['Подписки', 'Новые объявления продавцов, на которых вы подписаны', 'pushSearches', null],
     ['Снижение цены', 'Подешевело то, что у вас в избранном', 'pushPrices', null],
     ['Подборка за день', 'Новое у продавцов и снижение цен — одним письмом', null, 'notifyDigest'],
-    ['Модерация', 'Решения по объявлениям и апелляциям, проверка бизнеса, оплаты', 'pushModeration', 'notifyModeration']
+    ['Объявления и сделки', 'Решения модерации, срок публикации, сделки и репутация, проверка бизнеса, оплаты', 'pushModeration', 'notifyModeration']
   ];
   const notifyCell = (u, k, title, kind) => (k
     ? html`<label class="mini-switch"><input type="checkbox" name="${k}" aria-label="${kind} — ${title}" ${u[k] ? raw('checked') : ''}><span class="track"></span></label>`
@@ -5414,10 +5423,18 @@
     const cur = await api('GET', '/api/admin/me/notify');
     const MODES = [['instant', 'Сразу', 'Одним письмом в течение минуты после нового'], ['hourly', 'Раз в час', 'Сводка всего нового за час'], ['off', 'Не присылать', 'Смотрю сам на сайте']];
     const KINDS = [['pending', 'Новые объявления на проверку', 'И изменённые — после правки они снова в очереди'], ['reports', 'Жалобы на объявления', ''], ['support', 'Сообщения в поддержку', 'Только те, что ещё никто не прочитал']];
+    // 1.47.2: push — сразу, на этот телефон или компьютер; отдельно от писем.
+    const PUSH = [['pending', 'Новые и изменённые объявления', 'Не чаще раза в 2 минуты — со счётчиком очереди'], ['reports', 'Жалобы на объявления', ''], ['support', 'Сообщения в поддержку', ''],
+      ['biz', 'Проверка бизнеса и галочки бренда', 'Новые заявки'], ['rep', 'Репутация', 'Жалобы по сделкам и подозрительные сделки'], ['pay', 'Оплаты', 'Каждая прошедшая оплата']];
     box.innerHTML = String(html`<div class="adm-head"><h1>Мои уведомления</h1></div>
+      <form class="panel nt-form" id="ntp" style="margin-bottom:16px">
+        <div><h2 class="h2">Push — сразу на телефон</h2><p class="muted" style="margin:4px 0 0">Приходят на устройства, где вы включили уведомления. Ваши собственные действия не присылаем.</p></div>
+        <div id="ntp-dev"></div>
+        <div class="nt-kinds">${PUSH.map(([k, t, sub]) => html`<label class="switch"><span>${t}${sub ? html`<small>${sub}</small>` : ''}</span><input type="checkbox" name="push" value="${k}" ${cur.push.includes(k) ? raw('checked') : ''}><span class="track"></span></label>`)}</div>
+      </form>
       ${S.config.mail ? '' : html`<div class="banner warn" style="margin-bottom:16px">Почта ещё не подключена — письма начнут приходить после настройки в разделе <a href="/admin?status=mail" style="text-decoration:underline">«Почта»</a>.</div>`}
       <form class="panel nt-form" id="nt">
-        <div><h2 class="h2">Как часто</h2><p class="muted" style="margin:4px 0 0">Письма приходят на ${S.user.email}. У каждого модератора — свои настройки.</p></div>
+        <div><h2 class="h2">Письма — как часто</h2><p class="muted" style="margin:4px 0 0">Письма приходят на ${S.user.email}. У каждого модератора — свои настройки.</p></div>
         <div class="nt-modes" role="radiogroup" aria-label="Как часто">${MODES.map(([k, t, sub]) => html`<label class="nt-mode"><input type="radio" name="mode" value="${k}" ${cur.mode === k ? raw('checked') : ''}><span><b>${t}</b><small>${sub}</small></span></label>`)}</div>
         <div class="nt-kinds ${cur.mode === 'off' ? 'off' : ''}"><h2 class="h2">О чём</h2>
           ${KINDS.map(([k, t, sub]) => html`<label class="switch"><span>${t}${sub ? html`<small>${sub}</small>` : ''}</span><input type="checkbox" name="kinds" value="${k}" ${cur.kinds.includes(k) ? raw('checked') : ''}><span class="track"></span></label>`)}</div>
@@ -5429,6 +5446,12 @@
       $('.nt-kinds', f).classList.toggle('off', mode === 'off');
       try { await api('PUT', '/api/admin/me/notify', { mode, kinds }); toast(mode === 'off' ? 'Письма о новом отключены' : 'Сохранено'); } catch (e) { toast(e.message, true); }
     };
+    const fp = $('#ntp');
+    fp.onchange = async (e) => {
+      if (e.target.name !== 'push') return;
+      try { await api('PUT', '/api/admin/me/notify', { push: $$('input[name=push]:checked', fp).map((x) => x.value) }); toast('Сохранено'); } catch (ex) { toast(ex.message, true); }
+    };
+    renderPushDevice($('#ntp-dev')).catch(() => {});
   }
 
   // Найденные подозрительные основы слов → целые слова в тексте (ё = е, позиции совпадают).

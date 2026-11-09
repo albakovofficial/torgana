@@ -55,6 +55,7 @@ test('комплименты: после сделки, до трёх из спи
   assert.equal((await b.post(`/api/conversations/${first.cid}/praise`, { tags: ['Просто класс'] })).status, 400);
   assert.equal((await b.post(`/api/conversations/${first.cid}/praise`, { tags: ['Всё как на фото', 'Вежливый', 'Честный торг', 'Быстро отвечает'] })).status, 400);
   assert.equal((await b.post(`/api/conversations/${first.cid}/praise`, { tags: ['Всё как на фото', 'Вежливый'] })).status, 200);
+  assert.ok((await seller.get('/api/notices')).data.items.some((n) => /отметил\(а\) сделку/.test(n.title) && n.body === 'Всё как на фото · Вежливый'), '1.47.2: продавцу — уведомление о комплиментах');
   assert.equal((await b.post(`/api/conversations/${first.cid}/praise`, { tags: ['Честный торг'] })).status, 409);
   assert.equal((await seller.post(`/api/conversations/${first.cid}/praise`, { tags: ['Всё как на фото'] })).status, 400, 'покупателю — свои метки');
   assert.equal((await seller.post(`/api/conversations/${first.cid}/praise`, { tags: ['Пришёл вовремя'] })).status, 200);
@@ -92,6 +93,7 @@ test('уровень «Надёжный» от 5 сделок, фильтр «Н
   }
   let r = await rep(seller);
   assert.equal(r.deals, 5); assert.equal(r.level, 1); assert.equal(r.levelName, 'Надёжный'); assert.equal(r.newbie, false);
+  assert.ok((await seller.get('/api/notices')).data.items.some((n) => n.title === 'Новый уровень: Надёжный'), '1.47.2: уведомление о новом уровне');
   const all = (await client(srv.base).get('/api/listings?city=Казань')).data.total;
   const trusted = (await client(srv.base).get('/api/listings?city=Казань&trusted=1')).data;
   assert.ok(trusted.total > 0 && trusted.total < all, 'только продавцы с уровнем');
