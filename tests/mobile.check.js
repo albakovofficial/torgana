@@ -158,6 +158,13 @@ async function seed(base, browser) {
   const shop = await registerUser(base, { name: 'Ольга Детство', email: 'shop@test.local' });
   await shop.post('/api/me/business', { name: 'ООО «Детство»', inn: '7707083893', ogrn: '1027700132195' });
   await admin.post(`/api/admin/users/${shop.user.id}/business`, { decision: 'approve' });
+  // 1.45: галочка — у правообладателя товарного знака (магазин), заявка на проверке — у Анны.
+  const tmUntil = new Date(Date.now() + 5 * 365 * 86400000).toISOString().slice(0, 10);
+  const pdf = `data:application/pdf;base64,${Buffer.from('%PDF-1.4\n%%EOF\n').toString('base64')}`;
+  for (const c of [shop, seller]) for (const kind of ['cert', 'letter']) await c.post('/api/me/verify-docs', { kind, name: kind === 'cert' ? 'svidetelstvo.pdf' : 'pismo.pdf', data: pdf });
+  await shop.post('/api/me/trademark', { number: '912345', name: 'Детство', until: tmUntil });
+  await admin.post(`/api/admin/users/${shop.user.id}/trademark`, { decision: 'approve', checks: { registry: true, owner: true, cert: true, letter: true } });
+  await seller.post('/api/me/trademark', { number: '845210', name: 'Смирнова Home', until: tmUntil });
   const pay = async (r) => { const id = r.data.url.split('/').pop(); ykPay.get(id).status = 'succeeded'; ykPay.get(id).payment_method = { type: 'bank_card' }; await client(base).post('/api/pay/yookassa', { object: { id } }); return r.data.id; };
   const planPay = await pay(await shop.post('/api/my/plan/pay', { plan: 'pro', months: 3 }));
   const pg = await browser.newPage();
@@ -177,6 +184,8 @@ async function seed(base, browser) {
   await pay(await shop.post(`/api/listings/${s1}/promote`, { days: 7 }));
   await pay(await shop.post(`/api/listings/${s2}/promote`, { days: 30 }));
   const pendingPay = (await shop.post('/api/my/plan/pay', { plan: 'pro', months: 12 })).data.id;
+  // 1.45: бесплатный старт первым бизнес-аккаунтам — 0 ₽ и зачёркнутая цена на странице «Для бизнеса».
+  await admin.put('/api/admin/starter', { on: true, days: 90, limit: 100 });
   for (let i = 0; i < 3; i++) await client(base).post('/api/stats/impressions', { ids: [s1, s2] }, { origin: base, 'user-agent': ua(20 + i) });
   await client(base).post('/api/stats/view', { id: s1, src: 'ad' }, { origin: base, 'user-agent': ua(20) });
   // 1.20: проверенное объявление ждёт выбранного времени; обмен — у дивана.
@@ -281,8 +290,11 @@ function pages(d) {
     ['admin-ai', '/admin?status=ai', d.admin],
     ['admin-sources', '/admin?status=sources', d.admin],
     ['admin-user', `/admin/u/${d.seller.user.id}`, d.admin],
-    ['admin-gift-boost', `/admin/u/${d.seller.user.id}`, d.admin, '[data-gift-boost]'], // 1.44: подарить продвижение
-    ['admin-gift-promo', `/admin/u/${d.seller.user.id}`, d.admin, '[data-gift-promo]'],
+    // 1.45: «Реклама» в модерации — подарки, идущее, бесплатный старт и цены
+    ['admin-ads', `/admin?status=ads&u=${d.seller.user.id}`, d.admin],
+    ['admin-ads-plans', '/admin?status=ads&t=plans', d.admin],
+    ['admin-gift-boost', `/admin?status=ads&u=${d.seller.user.id}`, d.admin, '[data-gift-boost]'], // 1.44: подарить продвижение
+    ['admin-gift-promo', `/admin?status=ads&u=${d.seller.user.id}`, d.admin, '[data-gift-promo]'],
     // 1.39: удаление профиля — экран восстановления и карточка временно удалённого в модерации
     ['account-gone', '/profile', d.gone],
     ['admin-user-gone', `/admin/u/${d.gone.user.id}`, d.admin],
@@ -307,6 +319,10 @@ function pages(d) {
     ['business', '/business', null],
     ['business-pro', '/business?m=12', d.shop],
     ['business-nobiz', '/business', d.buyer],
+    ['business-free', '/business', d.seller],
+    ['settings-brand', '/profile/settings#s-biz', d.seller], // 1.45: заявка на товарный знак на проверке
+    ['admin-user-brand', `/admin/u/${d.seller.user.id}`, d.admin],
+    ['settings-brand-new', '/profile/settings#s-biz', d.shop], // галочка выдана // 1.45: бизнес-аккаунт включён, бесплатный старт доступен
     ['biz-hub', '/profile/business', d.shop],
     ['biz-hub-empty', '/profile/business', d.buyer],
     ['biz-shop', '/profile/business/shop', d.shop],

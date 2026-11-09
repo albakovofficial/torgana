@@ -102,8 +102,8 @@ function publicUser(u) {
   return u ? {
     id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, avatar: photoUrl(u.avatar), isAdmin: !!u.is_admin, isOwner: !!u.is_admin && u.email === OWNER_EMAIL, createdAt: u.created_at,
     emailVerified: !!u.email_verified, ...Object.fromEntries(Object.entries(NOTIFY_FIELDS).map(([k, col]) => [k, !!u[col]])),
-    rating: reviews.ratingOf(u.id), badges: badgesOf(u), business: trust.bizOf(u), phoneVia: u.phone_verified ? u.phone_verified_via : '', oauth: oauth.linkedOf(u.id),
-    plan: business.planOf(u), deactivatedAt: u.deactivated_at || null
+    rating: reviews.ratingOf(u.id), badges: badgesOf(u), business: trust.bizOf(u), trademark: trust.tmOf(u), phoneVia: u.phone_verified ? u.phone_verified_via : '', oauth: oauth.linkedOf(u.id),
+    plan: business.planOf(u), bizAccount: !!u.biz_account, deactivatedAt: u.deactivated_at || null
   } : null;
 }
 
@@ -310,7 +310,7 @@ helpers.audit = audit; // журнал модерации нужен и отзы
 const supportChat = require('./lib/support')({ route, db, mailer, h: helpers });
 const stats = require('./lib/stats')({ route, db, h: helpers });
 const reviews = require('./lib/reviews')({ route, db, mailer, h: helpers });
-const trust = require('./lib/trust')({ route, db, h: helpers, mailer }); // «Телефон подтверждён», проверенный бизнес
+const trust = require('./lib/trust')({ route, db, h: helpers, mailer, dataDir: DATA_DIR }); // «Телефон подтверждён», проверенный бизнес
 require('./lib/admin')({ route, db, h: helpers, reviews, trust }); // сводка, пользователи, журнал, письма модератору
 helpers.sources = require('./lib/sources')({ route, db, h: helpers }); // откуда пришли люди (1.38)
 const oauth = require('./lib/oauth')({ route, db, h: helpers, auth, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, secureCookies: SECURE_COOKIES, adminEmails: ADMIN_EMAILS, testBase: process.env.OAUTH_TEST_BASE || '' });
@@ -318,7 +318,7 @@ const oauth = require('./lib/oauth')({ route, db, h: helpers, auth, baseUrl: PUB
 helpers.logEvent = logEvent;
 helpers.categoryIds = CATEGORY_IDS;
 const billing = require('./lib/billing')({ route, db, h: helpers, mailer, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, testBase: process.env.YOOKASSA_TEST_BASE || '' });
-const business = require('./lib/business')({ route, db, h: helpers, billing, mailer, stats, trust });
+const business = require('./lib/business')({ route, db, h: helpers, billing, mailer, stats });
 const promo = require('./lib/promo')({ route, db, h: helpers, billing, business, stats, mailer, searchSpec, specSql, categoryIds: CATEGORY_IDS });
 // Продвижение в ленте и поиске для всех продавцов: XL-карточка, рамка, метки на фото (1.21.0).
 const boost = require('./lib/boost')({ route, db, h: helpers, billing });
@@ -337,7 +337,7 @@ const ops = require('./lib/ops')({ route, db, h: helpers, mailer, codesOn, root:
   deviceCheck: process.env.ADMIN_DEVICE_CHECK !== '0' });
 opsApi = ops;
 helpers.business = business;
-helpers.account = require('./lib/account')({ route, db, h: { ...helpers, secureCookies: SECURE_COOKIES }, removeListing, auth }); // удаление профиля (1.39)
+helpers.account = require('./lib/account')({ route, db, h: { ...helpers, secureCookies: SECURE_COOKIES, trust }, removeListing, auth }); // удаление профиля (1.39)
 
 // Поисковики и Метрика: коды подтверждения Вебмастера и Search Console, номер счётчика — «Модерация → Поиск и статистика».
 // ИИ по фото: Яндекс AI Studio (ключ и каталог — в модерации, «Настройки → ИИ по фото» или YANDEX_AI_KEY/YANDEX_FOLDER_ID),
@@ -376,7 +376,7 @@ route('PUT', '/api/admin/seo', async (ctx) => {
 route('GET', '/api/my/business', (ctx) => {
   const u = requireUser(ctx);
   return {
-    plan: business.planOf(u), prices: billing.prices(), ready: billing.ready(), biz: trust.bizOf(u),
+    plan: business.planOf(u), prices: billing.prices(), ready: billing.ready(), biz: trust.bizOf(u), bizAccount: !!u.biz_account, trial: business.trialBlock(u) === '', trialWhy: business.trialBlock(u),
     shop: { cover: photoUrl(u.shop_cover), about: u.shop_about, hours: u.shop_hours, address: u.shop_address, site: u.shop_site },
     feed: feed.publicFeed(u), promotions: promo.listFor(u.id), payments: billing.listFor(u.id)
   };
