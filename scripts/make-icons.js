@@ -13,24 +13,25 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ASSETS = path.join(__dirname, '..', 'public', 'assets');
-const GREEN = '#1F5E4A';
+const GREEN = '#3D67D0'; // «Небо и сирень»: основной цвет, отверстие в знаке
+const SKY = '#2E6FCC', LILAC = '#5B5FD6'; // переход фона
 // Знак в сетке 48×48: перекладина-ценник с отверстием и ножка буквы Т.
 const MARK = (hole) => `<path d="M13.5 11H34.5a4.5 4.5 0 0 1 0 9H13.5L9 15.5z" fill="#fff" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>`
   + `<rect x="19.5" y="15" width="9" height="24" rx="4.5" fill="#fff"/><circle cx="14.6" cy="15.5" r="1.7" fill="${hole}"/>`;
 
 // Вкладка браузера: круг, знак 73%.
-const favicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="24" fill="${GREEN}"/>`
+const favicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${SKY}"/><stop offset="1" stop-color="${LILAC}"/></linearGradient></defs><circle cx="24" cy="24" r="24" fill="url(#g)"/>`
   + `<g transform="translate(6.5 6.5) scale(0.73)">${MARK(GREEN)}</g></svg>\n`;
 
 // Иконка приложения: квадрат с мягким светом сверху, знак ~50% высоты по оптическому центру.
 const appIcon = (size) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 48 48">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#256B55"/><stop offset="1" stop-color="#1A5140"/></linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${SKY}"/><stop offset="1" stop-color="${LILAC}"/></linearGradient>
     <radialGradient id="glow" cx="0.3" cy="0.12" r="0.75"><stop offset="0" stop-color="#fff" stop-opacity="0.10"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
-    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="0.45" stdDeviation="0.55" flood-color="#0B2A21" flood-opacity="0.28"/></filter>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="0.45" stdDeviation="0.55" flood-color="#1E2A6B" flood-opacity="0.28"/></filter>
   </defs>
   <rect width="48" height="48" fill="url(#bg)"/><rect width="48" height="48" fill="url(#glow)"/>
-  <g filter="url(#sh)" transform="translate(24 24.4) scale(0.8) translate(-24 -25)">${MARK('#1E5C48')}</g>
+  <g filter="url(#sh)" transform="translate(24 24.4) scale(0.8) translate(-24 -25)">${MARK('#4466D2')}</g>
 </svg>`;
 
 const PNG = { 'apple-touch-icon.png': 180, 'icon-192.png': 192, 'icon-512.png': 512 };

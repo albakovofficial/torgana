@@ -173,7 +173,7 @@ async function seed(base, browser, srv) {
   const coverData = await pg.evaluate(() => {
     const cv = document.createElement('canvas'); cv.width = 1600; cv.height = 530;
     const x = cv.getContext('2d'); const g = x.createLinearGradient(0, 0, 1600, 530); g.addColorStop(0, '#DCE9E2'); g.addColorStop(1, '#F1E6D8'); x.fillStyle = g; x.fillRect(0, 0, 1600, 530);
-    x.fillStyle = 'rgba(31,94,74,.18)'; for (let i = 0; i < 7; i++) { x.beginPath(); x.arc(160 + i * 220, 265 + (i % 2 ? 60 : -60), 120, 0, Math.PI * 2); x.fill(); }
+    x.fillStyle = 'rgba(61,103,208,.18)'; for (let i = 0; i < 7; i++) { x.beginPath(); x.arc(160 + i * 220, 265 + (i % 2 ? 60 : -60), 120, 0, Math.PI * 2); x.fill(); }
     return cv.toDataURL('image/jpeg', 0.85);
   });
   await pg.close();
