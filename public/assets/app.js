@@ -731,7 +731,7 @@
   // ================= карточки =================
   // it.ad — карточка из блока «Реклама»: пометка и рекламодатель по кнопке «Реклама».
   // it.boost — продвижение в ленте (lib/boost.js): XL — на две ячейки (на телефоне — во всю ширину) с ещё двумя фото
-  // и началом описания, рамка — изумрудная обводка, tags — метки на фото. Подпись «Продвигается» — всегда.
+  // и началом описания, рамка — изумрудная обводка, tags — метки на фото. Подписи «Продвигается» на карточке нет (1.43.1).
   const boostImg = (src, cls = '', extra = '') => html`<span class="xl-ph ${cls}${src ? ' ph' : ''}"${src ? raw(` style="--ph:url('${esc(src)}')"`) : ''}>${src ? html`<img src="${src}" alt="" loading="lazy">` : svg(P.image, 28, 1.2)}${extra}</span>`;
   // 1.26 (вариант 7 «С продавцом»): под описанием карточки — фото и имя продавца, ★ оценка, если есть отзывы.
   const cardSeller = (s) => html`<span class="card-seller">${ava(s, 'xs')}<span class="cs-name">${s.name}</span>${s.shop ? html`<span class="cs-shop" title="Магазин на Торгане">${ic('store', 12, 2.2)}<span class="sr">Магазин</span></span>` : ''}${s.reviews ? html`<span class="cs-rate" title="${NF.format(s.reviews)} ${plural(s.reviews, 'отзыв', 'отзыва', 'отзывов')}">${starSvg(true, 12)}${fmtAvg({ avg: s.rating })}</span>` : ''}</span>`;
@@ -742,9 +742,7 @@
     const xl = !!(bo && bo.xl);
     const tags = bo && bo.tags && bo.tags.length ? bo.tags : null;
     const side = xl ? [...(bo.photos || [])] : [];
-    // 1.43: «Продвигается» — значком на фото: у XL сверху с метками (внизу цена), у обычной — внизу слева,
-    // под «Новое» / «Цена упала», где ему не мешает сердечко и он виден целиком даже в узкой карточке.
-    const mark = bo ? html`<span class="b-tag mark">${ic('bolt', 12, 2.4)}Продвигается</span>` : '';
+    // «Новое» / «Цена упала» — внизу слева на фото, где им не мешает сердечко.
     const low = tags || ad || it.status === 'sold' ? '' : it.fresh ? html`<span class="tag drop-badge">Новое</span>`
       : it.priceWas ? html`<span class="tag drop-badge is-drop" title="Цена упала, было ${price(it.priceWas, it.priceUnit)}">Цена упала</span>` : '';
     return html`<div class="card${ad ? ' is-ad' : ''}${xl ? ' is-xl' : ''}${bo && bo.frame ? ' is-frame' : ''}">
@@ -752,9 +750,9 @@
         <div class="card-img${xl ? ' xl-img' : it.photo ? ' ph' : ''}"${!xl && it.photo ? raw(` style="--ph:url('${esc(it.photo)}')"`) : ''}>
           ${xl ? boostImg(it.photo, 'main') : it.photo ? html`<img src="${it.photo}" alt="" loading="lazy">` : svg(P.image, 40, 1.2)}
           ${xl ? html`<span class="xl-side">${boostImg(side[0])}${boostImg(side[1], '', bo.more ? html`<em>+${bo.more} фото</em>` : '')}</span>` : ''}
-          ${xl || tags ? html`<span class="b-tags">${xl ? mark : ''}${(tags || []).map((t, i) => html`<span class="b-tag${i ? ' alt' : ''}" title="${t}"><span>${t}</span></span>`)}</span>` : ''}
+          ${tags ? html`<span class="b-tags">${tags.map((t, i) => html`<span class="b-tag${i ? ' alt' : ''}" title="${t}"><span>${t}</span></span>`)}</span>` : ''}
           ${!ad && it.status === 'sold' ? html`<span class="tag dark sold-badge">Продано</span>` : ''}
-          ${low || (mark && !xl) ? html`<span class="b-low">${low}${xl ? '' : mark}</span>` : ''}
+          ${low ? html`<span class="b-low">${low}</span>` : ''}
           ${xl ? html`<span class="price-pill">${price(it.price, it.priceUnit)}</span>` : ''}
           ${it.hasVideo ? html`<span class="vid-badge" title="Есть видео">${ic('play', 14, 0)}<span class="sr">Есть видео</span></span>` : ''}
         </div>
@@ -1881,7 +1879,7 @@
     openModal(String(html`<div class="bm"><h2>Продвижение</h2><p class="muted bm-sub">«${title}»${all ? '' : ` · ${d.days}\u00a0дней${d.status === 'active' ? '' : ' с публикации'}`}</p>
       ${boostCard(d.current)}
       ${all ? '' : d.ready ? boostPicker(busy, true) : html`<p class="muted">Оплата пока не подключена.</p>`}
-      <p class="bm-note">${all ? 'Все виды продвижения уже включены. ' : ''}Порядок выдачи не меняется — карточка заметнее и подписана «Продвигается».${all ? '' : ` Оплата на странице ЮKassa, чек — на ${S.user.email}.`} <a href="/page/terms#paid">Условия</a></p>
+      <p class="bm-note">${all ? 'Все виды продвижения уже включены. ' : ''}Порядок выдачи не меняется — карточка просто заметнее.${all ? '' : ` Оплата на странице ЮKassa, чек — на ${S.user.email}.`} <a href="/page/terms#paid">Условия</a></p>
       <button type="button" class="bm-biz" data-biz>${ic('megaphone', 18, 2)}<span><b>Реклама над поиском</b><small>${promo ? PROMO_STATUS[promo.status][1].toLowerCase() : 'отдельный блок над выдачей'}</small></span>${ic('right', 18, 2)}</button>
       <div class="modal-actions"><button class="btn btn-soft" data-x>Закрыть</button>${!all && d.ready ? html`<button class="btn btn-accent" data-ok disabled>Выберите</button>` : ''}</div></div>`), (m, close) => {
       $('[data-x]', m).onclick = close;
@@ -4025,7 +4023,7 @@
               <li><span>Яркая рамка</span><b>${rub(bp.frame)}</b></li>
               <li><span>Метки на фото — одна или две</span><b>${rub(bp.tags)}</b></li>
               <li class="all"><span>Всё в одном</span><b>${rub(bp.all)}</b></li></ul>
-            <p>Порядок выдачи не меняется — карточка подписана «Продвигается». Не опубликовали объявление за 7 дней после оплаты — деньги вернутся автоматически.</p>
+            <p>Порядок выдачи не меняется — карточка просто заметнее. Не опубликовали объявление за 7 дней после оплаты — деньги вернутся автоматически.</p>
           </div>
           <div class="bz-pcard">
             <span class="bz-ic blue">${ic('megaphone', 20, 1.9)}</span>
@@ -4654,7 +4652,6 @@
             <a class="btn btn-soft btn-sm" href="https://egrul.nalog.ru/index.html" target="_blank" rel="noopener">${ic('search', 16)}Проверить в ЕГРЮЛ/ЕГРИП</a>
             ${u.business.status !== 'verified' ? html`<button class="btn btn-accent btn-sm" data-biz-ok="${u.id}">Подтвердить</button>` : ''}
             ${u.business.status !== 'rejected' ? html`<button class="btn btn-line btn-sm" data-biz-no="${u.id}">${u.business.status === 'verified' ? 'Снять подтверждение' : 'Отказать'}</button>` : ''}
-            ${u.business.status === 'verified' ? html`<button class="btn btn-soft btn-sm" data-gift>${ic('store', 16)}Подарить тариф</button>` : ''}
           </div>
           <p class="muted" style="margin:0;font-size:13px">Найдите ИНН в выписке ФНС и сверьте название, ОГРН(ИП) и что организация или ИП действуют.</p>
         </div>` : ''}
@@ -4662,7 +4659,7 @@
           ${u.shop && (u.shop.about || u.shop.cover || u.shop.site) ? html`<div class="muted" style="font-size:14px">Витрина: ${u.shop.about ? `«${u.shop.about.slice(0, 140)}${u.shop.about.length > 140 ? '…' : ''}»` : 'без описания'}${u.shop.site ? ` · ${u.shop.site}` : ''}</div>
           <div class="adm-person-act"><a class="btn btn-soft btn-sm" href="/u/${u.id}" target="_blank">${ic('store', 16)}Витрина</a><button class="btn btn-line btn-sm" data-shop-clear="${u.id}">Очистить витрину</button></div>` : html`<div class="muted" style="font-size:14px">Витрина не заполнена.</div>`}
           <a href="/admin?status=payments" class="muted" style="font-size:13px;text-decoration:underline">Платежи и возвраты</a></div>` : ''}
-        ${svcBlock(u, d.services)}
+        ${svcBlock(u, d.services, d.listings)}
         ${u.blocked ? html`<div class="banner danger"><strong>Заблокирован${u.blockedAt ? ` ${when(u.blockedAt)}` : ''}${blockedBy && blockedBy.admin ? ` · ${blockedBy.admin.name}` : ''}.</strong> ${u.blockReason || 'Причина не указана.'}</div>` : ''}
         <div class="adm-facts">${[
           ['Email', u.email], ['Телефон', u.phone || '—'], ['Город', u.city || '—'],
@@ -4698,16 +4695,38 @@
     $('[data-support]').onclick = async () => {
       try { const r = await api('POST', `/api/admin/users/${u.id}/support`); go(`/admin?status=support&t=${r.thread}`); } catch (e) { toast(e.message, true); }
     };
-    const gift = $('[data-gift]');
-    if (gift) gift.onclick = () => openModal(String(html`<h2>Подарить тариф</h2><p class="muted" style="margin:0">Бесплатно, без оплаты. Если такой тариф уже есть — продлим на эти дни.</p>
-        <div class="field"><label for="g-plan">Тариф</label><select id="g-plan" class="select"><option value="pro">«Магазин Про»</option><option value="shop">«Магазин»</option></select></div>
-        <div class="field"><label for="g-days">Дней</label><input id="g-days" class="input" inputmode="numeric" value="90"></div>
+    // 1.44.0: подарки модератора — тариф любому пользователю, реклама над поиском и продвижение в ленте бесплатно.
+    const giftModal = (title, note, body, send, done) => openModal(String(html`<h2>${title}</h2><p class="muted" style="margin:0">${note}</p>${body}
         <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-dark" data-ok>Подарить</button></div>`), (m, close) => {
       $('[data-x]', m).onclick = close;
-      $('[data-ok]', m).onclick = async () => {
-        try { await api('POST', `/api/admin/users/${u.id}/plan`, { plan: $('#g-plan', m).value, days: $('#g-days', m).value }); close(); toast('Тариф подарен — продавец получил уведомление'); render(); } catch (e) { toast(e.message, true); }
+      $('[data-ok]', m).onclick = async (e) => {
+        e.currentTarget.disabled = true;
+        try { await send(m); close(); toast(done); render(); } catch (ex) { toast(ex.message, true); e.currentTarget.disabled = false; }
       };
     });
+    const pickListing = (statuses) => html`<div class="field"><label for="g-l">Объявление</label><select id="g-l" class="select">${d.listings.filter((i) => statuses.includes(i.status))
+      .map((i) => html`<option value="${i.id}">${i.title} · ${STATUS_LABEL[i.status].toLowerCase()}</option>`)}</select></div>`;
+    const giftPlan = $('[data-gift-plan]');
+    if (giftPlan) giftPlan.onclick = () => giftModal('Подарить тариф', 'Бесплатно, без оплаты. Если такой тариф уже есть — продлим на эти дни.',
+      html`<div class="field"><label for="g-plan">Тариф</label><select id="g-plan" class="select"><option value="pro">«Магазин Про»</option><option value="shop">«Магазин»</option></select></div>
+        <div class="field"><label for="g-days">Дней</label><input id="g-days" class="input" inputmode="numeric" value="90"></div>`,
+      (m) => api('POST', `/api/admin/users/${u.id}/plan`, { plan: $('#g-plan', m).value, days: $('#g-days', m).value }), 'Тариф подарен — продавец получил уведомление');
+    const giftPromo = $('[data-gift-promo]');
+    if (giftPromo) giftPromo.onclick = () => giftModal('Подарить рекламу над поиском', 'Бесплатно: объявление появится в блоке «Реклама» над выдачей. Если реклама уже идёт — продлим.',
+      html`${pickListing(['active'])}<div class="field"><label for="g-days">Дней (1–90)</label><input id="g-days" class="input" inputmode="numeric" value="7"></div>`,
+      (m) => api('POST', `/api/admin/listings/${$('#g-l', m).value}/promo`, { days: $('#g-days', m).value }), 'Реклама подарена — продавец получил уведомление');
+    const giftBoost = $('[data-gift-boost]');
+    if (giftBoost) giftBoost.onclick = () => giftModal('Подарить продвижение в ленте', 'Бесплатно, на 7 дней. Объявление на проверке — начнётся с публикацией.',
+      html`${pickListing(['active', 'pending', 'scheduled', 'rejected'])}
+        <fieldset class="g-kinds"><legend>Что включить</legend>
+          <label class="g-opt"><input type="checkbox" name="g-xl" checked> XL-карточка</label>
+          <label class="g-opt"><input type="checkbox" name="g-frame" checked> Яркая рамка</label></fieldset>
+        <fieldset class="g-kinds"><legend>Метки на фото — до двух</legend>
+          ${S.config.billing.boostTags.map((t) => html`<label class="g-opt"><input type="checkbox" name="g-tag" value="${t}"> ${t}</label>`)}</fieldset>`,
+      (m) => {
+        const tags = $$('[name="g-tag"]:checked', m).map((x) => x.value);
+        return api('POST', `/api/admin/listings/${$('#g-l', m).value}/boost`, { xl: $('[name="g-xl"]', m).checked, frame: $('[name="g-frame"]', m).checked, tags });
+      }, 'Продвижение подарено — продавец получил уведомление');
     // Удаление профиля модератором: временно (можно восстановить) и навсегда — со словом УДАЛИТЬ.
     const uOff = $('[data-u-off]');
     if (uOff) uOff.onclick = () => reasonModal({ title: `Удалить профиль ${u.name} временно?`, hint: 'Профиль и объявления скроются, пользователь выйдет на всех устройствах. Вернуть можно здесь же или сам пользователь — войдя и нажав «Восстановить».', url: `/api/admin/users/${u.id}/deactivate`, okLabel: 'Удалить временно', minText: 0, reasons: ['Просьба пользователя', 'Нарушение правил площадки', 'Подозрение на мошенничество'], placeholder: 'Причина — для журнала (необязательно)' });
@@ -4727,22 +4746,28 @@
     bindModActions(app);
   }
 
-  // Карточка пользователя в модерации: идущие платные услуги — тариф, реклама над поиском, продвижение.
-  function svcBlock(u, sv) {
+  // Карточка пользователя в модерации: идущие платные услуги — тариф, реклама над поиском, продвижение —
+  // и подарки (1.44.0): тариф любому пользователю, реклама и продвижение — его объявлениям, бесплатно.
+  function svcBlock(u, sv, listings) {
     sv = sv || { promos: [], boosts: [] };
-    if (!u.plan && !sv.promos.length && !sv.boosts.length) return '';
+    const has = (st) => listings.some((i) => st.includes(i.status));
     const row = (icon, t, sub, attr) => html`<div class="adm-svc-row"><span class="adm-svc-ic">${ic(icon, 18, 2)}</span><span class="adm-svc-txt"><b>${t}</b><span>${sub}</span></span><button type="button" class="btn btn-line btn-sm" ${raw(attr)}>Отключить</button></div>`;
     return html`<div class="adm-svc"><h3 class="adm-sub" style="margin:0">Платные услуги</h3>
       ${u.plan ? row('store', `${u.plan.trial ? 'Пробный тариф' : 'Тариф'} «${u.plan.name}»`, `до ${dateLong(u.plan.until)}`, 'data-svc-plan') : ''}
       ${sv.promos.map((p) => row('megaphone', 'Реклама над поиском', html`<a href="/admin/l/${p.listingId}">«${p.title}»</a>${p.endsAt ? ` · до ${dateShort(p.endsAt)}` : ''}`, `data-svc-promo="${Number(p.id)}"`))}
       ${sv.boosts.map((b) => row('bolt', `Продвижение${b.kinds.length ? `: ${b.kinds.join(', ')}` : ''}`, html`<a href="/admin/l/${b.listingId}">«${b.title}»</a> · ${b.status === 'active' ? `до ${dateShort(b.endsAt)}` : 'начнётся после проверки'}`, `data-svc-boost="${Number(b.id)}"`))}
+      ${!u.plan && !sv.promos.length && !sv.boosts.length ? html`<p class="muted" style="margin:0">Сейчас ничего не подключено.</p>` : ''}
+      ${u.blocked ? '' : html`<div class="adm-person-act">
+        <button type="button" class="btn btn-soft btn-sm" data-gift-plan>${ic('store', 16)}Подарить тариф</button>
+        ${has(['active']) ? html`<button type="button" class="btn btn-soft btn-sm" data-gift-promo>${ic('megaphone', 16)}Подарить рекламу</button>` : ''}
+        ${has(['active', 'pending', 'scheduled', 'rejected']) ? html`<button type="button" class="btn btn-soft btn-sm" data-gift-boost>${ic('bolt', 16)}Подарить продвижение</button>` : ''}</div>`}
       <p class="muted" style="margin:0;font-size:13px">Отключение не возвращает деньги — возврат оформляется в <a href="/admin?status=payments" style="text-decoration:underline">«Платежах»</a>.</p></div>`;
   }
 
   // ---------- журнал действий ----------
   const LOG_TEXT = {
     approved: 'Опубликовал объявление', restored: 'Восстановил объявление', 'appeal-approved': 'Одобрил апелляцию', 'appeal-denied': 'Отказал по апелляции',
-    'reports-dismissed': 'Закрыл жалобы на объявление', 'avatar-removed': 'Убрал фото профиля', 'user-blocked': 'Заблокировал пользователя', 'user-unblocked': 'Разблокировал пользователя',
+    'reports-dismissed': 'Закрыл жалобы на объявление', 'plan-gift': 'Подарил тариф', 'promo-gift': 'Подарил рекламу над поиском', 'boost-gift': 'Подарил продвижение в ленте', 'avatar-removed': 'Убрал фото профиля', 'user-blocked': 'Заблокировал пользователя', 'user-unblocked': 'Разблокировал пользователя',
     'review-published': 'Опубликовал отзыв', 'review-rejected': 'Не опубликовал отзыв', 'review-hidden': 'Скрыл отзыв по жалобе', 'review-kept': 'Оставил отзыв после жалобы',
     'review-restored': 'Вернул отзыв', 'biz-verified': 'Подтвердил бизнес', 'biz-rejected': 'Отказал в подтверждении бизнеса', 'reply-published': 'Опубликовал ответ продавца', 'reply-rejected': 'Не опубликовал ответ продавца', 'support-reply': 'Ответил в поддержке',
     'billing-settings': 'Изменил настройки оплаты', 'billing-prices': 'Изменил цены', 'payment-refund': 'Оформил возврат', 'promo-erid': 'Указал erid и запустил рекламу',
@@ -5472,7 +5497,7 @@
         <ul><li><b>Избранное.</b> Нажмите на сердечко — объявление сохранится в «Избранном». Если продавец снизит цену, придёт уведомление.</li>
           <li><b>Подписка на продавца.</b> Кнопка «Подписаться» в профиле продавца — узнаете о его новых объявлениях.</li></ul>
         <h2>Честная выдача</h2>
-        <p>Платное продвижение не меняет порядок объявлений: такие карточки подписаны «Продвигается». Реклама показывается отдельным блоком с пометкой «Реклама».</p>`],
+        <p>Платное продвижение не меняет порядок объявлений: такие карточки только заметнее — крупнее, в рамке или с метками на фото. Реклама показывается отдельным блоком с пометкой «Реклама».</p>`],
       safety: ['Безопасность', html`
         <p class="help-lead">Большинство мошеннических схем строится на одном: увести вас из чата площадки и получить деньги или данные карты.</p>
         <section class="help-box bad"><h2>Чего никогда не делать</h2><ul>

@@ -65,9 +65,11 @@ test('один раз на компанию: тот же ИНН с другог�
   assert.equal((await planOf(d)).trial, true);
 });
 
-test('подарок от модерации: только подтверждённому бизнесу, тот же тариф — продлевает', async () => {
+// 1.44.0: подарить тариф можно любому пользователю — и частнику без ИП (купить сам он по-прежнему не может).
+test('подарок от модерации: любому пользователю, тот же тариф — продлевает', async () => {
   const plain = await registerUser(srv.base, { name: 'Частник', email: 'plain@test.local' });
-  assert.equal((await admin.post(`/api/admin/users/${plain.user.id}/plan`, { plan: 'pro', days: 30 })).status, 400);
+  assert.equal((await admin.post(`/api/admin/users/${plain.user.id}/plan`, { plan: 'pro', days: 30 })).status, 200, 'и без подтверждённого ИП');
+  assert.equal((await planOf(plain)).id, 'pro');
   const e = await shop('e@test.local', { name: 'ООО «Ромашка»', inn: '7707083893', ogrn: '1027700132195' });
   await admin.put('/api/admin/starter', { on: false });
   await verify(e);

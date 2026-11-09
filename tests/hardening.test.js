@@ -5,7 +5,7 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { startServer, registerUser, publish } = require('./helpers');
+const { startServer, registerUser, publish, client } = require('./helpers');
 
 let srv;
 before(async () => { srv = await startServer({ PUBLIC_URL: 'https://torgana.test' }); });
@@ -86,4 +86,37 @@ test('удалил объявление — переписка покупате�
     assert.equal((await seller.patch(`/api/listings/${id}`, { status: 'active' })).status, 404, 'вернуть нельзя');
     assert.equal((await admin.get(`/api/admin/listings/${id}`)).data.listing.status, 'deleted', 'модератор видит с историей');
   } finally { s3.stop(); }
+});
+
+// 1.44.0: модератор дарит тариф любому пользователю, рекламу над поиском и продвижение в ленте — бесплатно.
+test('подарки модератора: тариф без ИП, реклама и продвижение бесплатно', async () => {
+  const s4 = await startServer();
+  try {
+    const admin = await registerUser(s4.base, { name: 'Модератор', email: 'admin@test.local' });
+    const seller = await registerUser(s4.base, { name: 'Ольга', email: 'olga@test.local' });
+    const sellerId = (await seller.get('/api/me')).data.user.id;
+    const id = await publish(seller, admin, { title: 'Коляска Cybex', category: 'personal', city: 'Казань', price: 15000 });
+
+    assert.equal((await seller.post(`/api/admin/listings/${id}/promo`, { days: 7 })).status, 403, 'продавец себе не дарит');
+    assert.equal((await admin.post(`/api/admin/users/${sellerId}/plan`, { plan: 'shop', days: 30 })).status, 200, 'тариф — и без подтверждённого ИП');
+    assert.equal((await admin.post(`/api/admin/listings/${id}/promo`, { days: 0 })).status, 400);
+    assert.equal((await admin.post(`/api/admin/listings/${id}/promo`, { days: 5 })).status, 200);
+    const ad = (await client(s4.base).get(`/api/ads?${new URLSearchParams({ q: 'коляска' })}`)).data.items;
+    assert.equal(ad.length, 1, 'реклама сразу в блоке над выдачей');
+    assert.equal((await admin.post(`/api/admin/listings/${id}/boost`, { xl: true, tags: ['Как новый'] })).status, 200);
+    assert.equal((await admin.post(`/api/admin/listings/${id}/boost`, { xl: true })).status, 400, 'XL уже идёт');
+
+    const card = (await admin.get(`/api/admin/users/${sellerId}`)).data;
+    assert.equal(card.user.plan.id, 'shop');
+    assert.equal(card.services.promos[0].listingId, id);
+    assert.deepEqual(card.services.boosts[0].kinds, ['XL', 'метки']);
+    const found = (await client(s4.base).get('/api/listings?q=коляска')).data.items.find((i) => i.id === id);
+    assert.ok(found.boost && found.boost.xl, 'XL в выдаче');
+    const notes = (await seller.get('/api/notices')).data.items.map((n) => n.title);
+    assert.ok(notes.some((t) => t.startsWith('Подарок: реклама над поиском')), 'продавцу пришло уведомление о рекламе');
+    assert.ok(notes.some((t) => t.startsWith('Подарок: XL-карточка, Метки на фото')), 'и о продвижении');
+    assert.ok(notes.some((t) => t.startsWith('Подарок: «Магазин»')), 'и о тарифе');
+    const log = card.log.map((e) => e.action);
+    assert.ok(['plan-gift', 'promo-gift', 'boost-gift'].every((a) => log.includes(a)), 'всё в журнале');
+  } finally { s4.stop(); }
 });
