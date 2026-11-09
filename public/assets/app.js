@@ -632,12 +632,13 @@
   }
 
   // ================= уведомления (1.22) =================
-  // Колокольчик: решения модерации, отзывы, оплата, продвижение, снижение цен. Панель справа, по дням.
+  // Колокольчик: решения модерации, оплата, продвижение, снижение цен. Панель справа, по дням.
   function setNotices(n) {
     S.notices = n || 0;
     $$('[data-notices]').forEach((el) => { el.textContent = S.notices > 99 ? '99+' : S.notices; el.classList.toggle('hidden', !S.notices); });
   }
-  // Цвет события (1.25): зелёный — опубликовано, красный — нужно исправить, жёлтый — отзывы и сроки,
+  // 1.47.2: у всех уведомлений один вид — картинка (фото объявления или знак Торганы) и цветной значок события в углу.
+  // Цвет события (1.25): зелёный — опубликовано, красный — нужно исправить, жёлтый — сроки,
   // синий — оплата и возвраты, фиолетовый — продвижение.
   const NOTICE_COLOR = { check: 'green', warn: 'red', clock: 'amber', star: 'amber', store: 'amber', card: 'blue', megaphone: 'violet', tag: 'violet', bolt: 'violet', down: 'green', shield: 'green' };
   const noticeColor = (n) => (n.tone === 'bad' ? 'red' : NOTICE_COLOR[n.icon] || (n.tone === 'ok' ? 'green' : n.tone === 'wait' ? 'amber' : 'gray'));
@@ -658,11 +659,10 @@
       const groups = [];
       d.items.forEach((n) => { const k = noticeDay(n.at); const g = groups[groups.length - 1]; if (g && g[0] === k) g[1].push(n); else groups.push([k, [n]]); });
       $('#nt-body', m).innerHTML = String(d.items.length ? html`${groups.map(([day, list]) => html`<div class="nt-day">${day}</div>
-        ${list.map((n) => { const col = noticeColor(n); const icn = ic(P[n.icon] ? n.icon : 'bell', n.photo ? 12 : 19, n.photo ? 2.6 : 2); return html`<a class="nt-it${n.read ? '' : ' new'}" href="${n.url || '#'}">${n.photo
-    ? html`<span class="nt-ph"><img src="${n.photo}" alt="" loading="lazy"><i class="nt-badge ${col}">${icn}</i></span>`
-    : html`<span class="nt-ic ${col}">${icn}</span>`}
+        ${list.map((n) => { const col = noticeColor(n); const icn = ic(P[n.icon] ? n.icon : 'bell', 12, 2.6); return html`<a class="nt-it${n.read ? '' : ' new'}" href="${n.url || '#'}">
+          <span class="nt-ph${n.photo ? '' : ' brand'}">${n.photo ? html`<img src="${n.photo}" alt="" loading="lazy">` : html`<svg width="30" height="30" viewBox="0 0 48 48" aria-hidden="true">${raw(MARK)}</svg>`}<i class="nt-badge ${col}">${icn}</i></span>
           <span class="nt-t"><b>${n.title}</b>${n.body ? html`<span>${n.body}</span>` : ''}<small>${hm(n.at)}</small></span></a>`; })}`)}`
-        : html`<div class="nt-empty"><span class="nt-empty-ic">${ic('bell', 30, 1.6)}</span><b>Здесь будут уведомления</b><p>Напишем, когда объявление опубликуют, придёт отзыв или подешевеет товар из избранного.</p></div>`);
+        : html`<div class="nt-empty"><span class="nt-empty-ic">${ic('bell', 30, 1.6)}</span><b>Здесь будут уведомления</b><p>Напишем, когда объявление опубликуют или подешевеет товар из избранного.</p></div>`);
       if (d.unread) { api('POST', '/api/notices/read', {}).then((r) => setNotices(r.unread)).catch(() => {}); }
     });
   }
@@ -734,7 +734,7 @@
   // it.boost — продвижение в ленте (lib/boost.js): XL — на две ячейки (на телефоне — во всю ширину) с ещё двумя фото
   // и началом описания, рамка — изумрудная обводка, tags — метки на фото. Подписи «Продвигается» на карточке нет (1.43.1).
   const boostImg = (src, cls = '', extra = '') => html`<span class="xl-ph ${cls}${src ? ' ph' : ''}"${src ? raw(` style="--ph:url('${esc(src)}')"`) : ''}>${src ? html`<img src="${src}" alt="" loading="lazy">` : svg(P.image, 28, 1.2)}${extra}</span>`;
-  // 1.26 (вариант 7 «С продавцом»): под описанием карточки — фото и имя продавца, значок уровня (1.46.0), если есть отзывы.
+  // 1.26 (вариант 7 «С продавцом»): под описанием карточки — фото и имя продавца, значок уровня (1.46.0), если он есть.
   const cardSeller = (s) => html`<span class="card-seller">${ava(s, 'xs')}<span class="cs-name">${s.name}</span>${s.shop ? html`<span class="cs-shop" title="Магазин на Торгане">${ic('store', 12, 2.2)}<span class="sr">Магазин</span></span>` : ''}${s.level ? html`<span class="cs-rate" title="${['', 'Надёжный', 'Опытный', 'Мастер Торганы'][s.level]} продавец">${levelMedal(s.level, 14)}</span>` : ''}</span>`;
   function card(it) {
     const meta = [it.metro ? `м. ${it.metro}` : it.city, shortWhen(it.createdAt)].filter(Boolean).join(' · ');
@@ -854,6 +854,8 @@
 
   // ================= роутер =================
   let cleanup = null;
+  // 1.47.2: фильтры поиска закрыты и на компьютере; открытые остаются открытыми при смене фильтра (страница перерисовывается).
+  let filtersOpen = false;
   function go(url, replace = false) {
     history[replace ? 'replaceState' : 'pushState']({}, '', url);
     render();
@@ -914,7 +916,7 @@
     [/^\/confirm$/, viewConfirm],
     [/^\/favorites$/, viewFavorites],
     [/^\/messages(?:\/(\d+|support))?$/, viewMessages],
-    [/^\/profile(?:\/(listings|settings|reviews|searches|following|stats\/\d+|business(?:\/(?:shop|stats|feed))?))?$/, viewProfile],
+    [/^\/profile(?:\/(listings|settings|reputation|reviews|searches|following|stats\/\d+|business(?:\/(?:shop|stats|feed))?))?$/, viewProfile],
     [/^\/business$/, viewBusiness],
     [/^\/pay\/([\w-]+)$/, viewPay],
     [/^\/u\/(\d+)$/, viewUser],
@@ -1186,10 +1188,10 @@
     const onMap = S.config.maps && params.view === 'map';
     const nFilters = ['category', 'city', 'min', 'max', 'delivery', 'bargain', 'exchange', 'trusted', 'metro'].filter((k) => params[k]).length + (sub ? 1 : 0) + Object.keys(params).filter((k) => k.startsWith('a_') && params[k]).length;
     app.innerHTML = String(html`<div class="wrap search-page">
-      <aside class="filters collapsed" id="filters">
+      <aside class="filters ${filtersOpen && !window.matchMedia('(max-width: 900px)').matches ? '' : 'collapsed'}" id="filters">
         <button type="button" class="btn btn-soft btn-block" id="filters-toggle" aria-controls="filter-form" aria-expanded="false">${ic('filter', 18)}Фильтры${nFilters ? html`<span class="f-count">${nFilters}</span>` : ''}</button>
         <form id="filter-form" class="filters-body">
-          <h3>Фильтры</h3>
+          <div class="f-head"><h3>Фильтры</h3><button type="button" class="icon-btn f-close" data-f-close aria-label="Скрыть фильтры">${ic('close', 20, 2)}</button></div>
           <input type="hidden" name="q" value="${params.q || ''}">
           <div class="field"><label for="f-cat">Категория</label>
             <select id="f-cat" name="category" class="select"><option value="">Все категории</option>
@@ -1209,14 +1211,17 @@
       </aside>
       <section class="results">
         <div class="results-head">
-          <div><h1>${title}</h1><div class="muted" id="count">&nbsp;</div></div>
-          ${S.config.maps ? html`<nav class="seg view-sw" aria-label="Вид">${[['', 'Список'], ['map', 'Карта']].map(([v, t]) => html`<a href="/search?${new URLSearchParams(Object.entries({ ...params, view: v }).filter(([, x]) => x))}" class="${(params.view === 'map') === (v === 'map') ? 'on' : ''}" ${(params.view === 'map') === (v === 'map') ? raw('aria-current="page"') : ''}>${t}</a>`)}</nav>` : ''}
-          <label class="sr" for="sort">Сортировка</label>
-          <select id="sort" ${onMap ? raw('hidden') : ''} class="select" style="width:auto;min-width:200px;height:44px;border-radius:999px">
-            <option value="">Сначала новые</option>
-            <option value="cheap" ${params.sort === 'cheap' ? raw('selected') : ''}>Сначала дешевле</option>
-            <option value="expensive" ${params.sort === 'expensive' ? raw('selected') : ''}>Сначала дороже</option>
-          </select>
+          <div class="rh-title"><h1>${title}</h1><div class="muted" id="count">&nbsp;</div></div>
+          <div class="rh-tools">
+            <button type="button" class="rh-filters" id="filters-open" aria-controls="filter-form" aria-expanded="false">${ic('sliders', 17, 2)}<span>Фильтры</span>${nFilters ? html`<span class="f-count">${nFilters}</span>` : ''}</button>
+            <label class="sr" for="sort">Сортировка</label>
+            <select id="sort" ${onMap ? raw('hidden') : ''} class="select">
+              <option value="">Сначала новые</option>
+              <option value="cheap" ${params.sort === 'cheap' ? raw('selected') : ''}>Сначала дешевле</option>
+              <option value="expensive" ${params.sort === 'expensive' ? raw('selected') : ''}>Сначала дороже</option>
+            </select>
+            ${S.config.maps ? html`<nav class="seg view-sw" aria-label="Вид">${[['', 'Список', 'list'], ['map', 'Карта', 'pin']].map(([v, t, i]) => html`<a href="/search?${new URLSearchParams(Object.entries({ ...params, view: v }).filter(([, x]) => x))}" class="${(params.view === 'map') === (v === 'map') ? 'on' : ''}" ${(params.view === 'map') === (v === 'map') ? raw('aria-current="page"') : ''} aria-label="${t}">${ic(i, 17, 2)}<span>${t}</span></a>`)}</nav>` : ''}
+          </div>
         </div>
         ${subChips.length ? html`<nav class="sub-chips" aria-label="Разделы">${subChips.map((x) => html`<a class="chip" href="/search?${new URLSearchParams({ ...params, category, sub: x.id })}">${x.name}</a>`)}</nav>` : ''}
         ${activeChips.length ? html`<div class="active-chips">${activeChips.map(([t, href]) => html`<a class="chip on" href="${href}" aria-label="Убрать: ${t}">${t}${ic('close', 14, 2.2)}</a>`)}</div>` : ''}
@@ -1274,7 +1279,11 @@
     // на телефоне панель открывается кнопкой «Фильтры», а «Показать» внизу сразу пишет, сколько найдётся.
     const narrow = () => window.matchMedia('(max-width: 900px)').matches;
     const toggle = $('#filters-toggle');
-    toggle.onclick = () => { const open = $('#filters').classList.toggle('collapsed') === false; toggle.setAttribute('aria-expanded', String(open)); };
+    toggle.onclick = () => { const open = $('#filters').classList.toggle('collapsed') === false; filtersOpen = open; toggle.setAttribute('aria-expanded', String(open)); $('#filters-open').setAttribute('aria-expanded', String(open)); };
+    $('#filters-open').setAttribute('aria-expanded', String(!$('#filters').classList.contains('collapsed')));
+    // 1.47.2: на телефоне «Фильтры» — в одной строке с сортировкой и «Список / Карта»; панель открывается над результатами.
+    $('[data-f-close]').onclick = () => { toggle.onclick(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    $('#filters-open').onclick = () => { toggle.onclick(); if (narrow() && !$('#filters').classList.contains('collapsed')) $('#filters').scrollIntoView({ block: 'start', behavior: 'smooth' }); };
     const formParams = () => {
       const next = {};
       for (const [k, v] of new FormData(ff).entries()) {
@@ -1553,7 +1562,7 @@
             ${seller.badges && (seller.badges.phone || seller.badges.biz) ? html`<span class="pf-badges" style="margin-top:8px">${trustBadges(seller.badges)}</span>` : ''}</span>
             ${ic('right', 20)}
           </a>
-          ${seller.rep && !seller.rep.newbie ? html`<a class="rep-link" href="/u/${seller.id}?tab=reviews">${repCard(seller.rep, true)}</a>` : seller.reply ? html`<div class="reply-tiles">
+          ${seller.rep && !seller.rep.newbie ? html`<a class="rep-link" href="/u/${seller.id}?tab=rep">${repCard(seller.rep, true)}</a>` : seller.reply ? html`<div class="reply-tiles">
             ${seller.reply.time ? html`<div class="reply-tile">${ic('clock', 16, 2.2)}<b>${{ hour: 'Отвечает за час', hours: 'Отвечает за 1–3 часа', day: 'Отвечает в течение дня', days: 'Отвечает за 1–2 дня' }[seller.reply.time]}</b><span>обычно, за последние 30 дней</span></div>` : ''}
             <div class="reply-tile">${ic('chat', 16, 2.2)}<b>${seller.reply.rate} из 10 чатов</b><span>получают ответ</span></div>
           </div>` : ''}
@@ -2731,7 +2740,7 @@
       return;
     }
     const isFollow = /^follow-\d+$/.test(q.get('k') || '');
-    const what = isFollow ? 'о новых объявлениях этого продавца' : { messages: 'о новых сообщениях', moderation: 'о решениях модерации', reviews: 'об отзывах', digest: 'с подборкой за день', all: 'с уведомлениями' }[q.get('k')] || 'с уведомлениями';
+    const what = isFollow ? 'о новых объявлениях этого продавца' : { messages: 'о новых сообщениях', moderation: 'о решениях модерации', digest: 'с подборкой за день', all: 'с уведомлениями' }[q.get('k')] || 'с уведомлениями';
     authPage(isFollow ? 'Отписаться от продавца?' : 'Отписаться?', isFollow ? 'Подписка на продавца будет отменена: не будем присылать его новые объявления. Подписаться снова можно в его профиле.' : `Больше не будем присылать письма ${what}. Включить их снова можно в профиле, в разделе «Настройки».`,
       html`<form id="f"><button class="btn btn-dark btn-lg btn-block" type="submit">Отписаться</button></form>`);
     $('#f').onsubmit = async (e) => {
@@ -2751,8 +2760,20 @@
 
   // ================= сообщения =================
   const SCAM_RE = /(telegram|телеграм|телеграмм|\btg\b|whats\s?app|ватсап|вотсап|вацап|viber|вайбер|t\.me|wa\.me|номер карты|данные карты|код из смс|код из sms|cvv|cvc|предоплат|переведите|перевод на карту|ссылк[ауи] на оплату|оплат[аиу] по ссылке)/i;
-  const supportAva = (size = 52) => html`<span class="conv-img support-ava" style="width:${size}px;height:${size}px" aria-hidden="true"><svg width="${Math.round(size * 0.55)}" height="${Math.round(size * 0.55)}" viewBox="0 0 48 48">${raw(MARK)}</svg></span>`;
-  const SUPPORT_NAME = html`Поддержка Торганы <span class="verified" title="Официальный аккаунт">${ic('check', 12, 3)}</span>`;
+  // 1.47.2: аватарка Торганы — объёмный круг «небо → сирень» с бликом и знаком (та же, что на экране «Сделка состоялась»).
+  let avaN = 0;
+  const torganaAva = (size) => {
+    const k = `ta${++avaN}`;
+    return raw(`<svg width="${size}" height="${size}" viewBox="0 0 112 112" aria-hidden="true"><defs>
+      <linearGradient id="${k}a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4C86E0"/><stop offset=".55" stop-color="#3D67D0"/><stop offset="1" stop-color="#6A63D8"/></linearGradient>
+      <linearGradient id="${k}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".32"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>
+      <circle cx="56" cy="56" r="56" fill="url(#${k}a)"/><ellipse cx="48" cy="28" rx="40" ry="22" fill="url(#${k}g)"/>
+      <circle cx="56" cy="56" r="55" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="2"/>
+      <g transform="scale(2.3333) translate(6.5 6.5) scale(.73)">${MARK.replace(/fill="#[0-9A-Fa-f]{6}"\/>$/, 'fill="#4566D2"/>')}</g></svg>`);
+  };
+  const supportAva = (size = 52) => html`<span class="conv-img support-ava" style="width:${size}px;height:${size}px" aria-hidden="true">${torganaAva(size)}</span>`;
+  // Функция, а не готовая строка: галочка (verifiedSeal) объявлена ниже и у каждой — свои id градиентов.
+  const supportName = () => html`Поддержка Торганы<span class="name-seal" title="Официальный аккаунт Торганы">${verifiedSeal(18)}</span>`;
   const SUPPORT_TOPICS = ['Почему отклонили объявление?', 'Не приходит письмо', 'Подозреваю мошенника', 'Как удалить аккаунт?'];
 
   // Один чат на весь сайт: диалоги по объявлениям, поддержка у пользователя и у модератора.
@@ -2977,7 +2998,7 @@
       <div class="inbox-list"><h1>Сообщения</h1>
         <a href="/messages/support" class="conv support ${isSupport ? 'on' : ''}" id="support-row">
           ${supportAva(44)}
-          <span class="conv-body"><span class="support-name">${SUPPORT_NAME}</span><span class="conv-sub">Отвечают люди, а не боты</span></span>
+          <span class="conv-body"><span class="support-name">${supportName()}</span><span class="conv-sub">Отвечают люди, а не боты</span></span>
           <span class="badge hidden" id="support-badge"></span>
           <span class="pin" title="Закреплено">${ic('pushpin', 16)}<span class="sr">Закреплено</span></span>
         </a>
@@ -3017,7 +3038,7 @@
 
     if (isSupport) {
       stopChat = mountChat($('#chat'), {
-        head: html`${supportAva(44)}<div style="flex:1;min-width:0"><div class="support-name">${SUPPORT_NAME}</div><span class="muted" style="font-size:14px">Отвечают люди, а не боты</span></div>`,
+        head: html`${supportAva(44)}<div style="flex:1;min-width:0"><div class="support-name">${supportName()}</div><span class="muted" style="font-size:14px">Отвечают люди, а не боты</span></div>`,
         load: (after) => api('GET', `/api/support?after=${after}`),
         send: async (msg) => (await api('POST', '/api/support/messages', msg)).message,
         empty: supportWelcome(),
@@ -3044,6 +3065,7 @@
           slot.dataset.state = JSON.stringify(st);
           slot.innerHTML = String(dealBar(st));
           bindDeal(slot, convId, async () => { const x = await api('GET', `/api/conversations/${convId}?after=999999999`); slot.dataset.state = ''; paintDeal(x.deal); });
+          dealWow(convId, st, slot);
         };
         paintDeal(r.deal);
         return r;
@@ -3082,44 +3104,7 @@
     if (role === 'seller') api('GET', '/api/my/replies').then((r) => paintReplies(r.items, r.max)).catch(() => {});
   }
 
-  // ================= отзывы: общие части =================
-  const STAR = '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>';
-  const starSvg = (on, size) => raw(`<svg width="${size}" height="${size}" viewBox="0 0 24 24" class="${on ? 'st-on' : 'st-off'}" aria-hidden="true">${STAR}</svg>`);
-  const stars = (n, size = 15) => html`<span class="stars" role="img" aria-label="Оценка ${n} из 5">${[1, 2, 3, 4, 5].map((i) => starSvg(i <= n, size))}</span>`;
-  const fmtAvg = (r) => r.avg.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  const reviewsWord = (n) => plural(n, 'отзыв', 'отзыва', 'отзывов');
-  // Крупная оценка и полоски «сколько пятёрок, четвёрок…».
-  const ratingSummary = (r) => html`<div class="rv-sum">
-      <div class="rv-sum-big"><b>${r.count ? fmtAvg(r) : '—'}</b>${stars(Math.round(r.avg), 17)}<span>${r.count ? `${r.count} ${reviewsWord(r.count)}` : 'Пока нет отзывов'}</span></div>
-      <div class="rv-bars">${[5, 4, 3, 2, 1].map((k) => html`<div class="rv-bar"><span>${k}</span><div><i style="width:${r.count ? Math.round((r.dist[k] / r.count) * 100) : 0}%"></i></div><span class="n">${r.dist[k]}</span></div>`)}</div>
-    </div>`;
-  const RV_STATUS = { pending: ['wait', 'На проверке'], published: ['ok', 'Опубликован'], rejected: ['bad', 'Не опубликован'], hidden: ['bad', 'Скрыт по жалобе'] };
-  // Карточка отзыва. mode: public | seller (обо мне — ответить, пожаловаться) | author (мой отзыв — статус).
-  function reviewCard(rv, mode = 'public') {
-    const other = mode === 'author' ? rv.seller : rv.author;
-    const st = mode === 'author' ? RV_STATUS[rv.status] : null;
-    const c = rv.complaint;
-    return html`<article class="rv-card" data-rv="${rv.id}">
-      <div class="rv-head">${ava(other, 'sm')}
-        <div class="rv-who"><b>${mode === 'author' ? html`Продавец ${other.name}` : other.name}</b><span>${when(rv.createdAt).replace(/ в \d\d:\d\d$/, '')}${mode === 'author' ? '' : ' · покупатель'}</span></div>
-        ${stars(rv.rating)}</div>
-      <p class="rv-text">${rv.text}</p>
-      <div class="rv-meta"><span class="rv-item">${ic('tag', 13)}${rv.listing.id ? html`<a href="/l/${rv.listing.id}">${rv.listing.title}</a>` : rv.listing.title}</span>
-        <span class="rv-deal ${rv.received ? 'ok' : 'no'}">${rv.received ? html`${ic('check', 13, 2.6)}Товар получен` : 'Товар не получен'}</span>
-        ${st ? html`<span class="ml-tag ${st[0]}"><i></i>${st[1]}</span>` : ''}</div>
-      ${mode === 'author' && rv.reason && (rv.status === 'rejected' || rv.status === 'hidden') ? html`<div class="ml-note bad"><strong>Причина:</strong> ${rv.reason}</div>` : ''}
-      ${rv.reply ? html`<div class="rv-reply"><b>Ответ продавца</b><p>${rv.reply.text}</p></div>` : ''}
-      ${mode === 'seller' && rv.replyDraft ? html`<div class="ml-note ${rv.replyDraft.status === 'rejected' ? 'bad' : 'warn'}">${rv.replyDraft.status === 'rejected' ? html`<strong>Ответ не опубликован:</strong> ${rv.replyDraft.reason}. Можно написать заново.` : html`<strong>Ваш ответ на проверке:</strong> ${rv.replyDraft.text}`}</div>` : ''}
-      ${mode === 'seller' && c ? html`<div class="ml-note ${c.resolved ? (c.decision === 'hidden' ? 'ok' : 'soft') : 'warn'}">${!c.resolved
-    ? html`<strong>Жалоба на рассмотрении.</strong> Отзыв виден, пока модератор не решит.`
-    : c.decision === 'hidden' ? html`<strong>Жалоба принята — отзыв скрыт.</strong> ${c.comment}` : html`<strong>Жалоба рассмотрена — отзыв остаётся.</strong> ${c.comment || ''}`}</div>` : ''}
-      ${mode === 'seller' && rv.status === 'published' && (rv.canReply || rv.canComplain) ? html`<div class="rv-actions">
-        ${rv.canReply ? html`<button type="button" class="btn btn-soft btn-sm" data-rv-reply="${rv.id}">${ic('reply', 16, 2)}Ответить</button>` : ''}
-        ${rv.canComplain ? html`<button type="button" class="btn btn-soft btn-sm" data-rv-complain="${rv.id}">${ic('flag', 16, 2)}Пожаловаться</button>` : ''}</div>` : ''}
-    </article>`;
-  }
-
-  // ================= репутация (1.46.0): не отзывы, а факты =================
+  // ================= репутация (1.46.0): сделки, а не оценки =================
   // Уровень — объёмный шестигранник своего цвета: серый, зелёный, синий, золотой.
   let medalN = 0;
   const MEDAL = [['#D9DCD8', '#8E948F'], ['#7DDBB4', '#1F7A5A'], ['#7FB2FF', '#3646D8'], ['#FFD978', '#B8650A']];
@@ -3177,7 +3162,7 @@
     const issue = st.issue ? html`<span class="deal-issue">${ic('warn', 14, 2)}${{ open: 'Жалоба у модератора', confirmed: 'Жалоба подтверждена', dismissed: 'Жалоба не подтвердилась' }[st.issue.status]}</span>` : '';
     const problem = st.canIssue && !st.issue ? html`<button type="button" class="link-btn deal-problem" data-deal-issue>Что-то пошло не так</button>` : '';
     if (st.confirmed && !st.praised) {
-      return html`<div class="deal-bar"><b>${ic('check', 16, 2.6)}Сделка засчитана. Что понравилось?</b>
+      return html`<div class="deal-bar"><b>${ic('check', 16, 2.6)}Сделка подтверждена. Что понравилось?</b>
         <div class="deal-tags">${st.tags.map((t) => html`<button type="button" class="chip" data-deal-tag="${t}" aria-pressed="false">${t}</button>`)}</div>
         <div class="deal-acts"><button type="button" class="btn btn-dark btn-sm" data-deal-praise disabled>Отправить</button>${problem}${issue}</div></div>`;
     }
@@ -3187,8 +3172,50 @@
     return html`<div class="deal-bar ask"><b>Сделка состоялась?${st.other ? html` <span class="muted">${st.role === 'buyer' ? 'Продавец' : 'Покупатель'} уже подтвердил</span>` : ''}</b>
       <div class="deal-acts"><button type="button" class="btn btn-dark btn-sm" data-deal="yes">Да</button><button type="button" class="btn btn-soft btn-sm" data-deal="no">Нет</button>${problem}${issue}</div></div>`;
   }
+  // 1.47.2: экран «Сделка состоялась» — один раз на сделку, когда её подтвердили обе стороны
+  // (тому, кто подтвердил вторым, — сразу; первому — когда откроет чат). Что уже показали — в localStorage.
+  const DW_KEY = 'tg-deal-wow';
+  const dealWowSeen = (id) => { try { return (localStorage.getItem(DW_KEY) || '').split(',').includes(String(id)); } catch { return false; } };
+  const dealWowMark = (id) => { try { const a = (localStorage.getItem(DW_KEY) || '').split(',').filter(Boolean); a.push(String(id)); localStorage.setItem(DW_KEY, a.slice(-200).join(',')); } catch { /* приватный режим */ } };
+  // Картинка экрана: аватарка Торганы (как у «Поддержки Торганы») и наша галочка проверки, мягкое свечение и искры.
+  const dealWowArt = () => raw(`<svg class="dw-svg" viewBox="0 0 240 210" width="240" height="210" aria-hidden="true">
+      <defs>
+        <radialGradient id="dwH" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#DCE6FF"/><stop offset=".6" stop-color="#ECE8FF" stop-opacity=".7"/><stop offset="1" stop-color="#F3F1FF" stop-opacity="0"/></radialGradient>
+        <filter id="dwS" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#3D4FB8" flood-opacity=".28"/></filter>
+      </defs>
+      <circle cx="120" cy="104" r="104" fill="url(#dwH)"/>
+      <g class="dw-rings" fill="none" stroke="#B9B4F5"><circle cx="120" cy="104" r="86" stroke-opacity=".35"/><circle cx="120" cy="104" r="72" stroke-opacity=".5" stroke-dasharray="2 6" stroke-linecap="round"/></g>
+      <g class="dw-ava" filter="url(#dwS)">${String(torganaAva(112)).replace('<svg ', '<svg x="64" y="48" ')}</g>
+      <g class="dw-seal"><circle cx="164" cy="146" r="29" fill="#fff"/>${String(verifiedSeal(50)).replace('<svg class="vseal"', '<svg class="vseal" x="139" y="121"')}</g>
+      <g class="dw-sp"><path d="M200 50l3.5 8.5 8.5 3.5-8.5 3.5-3.5 8.5-3.5-8.5-8.5-3.5 8.5-3.5z" fill="#8FA8FF"/><path d="M38 136l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#B3A4F7"/><path d="M48 40l2.5 6 6 2.5-6 2.5-2.5 6-2.5-6-6-2.5 6-2.5z" fill="#9CC0FF"/><circle cx="206" cy="122" r="3.5" fill="#C9BEFF"/><circle cx="70" cy="178" r="3" fill="#9CC0FF"/></g>
+    </svg>`);
+  function dealWow(convId, st, slot) {
+    if (!st || !st.confirmed || dealWowSeen(convId) || $('.dw')) return;
+    dealWowMark(convId);
+    const back = document.createElement('div');
+    back.className = 'dw';
+    back.innerHTML = String(html`<div class="dw-card" role="dialog" aria-modal="true" aria-labelledby="dw-t" tabindex="-1">
+      <button type="button" class="dw-x" data-dw-x aria-label="Закрыть">${ic('close', 24, 2)}</button>
+      <div class="dw-art">${dealWowArt()}</div>
+      <h2 id="dw-t">Сделка состоялась</h2>
+      <p>Вы оба подтвердили её в чате. Спасибо — так репутация на Торгане остаётся честной</p>
+      <div class="dw-acts">${st.praised ? html`<button type="button" class="btn btn-accent" data-dw-x>Вернуться в чат</button>`
+        : html`<button type="button" class="btn btn-soft" data-dw-x>Позже</button><button type="button" class="btn btn-accent" data-dw-praise>${ic('sparkle', 18, 2)}Отметить, что понравилось</button>`}</div>
+    </div>`);
+    document.body.appendChild(back);
+    document.documentElement.classList.add('dw-open');
+    const prev = document.activeElement;
+    const close = () => { back.remove(); document.documentElement.classList.remove('dw-open'); document.removeEventListener('keydown', onKey); if (prev && prev.focus) prev.focus(); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    back.addEventListener('mousedown', (e) => { if (e.target === back) close(); });
+    $$('[data-dw-x]', back).forEach((b) => { b.onclick = close; });
+    const pr = $('[data-dw-praise]', back);
+    if (pr) pr.onclick = () => { close(); const t = slot && $('[data-deal-tag]', slot); if (t) { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); t.focus({ preventScroll: true }); } };
+    $('.dw-card', back).focus(); // фокус в окне, без рамки на кнопке; Tab — к кнопкам
+  }
   function bindDeal(slot, convId, reset) {
-    $$('[data-deal]', slot).forEach((b) => { b.onclick = async () => { try { await api('POST', `/api/conversations/${convId}/deal`, { answer: b.dataset.deal }); if (b.dataset.deal === 'yes') toast('Отмечено'); reset(); } catch (e) { toast(e.message, true); } }; });
+    $$('[data-deal]', slot).forEach((b) => { b.onclick = async () => { try { const r = await api('POST', `/api/conversations/${convId}/deal`, { answer: b.dataset.deal }); if (b.dataset.deal === 'yes' && !(r && r.deal && r.deal.confirmed)) toast('Отмечено'); reset(); } catch (e) { toast(e.message, true); } }; });
     const tags = $$('[data-deal-tag]', slot); const send = $('[data-deal-praise]', slot);
     tags.forEach((b) => {
       b.onclick = () => {
@@ -3210,35 +3237,6 @@
       $('[data-x]', m).onclick = close;
       $('[data-ok]', m).onclick = async () => {
         try { await api('POST', `/api/conversations/${convId}/issue`, { reason: $('input[name="reason"]:checked', m).value, text: $('#is-text', m).value.trim() }); close(); toast('Отправлено модератору'); done(); } catch (e) { toast(e.message, true); }
-      };
-    });
-  }
-
-  // Ответ продавца на отзыв — один раз.
-  function replyModal(id, done) {
-    openModal(String(html`<h2>Ответ на отзыв</h2><p class="muted" style="margin:0 0 12px">Ответ увидят все рядом с отзывом. Изменить его потом нельзя, он появится после проверки модератором.</p>
-      <label class="sr" for="rv-reply">Ответ</label><textarea id="rv-reply" class="textarea" style="min-height:120px" maxlength="1000" placeholder="Спокойно объясните, как всё было"></textarea>
-      <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-dark" data-ok>Отправить ответ</button></div>`), (m, close) => {
-      $('[data-x]', m).onclick = close;
-      $('[data-ok]', m).onclick = async () => {
-        try { await api('POST', `/api/reviews/${id}/reply`, { text: $('#rv-reply', m).value.trim() }); close(); toast('Ответ отправлен на проверку'); done(); } catch (e) { toast(e.message, true); }
-      };
-    });
-  }
-
-  // Жалоба на отзыв: причина и обязательное обоснование.
-  function complaintModal(id, reasons, done) {
-    openModal(String(html`<h2>Пожаловаться на отзыв</h2><p class="muted" style="margin:0 0 12px">Отзыв останется на месте, пока модератор не примет решение. Пожаловаться на отзыв можно один раз.</p>
-      <fieldset class="rv-f"><legend>Что не так?</legend><div class="rv-reasons">${reasons.map((r, i) => html`<label><input type="radio" name="reason" value="${r}"${i === 0 ? raw(' checked') : ''}><span>${r}</span></label>`)}</div></fieldset>
-      <div class="field"><label for="rv-why">Обоснуйте жалобу</label><textarea id="rv-why" class="textarea" maxlength="1000" placeholder="Что именно неправда или нарушает правила"></textarea>
-        <span class="help">Минимум 20 символов. Модератор увидит отзыв, объявление и ваше обоснование.</span></div>
-      <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-dark" data-ok>Отправить жалобу</button></div>`), (m, close) => {
-      $('[data-x]', m).onclick = close;
-      $('[data-ok]', m).onclick = async () => {
-        try {
-          await api('POST', `/api/reviews/${id}/complaint`, { reason: $('input[name="reason"]:checked', m).value, text: $('#rv-why', m).value.trim() });
-          close(); toast('Жалоба отправлена — модератор проверит'); done();
-        } catch (e) { toast(e.message, true); }
       };
     });
   }
@@ -3275,7 +3273,7 @@
         <div class="pf-who-txt">
           <div class="pf-name">${nameSeal(u.name, u.badges)}</div>
           <div class="pf-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
-          ${u.rep ? repLine(u.rep, '/profile/reviews') : ''}
+          ${u.rep ? repLine(u.rep, '/profile/reputation') : ''}
         </div>
         <a class="icon-btn pf-gear" href="/profile/settings" aria-label="Настройки">${ic('gear', 20)}</a>
       </div>
@@ -3338,7 +3336,7 @@
   }
   // Пункт меню со значком — один для меню профиля, панели ≡ и меню модерации.
   const navLink = (href, icon, label, on, right = '', key = '') => html`<a href="${href}" class="${on ? 'on' : ''}"${on ? raw(' aria-current="page"') : ''}${key ? raw(` data-k="${key}"`) : ''}>${ic(icon, 20)}<span class="lbl">${label}</span>${right}</a>`;
-  // На телефоне в профиле меню прячется, а четыре пункта (data-k: msg, fav, following, reviews) становятся плитками.
+  // На телефоне в профиле меню прячется, а четыре пункта (data-k: msg, fav, following, rep) становятся плитками.
   function profileNav(full = false) {
     const active = navKey();
     const u = S.user;
@@ -3358,7 +3356,7 @@
       ${item('/messages', 'chat', 'Сообщения', 'msg', html`<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span>`)}
       ${item('/favorites', 'heart', 'Избранное', 'fav')}
       ${item('/profile/following', 'users', 'Подписки', 'following', html`<span class="badge ${S.fresh && S.fresh.follow ? '' : 'hidden'}" data-fresh-follow>${S.fresh ? S.fresh.follow || 0 : 0}</span>`)}
-      ${item('/profile/reviews', 'star', 'Репутация', 'reviews', u.rep && u.rep.level ? html`<span class="nav-rating">${levelMedal(u.rep.level, 14)}</span>` : '')}
+      ${item('/profile/reputation', 'star', 'Репутация', 'rep', u.rep && u.rep.level ? html`<span class="nav-rating">${levelMedal(u.rep.level, 14)}</span>` : '')}
       ${item('/profile/business', 'store', 'Для бизнеса', 'business', u.plan ? html`<span class="nav-plan">${u.plan.id === 'pro' ? 'Про' : 'Магазин'}</span>` : '')}
       ${full ? '' : html`<hr>${item('/profile/settings', 'gear', 'Настройки', 'settings')}`}
       ${item('/messages/support', 'headset', 'Поддержка', 'support')}
@@ -3442,18 +3440,19 @@
   }
 
   // /profile (= /profile/listings) — карточка и «Мои объявления»; на компьютере слева ещё меню разделов.
-  // Отзывы, настройки, статистика — разделы; на телефоне без карточки, со ссылкой «Профиль». Всё меню — в ≡.
+  // Репутация, настройки, статистика — разделы; на телефоне без карточки, со ссылкой «Профиль». Всё меню — в ≡.
   async function viewProfile(section, q) {
     if (!requireAuth()) return;
     if (!section && q.get('tab') === 'settings') { go(`/profile/settings${location.hash}`, true); return; }
     if (section === 'settings') { viewSettings(); return; }
     if (section === 'searches') { go('/profile/following', true); return; } // 1.39.0: сохранённые поиски убраны
+    if (section === 'reviews') { go('/profile/reputation', true); return; } // 1.47.2: отзывов нет, старые ссылки — на репутацию
     const hub = !section || section === 'listings';
     const statId = section && section.startsWith('stats/') ? section.slice(6) : null;
     const bizSub = section && section.startsWith('business') ? section.split('/')[1] || '' : null;
     const sec = statId ? 'stats' : bizSub !== null ? 'business' : section || 'listings';
     const BIZ_TITLE = { '': 'Для бизнеса', shop: 'Витрина магазина', stats: 'Статистика магазина', feed: 'Автозагрузка' };
-    setTitle(sec === 'business' ? BIZ_TITLE[bizSub] : { stats: 'Статистика', reviews: 'Репутация', following: 'Подписки' }[sec] || 'Профиль');
+    setTitle(sec === 'business' ? BIZ_TITLE[bizSub] : { stats: 'Статистика', reputation: 'Репутация', following: 'Подписки' }[sec] || 'Профиль');
     const u = S.user;
     const { items } = await api('GET', '/api/my/listings');
     const count = (st) => items.filter((i) => i.status === st).length;
@@ -3473,10 +3472,8 @@
       ? html`<div class="pf-head"><h1>Статистика</h1><div class="seg" role="tablist">${[['7', '7 дней'], ['30', '30 дней'], ['0', 'Всё время']].map(([v, t]) => html`<a role="tab" aria-selected="${v === days ? 'true' : 'false'}" class="${v === days ? 'on' : ''}" href="/profile/stats/${statId}?days=${v}">${t}</a>`)}</div></div>`
       : sec === 'following'
       ? html`<div class="pf-head"><h1>Подписки</h1></div>`
-      : sec === 'reviews' && !q.get('old')
+      : sec === 'reputation'
       ? html`<div class="pf-head"><h1>Репутация</h1></div>`
-      : sec === 'reviews'
-      ? html`<div class="pf-head"><h1>Отзывы до 9 ноября</h1><div class="seg" role="tablist">${[['', 'Обо мне'], ['mine', 'Я оставил']].map(([v, t]) => html`<a role="tab" aria-selected="${(q.get('tab') || '') === v ? 'true' : 'false'}" class="${(q.get('tab') || '') === v ? 'on' : ''}" href="/profile/reviews?old=1${v ? `&tab=${v}` : ''}">${t}</a>`)}</div></div>`
       : html`<div class="pf-head"><h1>Мои объявления</h1><a class="btn btn-accent" href="/new" aria-label="Разместить объявление">${ic('plus', 18, 2.2)}<span>Разместить</span></a></div>`;
     app.innerHTML = String(html`<div class="wrap pf2 ${hub ? 'is-hub' : 'is-section'}">
       <aside class="pf-side">
@@ -3494,7 +3491,7 @@
     bindIdCard(again);
     if (sec === 'stats') return renderStats(statId, days);
     if (sec === 'business') return renderBusinessHub(bizSub, bizDays, again);
-    if (sec === 'reviews') return q.get('old') ? renderMyReviews(q.get('tab') === 'mine' ? 'mine' : 'about', again) : renderMyRep(again);
+    if (sec === 'reputation') return renderMyRep(again);
     if (sec === 'following') return renderFollowing(again);
     return renderMyListings(items, q.get('status') || 'active', again);
   }
@@ -3562,20 +3559,6 @@
     });
   }
 
-  // Отзывы в профиле: обо мне (ответить, пожаловаться) и те, что оставил я (со статусом).
-  async function renderMyReviews(tab, reload) {
-    const d = await api('GET', '/api/my/reviews');
-    const list = tab === 'mine' ? d.mine : d.about;
-    $('#box').innerHTML = String(html`<div class="rv">
-      ${tab === 'about' ? html`<div class="rv-top"><div class="rv-top-sum">${ratingSummary(d.rating)}</div>
-        <div class="rv-rules">${ic('lock', 18, 1.9)}<span>Отзывы нельзя изменить или удалить — ни вам, ни автору. Можно один раз ответить, а если отзыв нарушает правила — пожаловаться и объяснить почему: модератор проверит и решит, оставить его или скрыть.</span></div></div>` : ''}
-      ${list.length ? html`<div class="rv-list">${list.map((rv) => reviewCard(rv, tab === 'mine' ? 'author' : 'seller'))}</div>`
-    : html`<div class="pf-empty sm"><h3>${tab === 'mine' ? 'Вы ещё не оставляли отзывов' : 'Отзывов пока нет'}</h3><p>${tab === 'mine' ? 'Отзыв о продавце можно оставить в чате по объявлению — после переписки.' : 'Отзыв о вас может оставить покупатель, с которым вы переписывались по объявлению. Он появится после проверки модератором.'}</p></div>`}
-    </div>`);
-    $$('[data-rv-reply]').forEach((b) => { b.onclick = () => replyModal(b.dataset.rvReply, reload); });
-    $$('[data-rv-complain]').forEach((b) => { b.onclick = () => complaintModal(b.dataset.rvComplain, d.complaintReasons, reload); });
-  }
-
   // 1.46.0: своя репутация — как её видят другие, жалобы на меня (можно объясниться) и мои жалобы.
   const ISSUE_ST = { open: ['wait', 'У модератора'], confirmed: ['bad', 'Подтверждена'], dismissed: ['ok', 'Не подтвердилась'] };
   async function renderMyRep(reload) {
@@ -3587,7 +3570,6 @@
     $('#box').innerHTML = String(html`<div class="rep-page">
       ${repCard(d.rep)}${repHow()}
       ${d.against.length || d.mine.length ? html`<section class="rep-issues"><h2>Жалобы по сделкам</h2>${d.against.map((x) => row(x, false))}${d.mine.map((x) => row(x, true))}</section>` : ''}
-      ${S.user.rating && S.user.rating.count ? html`<a class="rep-old" href="/profile/reviews?old=1">${ic('star', 16, 2)}Отзывы до 9 ноября · ${S.user.rating.count}</a>` : ''}
     </div>`);
     $$('[data-issue-reply]').forEach((b) => {
       b.onclick = () => openModal(String(html`<h2>Ваше объяснение</h2><p class="muted" style="margin:0 0 12px">Увидит только модератор. Ответить можно один раз.</p>
@@ -3682,8 +3664,7 @@
     ['Подписки', 'Новые объявления продавцов, на которых вы подписаны', 'pushSearches', null],
     ['Снижение цены', 'Подешевело то, что у вас в избранном', 'pushPrices', null],
     ['Подборка за день', 'Новое у продавцов и снижение цен — одним письмом', null, 'notifyDigest'],
-    ['Модерация', 'Решения по объявлениям и апелляциям, проверка бизнеса, оплаты', 'pushModeration', 'notifyModeration'],
-    ['Отзывы', 'Новый отзыв о вас и решения по отзывам', 'pushReviews', 'notifyReviews']
+    ['Объявления и сделки', 'Решения модерации, срок публикации, сделки и репутация, проверка бизнеса, оплаты', 'pushModeration', 'notifyModeration']
   ];
   const notifyCell = (u, k, title, kind) => (k
     ? html`<label class="mini-switch"><input type="checkbox" name="${k}" aria-label="${kind} — ${title}" ${u[k] ? raw('checked') : ''}><span class="track"></span></label>`
@@ -4042,7 +4023,7 @@
   }
 
   async function viewUser(id, q) {
-    const tab = q && q.get('tab') === 'reviews' ? 'reviews' : 'ads';
+    const tab = q && ['rep', 'reviews'].includes(q.get('tab')) ? 'rep' : 'ads'; // reviews — старые ссылки
     const { user: u, items } = await api('GET', `/api/users/${id}`);
     setTitle(u.name);
     const own = S.user && S.user.id === u.id;
@@ -4057,7 +4038,7 @@
         <div class="pub-who">
           <h1>${nameSeal(sh ? sh.name : u.name, u.badges)}</h1>
           <div class="pub-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
-          ${repLine(u.rep, `/u/${u.id}?tab=reviews`)}
+          ${repLine(u.rep, `/u/${u.id}?tab=rep`)}
           ${sh && sh.about ? html`<p class="shop-about">${sh.about}</p>` : ''}
           ${sh ? shopFacts(sh) : ''}
           <div class="pf-badges">${trustBadges(sh ? { ...u.badges, shop: false } : u.badges)}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}</div>
@@ -4073,25 +4054,13 @@
       </section>
       <div class="seg seg-lg" role="tablist">
         <a role="tab" aria-selected="${tab === 'ads' ? 'true' : 'false'}" class="${tab === 'ads' ? 'on' : ''}" href="/u/${u.id}">Объявления <span class="n">${u.activeCount}</span></a>
-        <a role="tab" aria-selected="${tab === 'reviews' ? 'true' : 'false'}" class="${tab === 'reviews' ? 'on' : ''}" href="/u/${u.id}?tab=reviews">${levelMedal(u.rep ? u.rep.level : 0, 16)}Репутация</a>
+        <a role="tab" aria-selected="${tab === 'rep' ? 'true' : 'false'}" class="${tab === 'rep' ? 'on' : ''}" href="/u/${u.id}?tab=rep">${levelMedal(u.rep ? u.rep.level : 0, 16)}Репутация</a>
       </div>
       <div id="box">${tab === 'ads' ? (items.length ? grid(items) : html`<div class="pf-empty sm"><h3>Активных объявлений нет</h3><p>Загляните позже.</p></div>`) : html`<div class="loader"></div>`}</div>
     </div>`);
     $('[data-share]').onclick = () => shareLink(`${location.origin}/u/${u.id}`, `${u.name} на Торгане`);
-    if (tab !== 'reviews') return;
-    // 1.46.0: репутация; старые отзывы — свёрнутым архивом.
-    let offset = 0; let acc = [];
-    const box = $('#box');
-    box.innerHTML = String(html`<div class="rep-page">${repCard(u.rep)}${repHow()}
-      ${u.rating.count ? html`<details class="rep-archive"><summary>${ic('star', 16, 2)}Отзывы до 9 ноября · ${u.rating.count}</summary><div data-old-rv><div class="loader"></div></div></details>` : ''}</div>`);
-    const arch = $('.rep-archive', box);
-    const load = async () => {
-      const d = await api('GET', `/api/users/${u.id}/reviews?offset=${offset}`);
-      acc = acc.concat(d.items); offset += d.items.length;
-      $('[data-old-rv]', box).innerHTML = String(html`<div class="rv-list">${acc.map((rv) => reviewCard(rv))}</div>${d.more ? html`<div class="more"><button class="btn btn-soft" type="button" data-more-rv>Показать ещё</button></div>` : ''}`);
-      const mb = $('[data-more-rv]', box); if (mb) mb.onclick = () => load().catch((e) => toast(e.message, true));
-    };
-    if (arch) arch.addEventListener('toggle', () => { if (arch.open && !acc.length) load().catch((e) => toast(e.message, true)); });
+    if (tab !== 'rep') return;
+    $('#box').innerHTML = String(html`<div class="rep-page">${repCard(u.rep)}${repHow()}</div>`);
   }
 
   // ================= для бизнеса: тарифы, оплата, продвижение =================
@@ -4580,27 +4549,68 @@
   const STATUS_LABEL = { pending: 'На проверке', scheduled: 'Запланировано', active: 'Опубликовано', rejected: 'Отклонено', sold: 'Продано', archived: 'Снято', deleted: 'Удалено автором' };
 
   // ---------- оболочка модерации: меню слева (на телефоне — лента сверху) ----------
+  // 1.47.2: меню модерации проще — 14 пунктов вместо 24. Статусы объявлений — вкладки одного раздела,
+  // «Оплата» — вкладка «Платежей», все настройки — один раздел с плитками.
   const ADMIN_NAV = [
     ['', [['dash', 'chart', 'Сводка']]],
-    ['Проверка', [['pending', 'inbox', 'На проверке', 'pending'], ['reports', 'flag', 'Жалобы', 'reports'], ['appeals', 'reply', 'Апелляции', 'appeals'], ['rep', 'star', 'Репутация', 'rep'], ['reviews', 'star', 'Отзывы (архив)', 'reviews'], ['support', 'headset', 'Поддержка', 'support'], ['biz', 'shield', 'Бизнес', 'biz']]],
-    ['Объявления', [['active', 'tag', 'Опубликованные'], ['rejected', 'close', 'Отклонённые'], ['sold', 'check', 'Проданные'], ['archived', 'pause', 'Снятые']]],
-    ['Люди', [['users', 'users', 'Пользователи'], ['sources', 'chart', 'Откуда приходят'], ['log', 'list', 'Журнал действий']]],
-    ['Деньги', [['ads', 'megaphone', 'Реклама'], ['payments', 'card', 'Платежи'], ['billing', 'tag', 'Оплата']]],
-    ['Настройки', [['notify', 'bell', 'Мои уведомления'], ['mail', 'mail', 'Почта'], ['oauth', 'lock', 'Вход через сервисы'], ['ai', 'sparkle', 'ИИ по фото'], ['seo', 'search', 'Поиск и статистика'], ['backup', 'shield', 'Копии и безопасность'], ['site', 'refresh', 'Версия сайта']]]
+    ['Ждут решения', [['pending', 'inbox', 'На проверке', 'pending'], ['reports', 'flag', 'Жалобы', 'reports'], ['appeals', 'reply', 'Апелляции', 'appeals'], ['rep', 'star', 'Репутация', 'rep'], ['support', 'headset', 'Поддержка', 'support'], ['biz', 'shield', 'Бизнес', 'biz']]],
+    ['Сайт', [['active', 'tag', 'Объявления'], ['users', 'users', 'Пользователи'], ['sources', 'trend', 'Откуда приходят'], ['log', 'list', 'Журнал действий']]],
+    ['Деньги', [['ads', 'megaphone', 'Реклама'], ['payments', 'card', 'Платежи']]],
+    ['', [['settings', 'gear', 'Настройки']]]
   ];
+  // Подразделы → пункт меню, который подсвечивается.
+  const ADMIN_PARENT = { rejected: 'active', sold: 'active', archived: 'active', billing: 'payments', notify: 'settings', mail: 'settings', oauth: 'settings', ai: 'settings', seo: 'settings', backup: 'settings', site: 'settings' };
+  const LISTING_STATUS_TABS = [['active', 'Опубликованные'], ['rejected', 'Отклонённые'], ['sold', 'Проданные'], ['archived', 'Снятые']];
+  const ADMIN_SETTINGS = [['notify', 'bell', 'Мои уведомления', 'Push и письма о новом'], ['mail', 'mail', 'Почта', 'Отправка писем, коды, очередь'], ['oauth', 'lock', 'Вход через сервисы', 'Яндекс ID и VK ID'],
+    ['ai', 'sparkle', 'ИИ по фото', 'Заполнение объявления по фото'], ['seo', 'search', 'Поиск и статистика', 'Вебмастер, Метрика, карта сайта'], ['backup', 'shield', 'Копии и безопасность', 'Резервные копии базы, защита входа'], ['site', 'refresh', 'Версия сайта', 'Обновления и откат']];
+  const adminLabel = (k) => { const x = ADMIN_NAV.flatMap((g) => g[1]).find(([key]) => key === k) || ADMIN_SETTINGS.find(([key]) => key === k); return x ? x[2] : ({ rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые', billing: 'Настройки оплаты' }[k] || 'Модерация'); };
   const LISTING_TABS = ['pending', 'reports', 'appeals', 'active', 'rejected', 'sold', 'archived'];
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-adm-menu]') && S.adm) adminMenu(S.adm.active, S.adm.stats); });
   function adminShell(active, stats, body) {
+    const on = ADMIN_PARENT[active] || active;
+    S.adm = { active, stats };
     const badge = (k) => (k && stats[k] ? html`<span class="badge">${stats[k]}</span>` : '');
+    const waiting = ADMIN_NAV[1][1].filter(([, , , cnt]) => stats[cnt]);
+    const cur = ADMIN_NAV.flatMap((g) => g[1]).find(([k]) => k === on);
     return html`<div class="wrap adm">
       <aside class="adm-side">
         <div class="adm-title">Модерация</div>
         <nav class="pf-nav adm-nav" aria-label="Разделы модерации">${ADMIN_NAV.map(([group, items]) => html`
           ${group ? html`<div class="pf-nav-h">${group}</div>` : ''}
-          ${items.map(([k, icon, label, cnt]) => navLink(`/admin?status=${k}`, icon, k === 'mail' && !S.config.mail ? `${label} · не подключена` : label, k === active, badge(cnt)))}`)}
+          ${items.map(([k, icon, label, cnt]) => navLink(`/admin?status=${k}`, icon, label, k === on, badge(cnt)))}`)}
         </nav>
       </aside>
-      <section class="adm-main">${body}</section>
+      <section class="adm-main">
+        <div class="adm-mbar">
+          <button type="button" class="adm-switch" data-adm-menu aria-haspopup="dialog">${ic(cur ? cur[1] : 'list', 18, 2)}<span>${cur ? cur[2] : 'Модерация'}</span>${ic('down', 16, 2.2)}</button>
+          ${waiting.length ? html`<nav class="adm-quick" aria-label="Ждут решения">${waiting.map(([k, icon, label, cnt]) => html`<a href="/admin?status=${k}" class="${k === on ? 'on' : ''}">${ic(icon, 15, 2)}${label}<b>${stats[cnt]}</b></a>`)}</nav>` : ''}
+        </div>
+        ${body}
+      </section>
     </div>`;
+  }
+  // Телефон: все разделы — плитками в нижней панели (вместо длинной ленты кнопок).
+  function adminMenu(active, stats) {
+    const on = ADMIN_PARENT[active] || active;
+    openModal(String(html`<div class="nt-top"><h2>Модерация</h2><button type="button" class="icon-btn" data-x aria-label="Закрыть">${ic('close', 20, 2)}</button></div>
+      <div class="adm-sheet">${ADMIN_NAV.map(([group, items]) => html`${group ? html`<div class="adm-sheet-h">${group}</div>` : ''}<div class="adm-tiles">${items.map(([k, icon, label, cnt]) => html`<a href="/admin?status=${k}" class="${k === on ? 'on' : ''}"><span class="adm-tile-ic">${ic(icon, 20, 2)}</span><span>${label}</span>${cnt && stats[cnt] ? html`<b>${stats[cnt]}</b>` : ''}</a>`)}</div>`)}</div>`), (m, close) => {
+      m.classList.add('adm-sheet-modal'); m.setAttribute('aria-label', 'Разделы модерации');
+      $('[data-x]', m).onclick = close;
+      m.addEventListener('click', (e) => { if (e.target.closest('a[href]')) close(); });
+    });
+  }
+  // Раздел «Настройки» — плитки; внутри каждой настройки — ссылка назад.
+  function renderSettingsHub(box) {
+    box.innerHTML = String(html`<div class="adm-head"><h1>Настройки</h1></div>
+      <div class="set-hub">${ADMIN_SETTINGS.map(([k, icon, t, sub]) => html`<a class="set-tile" href="/admin?status=${k}"><span class="set-tile-ic">${ic(icon, 22, 2)}</span><span class="set-tile-t"><b>${t}</b><small>${k === 'mail' && !S.config.mail ? 'Не подключена — письма не уходят' : sub}</small></span>${k === 'mail' && !S.config.mail ? html`<i class="set-tile-warn">${ic('warn', 14, 2.4)}</i>` : ''}${ic('right', 18, 2)}</a>`)}</div>`);
+  }
+  // Подвкладки: статусы объявлений, «Платежи / Настройки оплаты»; у настроек — «← Настройки».
+  function adminSubNav(box, status) {
+    const tabs = (list) => html`<nav class="seg adm-tabs" aria-label="Подразделы">${list.map(([k, t]) => html`<a href="/admin?status=${k}" class="${k === status ? 'on' : ''}"${k === status ? raw(' aria-current="page"') : ''}>${t}</a>`)}</nav>`;
+    const headEl = $('.adm-head', box);
+    if (ADMIN_PARENT[status] === 'settings') box.insertAdjacentHTML('afterbegin', String(html`<a class="pf-back always adm-back" href="/admin?status=settings">${ic('left', 18, 2)}Настройки</a>`));
+    else if (['active', 'rejected', 'sold', 'archived'].includes(status) && headEl) headEl.insertAdjacentHTML('afterend', String(tabs(LISTING_STATUS_TABS)));
+    else if (['payments', 'billing'].includes(status) && headEl) headEl.insertAdjacentHTML('afterend', String(tabs([['payments', 'Платежи'], ['billing', 'Настройки оплаты']])));
   }
   // Длительность по-человечески: «40 мин», «3 ч 20 мин», «2 дн 4 ч».
   function fmtDur(ms) {
@@ -4617,8 +4627,8 @@
     if (!requireAuth()) return;
     if (!S.user.isAdmin) { viewNotFound(); return; }
     const status = q.get('status') || 'dash';
-    const title = ADMIN_NAV.flatMap((g) => g[1]).find(([k]) => k === status);
-    setTitle(title ? `${title[2]} — модерация` : 'Модерация');
+    if (status === 'listings') { go('/admin?status=active', true); return; }
+    setTitle(`${adminLabel(status)} — модерация`);
     const [stats, dev] = await Promise.all([api('GET', '/api/admin/stats'), api('GET', '/api/admin/device').catch(() => null)]);
     const arm = dev && dev.required && !dev.armed ? html`<div class="banner warn adm-arm">${ic('shield', 20, 2)}<div><b>Защита входа в модерацию не включена.</b> Подтвердите это устройство кодом из письма — после этого на новых устройствах модерация будет открываться только по коду.</div><a class="btn btn-dark btn-sm" href="/admin/device">Включить</a></div>` : '';
     app.innerHTML = String(adminShell(status, stats, html`${arm}<div id="adm-box" class="adm-box"><div class="loader"></div></div>`));
@@ -4644,11 +4654,12 @@
       site: () => { box.innerHTML = String(head('Версия сайта')); box.insertAdjacentHTML('beforeend', '<div id="special-box"></div>'); renderSiteAdmin($('#special-box'), extra.update); },
       support: async () => { box.innerHTML = String(head('Поддержка')); box.insertAdjacentHTML('beforeend', '<div id="special-box"></div>'); await renderSupportAdmin($('#special-box'), q.get('t')); },
       rep: () => renderRepAdmin(box),
-      reviews: async () => { box.innerHTML = String(head('Отзывы')); box.insertAdjacentHTML('beforeend', '<div id="special-box"></div>'); await renderReviewsAdmin($('#special-box'), q.get('rt') || 'pending'); }
+      settings: () => renderSettingsHub(box),
     };
-    if (R[status]) { await R[status](); return; }
+    if (R[status]) { await R[status](); adminSubNav(box, status); return; }
     if (!LISTING_TABS.includes(status)) { go('/admin', true); return; }
-    await renderListingsAdmin(box, status, q.get('q') || '', head(title[2]));
+    await renderListingsAdmin(box, status, q.get('q') || '', head(['active', 'rejected', 'sold', 'archived'].includes(status) ? 'Объявления' : adminLabel(status)));
+    adminSubNav(box, status);
   }
 
   // Замечания автопроверки и «похоже на запрещённое» — плашками в очереди и на странице проверки.
@@ -4706,7 +4717,7 @@
           ${tile('/admin?status=support', NF.format(st.support), 'ждут ответа поддержки')}
           ${tile('/admin?status=active', NF.format(d.totals.active), 'опубликовано сейчас', `подано за сутки: ${d.today.listings} · одобрено: ${d.today.approved}`)}
           ${tile('/admin?status=users', NF.format(d.totals.users), 'пользователей', `новых за сутки: ${d.today.users}${d.totals.blocked ? ` · заблокировано: ${d.totals.blocked}` : ''}`)}
-          ${tile('/admin?status=appeals', NF.format(st.appeals), 'апелляций', `отзывов на проверке: ${st.reviews}`)}
+          ${tile('/admin?status=appeals', NF.format(st.appeals), 'апелляций', `по репутации ждут решения: ${st.rep || 0}`)}
         </div>
       </div>
       <div class="dash-grid">
@@ -4717,7 +4728,7 @@
         </section>
         <section class="panel dash-mods"><h2 class="h2">Модераторы за 7 дней</h2>
           ${d.moderators.map((m) => html`<a class="dash-mod" href="/admin?status=log&admin=${m.id}">${ava(m, 'sm')}<span>${m.name}${m.me ? html` <small class="muted">(вы)</small>` : ''}</span><b>${NF.format(m.actions)}</b></a>`)}
-          <p class="muted" style="margin:6px 0 0;font-size:13px">Число действий: решения по объявлениям и отзывам, блокировки, ответы в поддержке.</p>
+          <p class="muted" style="margin:6px 0 0;font-size:13px">Число действий: решения по объявлениям, блокировки, ответы в поддержке.</p>
         </section>
       </div>`);
     $$('[data-chart]', box).forEach((a) => {
@@ -4773,11 +4784,9 @@
     const u = d.user;
     setTitle(`${u.name} — модерация`);
     const blockedBy = d.log.find((e) => e.action === 'user-blocked');
-    const tabs = [['listings', `Объявления · ${d.counts.total}`], ['reports', `Жалобы · ${d.reports.against.length + d.reports.by.length}`], ['reviews', `Отзывы · ${d.reviews.about.length + d.reviews.by.length}`], ['log', `История · ${d.log.length}`]];
+    const tabs = [['listings', `Объявления · ${d.counts.total}`], ['reports', `Жалобы · ${d.reports.against.length + d.reports.by.length}`], ['log', `История · ${d.log.length}`]];
     const reportItem = (r, mine) => html`<div class="report ${r.resolvedAt ? 'done' : ''}"><b>${r.reason}</b>${r.text ? html`<p>${r.text}</p>` : ''}
       <span class="muted"><a href="/admin/l/${r.listing.id}">«${r.listing.title}»</a> · ${mine ? 'пожаловался(ась)' : `от ${r.from ? r.from.name : 'пользователя'}`} · ${when(r.at)}${r.resolvedAt ? ` · закрыта: ${r.resolution}` : ''}</span></div>`;
-    const reviewItem = (r, about) => html`<div class="report"><b>${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)} · ${RV_STATUS[r.status] ? RV_STATUS[r.status][1] : r.status}</b><p>${r.text}</p>
-      <span class="muted">«${r.listing.title}» · ${about ? `от ${r.other ? r.other.name : '—'}` : `о продавце ${r.other ? r.other.name : '—'}`} · ${when(r.at)}</span></div>`;
     const section = (title, items, empty) => html`<h3 class="adm-sub">${title}</h3>${items.length ? items : html`<p class="muted" style="margin:0">${empty}</p>`}`;
     const panes = {
       listings: d.listings.length ? d.listings.map((i) => html`<div class="my-row">
@@ -4789,7 +4798,6 @@
             ${checkChips(i)}</div>
           <div class="my-actions"><a class="btn btn-soft btn-sm" href="/admin/l/${i.id}">Открыть</a></div></div>`) : html`<p class="muted">Объявлений нет.</p>`,
       reports: html`${section('На его объявления', d.reports.against.map((r) => reportItem(r, false)), 'Жалоб нет.')}${section('Его жалобы на других', d.reports.by.map((r) => reportItem(r, true)), 'Не жаловался.')}`,
-      reviews: html`${section('О нём', d.reviews.about.map((r) => reviewItem(r, true)), 'Отзывов нет.')}${section('Он оставил', d.reviews.by.map((r) => reviewItem(r, false)), 'Не оставлял.')}`,
       log: d.log.length ? html`<div class="adm-log">${d.log.map(logRow)}</div>` : html`<p class="muted">Модераторы с ним ещё ничего не делали.</p>`
     };
     app.innerHTML = String(adminShell('users', stats, html`
@@ -4798,7 +4806,7 @@
         <div class="adm-person-top">${ava(u, 'xl')}
           <div class="adm-person-txt"><h1>${nameSeal(u.name, { tm: u.trademark && u.trademark.live ? u.trademark : null })}</h1>
             <div class="muted">№ ${u.id} · на Торгане с ${since(u.createdAt)}</div>
-            ${u.rep ? repLine(u.rep, `/u/${u.id}?tab=reviews`) : ''}
+            ${u.rep ? repLine(u.rep, `/u/${u.id}?tab=rep`) : ''}
             <div class="pf-badges">${userBadges({ ...u, reports: d.reports.against.filter((r) => !r.resolvedAt).length })}${trustBadges({ phone: u.phoneVerified, biz: u.business && u.business.status === 'verified' ? { kind: u.business.kind === 'ip' ? 'ИП' : 'Компания', name: u.business.name } : null })}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}</div>
           </div>
         </div>
@@ -5073,17 +5081,16 @@
   const LOG_TEXT = {
     approved: 'Опубликовал объявление', restored: 'Восстановил объявление', 'appeal-approved': 'Одобрил апелляцию', 'appeal-denied': 'Отказал по апелляции',
     'reports-dismissed': 'Закрыл жалобы на объявление', 'plan-gift': 'Подарил тариф', 'promo-gift': 'Подарил рекламу над поиском', 'boost-gift': 'Подарил продвижение в ленте', 'avatar-removed': 'Убрал фото профиля', 'user-blocked': 'Заблокировал пользователя', 'user-unblocked': 'Разблокировал пользователя',
-    'review-published': 'Опубликовал отзыв', 'review-rejected': 'Не опубликовал отзыв', 'review-hidden': 'Скрыл отзыв по жалобе', 'review-kept': 'Оставил отзыв после жалобы',
-    'review-restored': 'Вернул отзыв', 'biz-verified': 'Подтвердил бизнес', 'biz-rejected': 'Отказал в подтверждении бизнеса', 'reply-published': 'Опубликовал ответ продавца', 'reply-rejected': 'Не опубликовал ответ продавца', 'support-reply': 'Ответил в поддержке',
+    'biz-verified': 'Подтвердил бизнес', 'biz-rejected': 'Отказал в подтверждении бизнеса', 'support-reply': 'Ответил в поддержке',
     'billing-settings': 'Изменил настройки оплаты', 'billing-prices': 'Изменил цены', 'payment-refund': 'Оформил возврат', 'promo-erid': 'Указал erid и запустил рекламу',
     'promo-stopped': 'Отключил рекламу над поиском', 'plan-stopped': 'Отключил тариф', 'boost-stopped': 'Отключил продвижение', 'user-deactivated': 'Временно удалил профиль', 'user-restored': 'Восстановил профиль', 'user-erased': 'Удалил профиль навсегда', 'seo-settings': 'Изменил настройки поиска и Метрики', 'ads-settings': 'Изменил настройки рекламы', 'shop-cleared': 'Очистил витрину магазина', 'starter-settings': 'Изменил бесплатный старт', 'issue-confirmed': 'Подтвердил жалобу по сделке', 'issue-dismissed': 'Закрыл жалобу по сделке', 'deal-counted': 'Засчитал подозрительную сделку', 'deal-dropped': 'Не засчитал подозрительную сделку', 'tm-verified': 'Выдал галочку бренда', 'tm-rejected': 'Вернул заявку на галочку на исправление', 'tm-doc-viewed': 'Открыл документ заявки на галочку'
   };
-  const LOG_TONE = { 'promo-erid': 'ok', 'promo-stopped': 'bad', 'plan-stopped': 'bad', 'boost-stopped': 'bad', 'user-deactivated': 'bad', 'user-erased': 'bad', 'user-restored': 'ok', 'shop-cleared': 'bad', 'biz-verified': 'ok', 'biz-rejected': 'bad', 'tm-verified': 'ok', 'tm-rejected': 'bad', rejected: 'bad', 'appeal-denied': 'bad', 'user-blocked': 'bad', 'review-rejected': 'bad', 'review-hidden': 'bad', 'reply-rejected': 'bad', approved: 'ok', restored: 'ok', 'appeal-approved': 'ok', 'user-unblocked': 'ok', 'review-published': 'ok', 'reply-published': 'ok', 'review-restored': 'ok' };
+  const LOG_TONE = { 'promo-erid': 'ok', 'promo-stopped': 'bad', 'plan-stopped': 'bad', 'boost-stopped': 'bad', 'user-deactivated': 'bad', 'user-erased': 'bad', 'user-restored': 'ok', 'shop-cleared': 'bad', 'biz-verified': 'ok', 'biz-rejected': 'bad', 'tm-verified': 'ok', 'tm-rejected': 'bad', rejected: 'bad', 'appeal-denied': 'bad', 'user-blocked': 'bad', approved: 'ok', restored: 'ok', 'appeal-approved': 'ok', 'user-unblocked': 'ok' };
   function logRow(e) {
     const act = e.action === 'rejected' ? (e.data.from === 'pending' ? 'Отклонил объявление' : 'Снял с публикации') : LOG_TEXT[e.action] || e.action;
     const target = e.listing ? html`<a href="/admin/l/${e.listing.id}">«${e.listing.title}»</a>`
-      : e.action.startsWith('review') || e.action.startsWith('reply') ? html`по «${e.data.title}»` : '';
-    const who = e.user && !e.listing && !e.action.startsWith('review') && !e.action.startsWith('reply') ? html`<a href="/admin/u/${e.user.id}">${e.user.name}</a>` : '';
+      : '';
+    const who = e.user && !e.listing ? html`<a href="/admin/u/${e.user.id}">${e.user.name}</a>` : '';
     const reason = e.data.reason || e.data.comment || e.data.text;
     return html`<div class="adm-log-row">
       <span class="adm-log-dot ${LOG_TONE[e.action] || ''}"></span>
@@ -5102,7 +5109,7 @@
     let offset = 0;
     const load = () => api('GET', `/api/admin/log?${new URLSearchParams({ admin: adminId, type, offset })}`);
     const d = await load();
-    const TYPES = [['', 'Все'], ['listings', 'Объявления'], ['reviews', 'Отзывы'], ['users', 'Пользователи'], ['support', 'Поддержка']];
+    const TYPES = [['', 'Все'], ['listings', 'Объявления'], ['users', 'Пользователи'], ['support', 'Поддержка']];
     box.innerHTML = String(html`<div class="adm-head"><h1>Журнал действий</h1>
         <label class="sr" for="la">Модератор</label><select id="la" class="select adm-select"><option value="">Все модераторы</option>${d.admins.map((a) => html`<option value="${a.id}" ${String(a.id) === adminId ? raw('selected') : ''}>${a.name}</option>`)}</select></div>
       <div class="tabs adm-chips">${TYPES.map(([k, t]) => html`<a class="chip ${k === type ? 'active' : ''}" href="${url({ type: k })}">${t}</a>`)}</div>
@@ -5459,10 +5466,18 @@
     const cur = await api('GET', '/api/admin/me/notify');
     const MODES = [['instant', 'Сразу', 'Одним письмом в течение минуты после нового'], ['hourly', 'Раз в час', 'Сводка всего нового за час'], ['off', 'Не присылать', 'Смотрю сам на сайте']];
     const KINDS = [['pending', 'Новые объявления на проверку', 'И изменённые — после правки они снова в очереди'], ['reports', 'Жалобы на объявления', ''], ['support', 'Сообщения в поддержку', 'Только те, что ещё никто не прочитал']];
+    // 1.47.2: push — сразу, на этот телефон или компьютер; отдельно от писем.
+    const PUSH = [['pending', 'Новые и изменённые объявления', 'Не чаще раза в 2 минуты — со счётчиком очереди'], ['reports', 'Жалобы на объявления', ''], ['support', 'Сообщения в поддержку', ''],
+      ['biz', 'Проверка бизнеса и галочки бренда', 'Новые заявки'], ['rep', 'Репутация', 'Жалобы по сделкам и подозрительные сделки'], ['pay', 'Оплаты', 'Каждая прошедшая оплата']];
     box.innerHTML = String(html`<div class="adm-head"><h1>Мои уведомления</h1></div>
+      <form class="panel nt-form" id="ntp" style="margin-bottom:16px">
+        <div><h2 class="h2">Push — сразу на телефон</h2><p class="muted" style="margin:4px 0 0">Приходят на устройства, где вы включили уведомления. Ваши собственные действия не присылаем.</p></div>
+        <div id="ntp-dev"></div>
+        <div class="nt-kinds">${PUSH.map(([k, t, sub]) => html`<label class="switch"><span>${t}${sub ? html`<small>${sub}</small>` : ''}</span><input type="checkbox" name="push" value="${k}" ${cur.push.includes(k) ? raw('checked') : ''}><span class="track"></span></label>`)}</div>
+      </form>
       ${S.config.mail ? '' : html`<div class="banner warn" style="margin-bottom:16px">Почта ещё не подключена — письма начнут приходить после настройки в разделе <a href="/admin?status=mail" style="text-decoration:underline">«Почта»</a>.</div>`}
       <form class="panel nt-form" id="nt">
-        <div><h2 class="h2">Как часто</h2><p class="muted" style="margin:4px 0 0">Письма приходят на ${S.user.email}. У каждого модератора — свои настройки.</p></div>
+        <div><h2 class="h2">Письма — как часто</h2><p class="muted" style="margin:4px 0 0">Письма приходят на ${S.user.email}. У каждого модератора — свои настройки.</p></div>
         <div class="nt-modes" role="radiogroup" aria-label="Как часто">${MODES.map(([k, t, sub]) => html`<label class="nt-mode"><input type="radio" name="mode" value="${k}" ${cur.mode === k ? raw('checked') : ''}><span><b>${t}</b><small>${sub}</small></span></label>`)}</div>
         <div class="nt-kinds ${cur.mode === 'off' ? 'off' : ''}"><h2 class="h2">О чём</h2>
           ${KINDS.map(([k, t, sub]) => html`<label class="switch"><span>${t}${sub ? html`<small>${sub}</small>` : ''}</span><input type="checkbox" name="kinds" value="${k}" ${cur.kinds.includes(k) ? raw('checked') : ''}><span class="track"></span></label>`)}</div>
@@ -5474,6 +5489,12 @@
       $('.nt-kinds', f).classList.toggle('off', mode === 'off');
       try { await api('PUT', '/api/admin/me/notify', { mode, kinds }); toast(mode === 'off' ? 'Письма о новом отключены' : 'Сохранено'); } catch (e) { toast(e.message, true); }
     };
+    const fp = $('#ntp');
+    fp.onchange = async (e) => {
+      if (e.target.name !== 'push') return;
+      try { await api('PUT', '/api/admin/me/notify', { push: $$('input[name=push]:checked', fp).map((x) => x.value) }); toast('Сохранено'); } catch (ex) { toast(ex.message, true); }
+    };
+    renderPushDevice($('#ntp-dev')).catch(() => {});
   }
 
   // Найденные подозрительные основы слов → целые слова в тексте (ё = е, позиции совпадают).
@@ -5582,34 +5603,6 @@
   }
 
   // Модерация → Поддержка: диалоги слева, чат и карточка пользователя справа.
-  // Модерация отзывов: новые отзывы и ответы продавцов, жалобы продавцов на отзывы.
-  async function renderReviewsAdmin(box, tab) {
-    const d = await api('GET', `/api/admin/reviews?tab=${tab}`);
-    const tabs = [['pending', `На проверке${d.counts.pending ? ` · ${d.counts.pending}` : ''}`], ['complaints', `Жалобы${d.counts.complaints ? ` · ${d.counts.complaints}` : ''}`], ['all', 'Последние']];
-    const item = (rv) => html`<div class="adm-rv">
-      ${reviewCard(rv, 'public')}
-      <div class="adm-rv-side">
-        <div class="muted" style="font-size:13px">Автор: ${rv.author.name} (${rv.authorEmail}) · о продавце <a href="/u/${rv.seller.id}" target="_blank">${rv.seller.name}</a> · ${RV_STATUS[rv.status][1]}</div>
-        ${rv.status === 'pending' ? html`<div class="adm-rv-act"><button class="btn btn-accent btn-sm" data-rv-ok="${rv.id}">Опубликовать отзыв</button><button class="btn btn-danger btn-sm" data-rv-no="${rv.id}">Не публиковать</button></div>` : ''}
-        ${rv.replyDraft && rv.replyDraft.status === 'pending' ? html`<div class="banner warn" style="font-size:14px"><strong>Ответ продавца на проверке:</strong> ${rv.replyDraft.text}</div>
-          <div class="adm-rv-act"><button class="btn btn-accent btn-sm" data-rp-ok="${rv.id}">Опубликовать ответ</button><button class="btn btn-danger btn-sm" data-rp-no="${rv.id}">Не публиковать ответ</button></div>` : ''}
-        ${rv.complaint && !rv.complaint.resolved ? html`<div class="banner danger" style="font-size:14px"><strong>Жалоба продавца: ${rv.complaint.reason}.</strong> ${rv.complaint.text}</div>
-          <div class="adm-rv-act"><button class="btn btn-soft btn-sm" data-cm-keep="${rv.id}">Оставить отзыв</button><button class="btn btn-danger btn-sm" data-cm-hide="${rv.id}">Скрыть отзыв</button></div>` : ''}
-        ${rv.status === 'hidden' || rv.status === 'rejected' ? html`<div class="adm-rv-act"><button class="btn btn-line btn-sm" data-rv-back="${rv.id}">Вернуть отзыв</button></div>` : ''}
-      </div></div>`;
-    box.innerHTML = String(html`<div class="tabs" style="margin:0 0 16px">${tabs.map(([k, t]) => html`<a class="chip ${k === tab ? 'active' : ''}" href="/admin?status=reviews&rt=${k}">${t}</a>`)}</div>
-      ${d.items.length ? html`<div class="adm-rv-list">${d.items.map(item)}</div>` : html`<div class="empty"><h3>${tab === 'complaints' ? 'Жалоб нет' : 'Очередь пуста'}</h3><p>${tab === 'complaints' ? 'Все жалобы на отзывы рассмотрены.' : 'Все отзывы и ответы проверены.'}</p></div>`}`);
-    const again = () => render();
-    const post = async (url, body) => { try { await api('POST', url, body); toast('Готово'); again(); } catch (e) { toast(e.message, true); } };
-    $$('[data-rv-ok]', box).forEach((b) => { b.onclick = () => post(`/api/admin/reviews/${b.dataset.rvOk}/publish`); });
-    $$('[data-rp-ok]', box).forEach((b) => { b.onclick = () => post(`/api/admin/reviews/${b.dataset.rpOk}/reply/publish`); });
-    $$('[data-rv-back]', box).forEach((b) => { b.onclick = () => post(`/api/admin/reviews/${b.dataset.rvBack}/restore`); });
-    $$('[data-rv-no]', box).forEach((b) => { b.onclick = () => reasonModal({ title: 'Не публиковать отзыв', hint: 'Причину увидит автор. Новый отзыв по этому объявлению он оставить не сможет.', url: `/api/admin/reviews/${b.dataset.rvNo}/reject`, okLabel: 'Не публиковать', reasons: ['Оскорбления или грубость', 'Телефон, ссылки или личные данные', 'Отзыв не о сделке', 'Реклама или спам'], done: again }); });
-    $$('[data-rp-no]', box).forEach((b) => { b.onclick = () => reasonModal({ title: 'Не публиковать ответ', hint: 'Причину увидит продавец, он сможет написать ответ заново.', url: `/api/admin/reviews/${b.dataset.rpNo}/reply/reject`, okLabel: 'Не публиковать', reasons: ['Оскорбления или грубость', 'Телефон, ссылки или личные данные', 'Реклама или спам'], done: again }); });
-    $$('[data-cm-keep]', box).forEach((b) => { b.onclick = () => reasonModal({ title: 'Оставить отзыв', hint: 'Комментарий увидит продавец.', url: `/api/admin/reviews/${b.dataset.cmKeep}/complaint/keep`, okLabel: 'Оставить отзыв', minText: 0, placeholder: 'Например: нарушений правил нет', danger: false, done: again }); });
-    $$('[data-cm-hide]', box).forEach((b) => { b.onclick = () => reasonModal({ title: 'Скрыть отзыв', hint: 'Причину увидят продавец и автор отзыва. Отзыв перестанет учитываться в оценке.', url: `/api/admin/reviews/${b.dataset.cmHide}/complaint/hide`, okLabel: 'Скрыть отзыв', reasons: ['Сделки не было', 'Оскорбления', 'Ложные сведения', 'Отзыв о другом человеке или товаре', 'Личные данные в тексте'], done: again }); });
-  }
-
   async function renderSupportAdmin(box, threadId) {
     const { items } = await api('GET', '/api/admin/support');
     const id = Number(threadId) || (items[0] && items[0].id);
@@ -5657,7 +5650,7 @@
   function renderMailAdmin(box, { config: c, stats: st, codes }) {
     const SECURITY = [['ssl', 'SSL (обычно порт 465)'], ['starttls', 'STARTTLS (порт 587 или 2525)']];
     const STATUS = { pending: 'в очереди', sent: 'отправлено', failed: 'не доставлено' };
-    const KIND = { device: 'Код для модерации', ops: 'Владельцу о сбое', verify: 'Подтверждение email', reset: 'Восстановление пароля', message: 'Новое сообщение', moderation: 'Модерация', review: 'Отзывы', support: 'Ответ поддержки', account: 'Блокировка аккаунта', mod: 'Модератору о новом', billing: 'Оплата и тарифы', code: 'Код подтверждения', test: 'Проверка' };
+    const KIND = { device: 'Код для модерации', ops: 'Владельцу о сбое', verify: 'Подтверждение email', reset: 'Восстановление пароля', message: 'Новое сообщение', moderation: 'Модерация', support: 'Ответ поддержки', account: 'Блокировка аккаунта', mod: 'Модератору о новом', billing: 'Оплата и тарифы', code: 'Код подтверждения', test: 'Проверка' };
     const domain = (c.from || 'no-reply@torgana.ru').split('@')[1];
     box.innerHTML = String(html`
       <div class="stats">

@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const { chromium } = require('playwright');
-const { startServer, registerUser, client, fakeS3, seedReview } = require('./helpers');
+const { startServer, registerUser, client, fakeS3 } = require('./helpers');
 
 const SHOTS = path.join(__dirname, 'screenshots');
 // UI_WIDTHS=320,390,768,1440 — проверить на других ширинах (до 430 — телефон, до 1024 — планшет, шире — компьютер).
@@ -124,18 +124,10 @@ async function seed(base, browser, srv) {
   const thread = (await admin.get('/api/admin/support')).data.items[0].id;
   await admin.post(`/api/admin/support/${thread}/messages`, { body: 'Все объявления проверяются перед публикацией — обычно несколько часов.' });
   await buyer.post(`/api/listings/${ids[1]}/report`, { reason: 'Мошенничество', text: 'Просит предоплату' });
-  // отзывы (архив до 1.46): опубликованный с ответом продавца, второй — с жалобой
-  const rv1 = seedReview(srv, { listingId: ids[0], conversationId: conv.data.id, authorId: buyer.user.id, sellerId: seller.user.id, title: 'Детская коляска Cybex Priam 2 в 1', text: 'Коляска как в описании, всё проверили на месте. Продавец вежливый, рекомендую!' });
-  await admin.post(`/api/admin/reviews/${rv1}/publish`);
-  await seller.post(`/api/reviews/${rv1}/reply`, { text: 'Спасибо! Пусть служит долго.' });
-  await admin.post(`/api/admin/reviews/${rv1}/reply/publish`);
   const critic = await registerUser(base, { name: 'Сергей', email: 'sergey@test.local' });
   const c2 = (await critic.post('/api/conversations', { listingId: ids[3] })).data.id;
   await critic.post(`/api/conversations/${c2}/messages`, { body: 'Велосипед ещё продаётся?' });
   await seller.post(`/api/conversations/${c2}/messages`, { body: 'Да.' });
-  const rv2 = seedReview(srv, { listingId: ids[3], conversationId: c2, authorId: critic.user.id, sellerId: seller.user.id, title: 'Велосипед', rating: 1, received: false, text: 'Договорились о встрече, но продавец не пришёл и перестал отвечать.' });
-  await admin.post(`/api/admin/reviews/${rv2}/publish`);
-  await seller.post(`/api/reviews/${rv2}/complaint`, { reason: 'Ложные сведения', text: 'Я ждала у метро до семи вечера и писала в чат — покупатель не пришёл.' });
   const c3 = (await buyer.post('/api/conversations', { listingId: ids[4] })).data.id;
   await buyer.post(`/api/conversations/${c3}/messages`, { body: 'Добрый день! Можно забрать завтра?' });
   await seller.post(`/api/conversations/${c3}/messages`, { body: 'Да, после обеда.' });
@@ -205,6 +197,7 @@ async function seed(base, browser, srv) {
   // Регистраций с одного адреса — не больше 10 за 10 минут: трое уже есть, двое новых.
   const askers = [buyer, critic, shop];
   for (let i = 0; i < 2; i++) askers.push(await registerUser(base, { name: `Покупатель ${i + 1}`, email: `buyer${i + 1}@test.local` }));
+  let wowConv = 0;
   for (const b of askers) {
     const c = (await b.post('/api/conversations', { listingId: car })).data.id;
     await b.post(`/api/conversations/${c}/messages`, { body: 'Здравствуйте! Машина ещё продаётся?' });
@@ -213,7 +206,8 @@ async function seed(base, browser, srv) {
     for (let i = 0; i < 2; i++) { await b.post(`/api/conversations/${c}/messages`, { body: 'Договорились' }); await seller.post(`/api/conversations/${c}/messages`, { body: 'Жду' }); }
     await b.post(`/api/conversations/${c}/deal`, { answer: 'yes' });
     await seller.post(`/api/conversations/${c}/deal`, { answer: 'yes' });
-    await b.post(`/api/conversations/${c}/praise`, { tags: ['Всё как на фото', 'Быстро отвечает'] });
+    // 1.47.2: у последнего — без комплиментов: на его экране «Сделка состоялась» кнопка «Отметить, что понравилось»
+    if (b === shop) wowConv = c; else await b.post(`/api/conversations/${c}/praise`, { tags: ['Всё как на фото', 'Быстро отвечает'] });
   }
   // 1.46: жалоба по сделке — в модерации «Репутация»
   await critic.post(`/api/conversations/${c2}/issue`, { reason: 'Не пришёл на встречу', text: 'Ждал у метро полчаса' });
@@ -230,7 +224,7 @@ async function seed(base, browser, srv) {
   const gone2 = client(base);
   await gone2.post('/api/auth/login', { email: 'gleb@test.local', password: 'password123' });
   gone2.user = gone.user;
-  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, shop, s1, planPay, pendingPay, scheduled, boostPay, gone: gone2, convGone };
+  return { s3, seller, buyer, admin, ids, car, pending, thread, conv: conv.data.id, convReview: c3, wowConv, shop, s1, planPay, pendingPay, scheduled, boostPay, gone: gone2, convGone };
 }
 
 function pages(d) {
@@ -275,15 +269,13 @@ function pages(d) {
     ['profile-listings', '/profile/listings', d.seller],
     ['profile-rejected', '/profile/listings?status=rejected', d.seller],
     ['settings', '/profile/settings', d.seller],
-    ['reviews-about', '/profile/reviews', d.seller], // 1.46: репутация
-    ['reviews-old', '/profile/reviews?old=1', d.seller],
-    ['reviews-mine', '/profile/reviews?old=1&tab=mine', d.buyer],
-    ['user-reviews', `/u/${d.seller.user.id}?tab=reviews`, null],
+    ['reputation', '/profile/reputation', d.seller], // 1.46: репутация
+    ['reputation-old-link', '/profile/reviews', d.seller], // 1.47.2: старая ссылка ведёт на репутацию
+    ['user-rep', `/u/${d.seller.user.id}?tab=rep`, null],
     ['chat-deal', `/messages/${d.convReview}`, d.buyer],
+    ['chat-deal-wow', `/messages/${d.wowConv}`, d.shop], // 1.47.2: экран «Сделка состоялась»
     ['admin-rep', '/admin?status=rep', d.admin],
     ['search-trusted', '/search?trusted=1', null],
-    ['admin-reviews', '/admin?status=reviews', d.admin],
-    ['admin-review-complaints', '/admin?status=reviews&rt=complaints', d.admin],
     ['stats', `/profile/stats/${d.ids[1]}`, d.seller],
     ['stats-week', `/profile/stats/${d.ids[1]}?days=7`, d.seller],
     ['settings-old-link', '/profile?tab=settings', d.seller],
@@ -313,6 +305,9 @@ function pages(d) {
     ['admin-user-gone', `/admin/u/${d.gone.user.id}`, d.admin],
     ['admin-log', '/admin?status=log', d.admin],
     ['admin-notify', '/admin?status=notify', d.admin],
+    ['admin-settings', '/admin?status=settings', d.admin], // 1.47.2: настройки — плитками
+    ['admin-listings-sold', '/admin?status=sold', d.admin], // 1.47.2: статусы объявлений — вкладками
+    ['admin-menu', '/admin?status=pending', d.admin, 'adm-menu'], // 1.47.2: телефон — разделы в нижней панели
     ['admin-pending', '/admin?status=pending', d.admin],
     ['admin-check', `/admin/l/${d.pending}`, d.admin],
     ['admin-reports', '/admin?status=reports', d.admin],
@@ -504,7 +499,7 @@ async function main() {
         } else if (open === 'city') {
           // Подсказки города — красивым списком (1.34), а не системным datalist; набор текста сужает список.
           // фильтры за кнопкой — до 900 px (телефон и планшет)
-          { const t = await page.$('#filters-toggle'); if (t && await t.isVisible()) { await t.click(); await page.waitForTimeout(200); } }
+          { const t = await page.$('#filters-open'); if (t && await t.isVisible()) { await t.click(); await page.waitForTimeout(200); } }
           await page.click('#f-city');
           await page.waitForTimeout(200);
           if (!(await page.$('.city-sug .pick-it'))) errors.push('список городов не открылся');
@@ -515,8 +510,10 @@ async function main() {
           if (!/Воронеж/.test(first || '')) errors.push(`первым должен быть Воронеж, а не «${first}»`);
         } else if (open === 'filters') {
           // 1.35: компьютер — выбор в фильтрах применяется сразу, без «Показать»; телефон — «Показать N» с числом и видна на экране.
-          const toggle = await page.$('#filters-toggle');
-          if (toggle && await toggle.isVisible()) {
+          // 1.47.2: фильтры закрыты и на компьютере — открываются кнопкой «Фильтры» в строке под заголовком.
+          const toggle = await page.$('#filters-open');
+          if (vp.viewport.width > 900) { await toggle.click(); await page.waitForTimeout(200); }
+          if (vp.viewport.width <= 900) {
             await toggle.click(); await page.waitForTimeout(200);
             await page.click('#f-extra [data-field="gearbox"] [data-av="Автомат"]');
             await page.waitForFunction(() => /\d/.test(document.querySelector('#f-show').textContent), null, { timeout: 5000 }).catch(() => {}); // число приходит с сервера
@@ -530,10 +527,21 @@ async function main() {
             await page.evaluate(() => window.scrollTo(0, 200));
             await page.click('#f-extra [data-field="gearbox"] [data-av="Автомат"]'); await page.waitForTimeout(700);
             if (await page.evaluate(() => window.scrollY) < 150) errors.push('после выбора фильтра страница прыгнула наверх');
+            if (await page.$('#filters.collapsed')) errors.push('после выбора фильтра панель закрылась');
           }
           if (!/a_gearbox=/.test(page.url())) errors.push(`фильтр не применился: ${page.url()}`);
           const n = await page.textContent('#count');
           if (!/^1 объявление$/.test(n)) errors.push(`после фильтра «Автомат» должно быть 1 объявление, а не «${n}»`);
+        } else if (open === 'adm-menu') {
+          const b = await page.$('[data-adm-menu]');
+          if (vp.viewport.width <= 900) {
+            if (!b || !(await b.isVisible())) errors.push('нет кнопки разделов модерации');
+            else {
+              await b.click(); await page.waitForTimeout(300);
+              if ((await page.$$('.adm-tiles a')).length !== 14) errors.push(`в панели разделов не 14 плиток, а ${(await page.$$('.adm-tiles a')).length}`);
+              await page.screenshot({ path: path.join(SHOTS, `${vpName}-admin-menu-open.png`) });
+            }
+          } else if ((await page.$$('.adm-nav a')).length !== 14) errors.push(`в меню модерации не 14 пунктов, а ${(await page.$$('.adm-nav a')).length}`);
         } else if (open === 'push-ask') {
           // Первый заход вошедшего: один раз спрашиваем про уведомления; после «Не сейчас» — больше никогда.
           // Если браузер проверки не умеет push (так бывает в GitHub Actions), вопроса быть не должно — но метка ставится.

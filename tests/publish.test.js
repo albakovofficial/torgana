@@ -75,6 +75,9 @@ test('срок показа: снимается сам, «Опубликоват
   await admin.post(`/api/admin/listings/${id}/restore`);
   assert.equal((await seller.get(`/api/listings/${id}`)).data.listing.expiresAt, first.expiresAt);
   await wait(TTL + 800);
+  // 1.47.2: за 3 дня до снятия — напоминание; один раз на срок (тики идут каждые 200 мс).
+  const soon = (await seller.get('/api/notices')).data.items.filter((n) => n.title === 'Объявление скоро снимется' && n.body.includes('Рюкзак'));
+  assert.equal(soon.length, 1);
   const gone = (await seller.get(`/api/listings/${id}`)).data.listing;
   assert.equal(gone.status, 'archived');
   assert.equal((await buyer.get(`/api/listings/${id}`)).status, 404);

@@ -4,6 +4,7 @@
 // уровни, фильтр «Надёжные продавцы» и защита от накрутки.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
 const { startServer, registerUser, publish, client } = require('./helpers');
 
 let srv; let admin; let seller; const buyers = [];
@@ -54,6 +55,7 @@ test('комплименты: после сделки, до трёх из спи
   assert.equal((await b.post(`/api/conversations/${first.cid}/praise`, { tags: ['Просто класс'] })).status, 400);
   assert.equal((await b.post(`/api/conversations/${first.cid}/praise`, { tags: ['Всё как на фото', 'Вежливый', 'Честный торг', 'Быстро отвечает'] })).status, 400);
   assert.equal((await b.post(`/api/conversations/${first.cid}/praise`, { tags: ['Всё как на фото', 'Вежливый'] })).status, 200);
+  assert.ok((await seller.get('/api/notices')).data.items.some((n) => /отметил\(а\) сделку/.test(n.title) && n.body === 'Всё как на фото · Вежливый'), '1.47.2: продавцу — уведомление о комплиментах');
   assert.equal((await b.post(`/api/conversations/${first.cid}/praise`, { tags: ['Честный торг'] })).status, 409);
   assert.equal((await seller.post(`/api/conversations/${first.cid}/praise`, { tags: ['Всё как на фото'] })).status, 400, 'покупателю — свои метки');
   assert.equal((await seller.post(`/api/conversations/${first.cid}/praise`, { tags: ['Пришёл вовремя'] })).status, 200);
@@ -91,6 +93,7 @@ test('уровень «Надёжный» от 5 сделок, фильтр «Н
   }
   let r = await rep(seller);
   assert.equal(r.deals, 5); assert.equal(r.level, 1); assert.equal(r.levelName, 'Надёжный'); assert.equal(r.newbie, false);
+  assert.ok((await seller.get('/api/notices')).data.items.some((n) => n.title === 'Новый уровень: Надёжный'), '1.47.2: уведомление о новом уровне');
   const all = (await client(srv.base).get('/api/listings?city=Казань')).data.total;
   const trusted = (await client(srv.base).get('/api/listings?city=Казань&trusted=1')).data;
   assert.ok(trusted.total > 0 && trusted.total < all, 'только продавцы с уровнем');
@@ -117,8 +120,24 @@ test('уровень «Надёжный» от 5 сделок, фильтр «Н
   assert.ok((await seller.get('/api/notices')).data.items.some((n) => /подтверждена/.test(n.title)));
 });
 
-test('новые отзывы не принимаются', async () => {
-  assert.equal((await buyers[0].post('/api/reviews', { conversationId: first.cid, rating: 5, received: true, text: 'Всё отлично, спасибо!' })).status, 410);
+// 1.47.2: отзывы удалены целиком — ни API, ни оценки в профиле, ни таблиц и настроек в базе.
+test('отзывов нет: ни API, ни оценки в профиле, ни таблиц в базе', async () => {
+  const sid = seller.user.id;
+  assert.equal((await buyers[0].post('/api/reviews', { conversationId: first.cid, rating: 5, received: true, text: 'Всё отлично, спасибо!' })).status, 404);
+  assert.equal((await client(srv.base).get(`/api/users/${sid}/reviews`)).status, 404);
+  assert.equal((await seller.get('/api/my/reviews')).status, 404);
+  assert.equal((await admin.get('/api/admin/reviews')).status, 404);
+  const pub = (await client(srv.base).get(`/api/users/${sid}`)).data.user;
+  assert.equal(pub.rating, undefined);
+  assert.ok(pub.rep);
+  assert.equal((await seller.get('/api/me')).data.user.rating, undefined);
+  assert.equal((await admin.get('/api/admin/stats')).data.reviews, undefined);
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(path.join(srv.tmp, 'data', 'torgana.db'), { readOnly: true });
+  try {
+    assert.deepEqual(db.prepare("SELECT name FROM sqlite_master WHERE name LIKE '%review%' AND name NOT LIKE '%deals%'").all(), []);
+    assert.deepEqual(db.prepare("SELECT name FROM pragma_table_info('users') WHERE name LIKE '%review%'").all(), []);
+  } finally { db.close(); }
 });
 
 test('защита: новые аккаунты без подтверждённого телефона чужую репутацию не поднимают', async () => {
