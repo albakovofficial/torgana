@@ -835,7 +835,7 @@
     footer.innerHTML = String(html`<div class="wrap">
       <div class="f-main">
         <div class="f-grid">
-          <div class="f-brand">${logo()}<p class="f-tag">Честная площадка объявлений по всей России</p></div>
+          <div class="f-brand">${logo()}<p class="f-tag"><b>Сторгуемся!</b>Объявления по всей России — бесплатно и с проверкой модератора</p></div>
           ${cols.map(([t, ls]) => html`<details class="fcol" open><summary><h4>${t}</h4>${ic('down', 18, 2)}</summary><ul>${ls.map(([href, label]) => html`<li><a href="${href}">${label}</a></li>`)}</ul></details>`)}
         </div>
         <div class="f-help">
@@ -3458,9 +3458,11 @@
   const dealsWord = (n) => `${NF.format(n)} ${plural(n, 'сделка', 'сделки', 'сделок')}`;
   // Строка под именем: «⬢ Опытный · 27 сделок». 1.49.0: shop — у магазина без уровня «Новый магазин» вместо «Новичок»;
   // deals: false — без числа сделок (в публичном профиле оно в счётчиках рядом).
-  const repLine = (r, href = '', { shop = false, deals = true } = {}) => {
+  // official — у официального аккаунта вместо уровня «Официальный аккаунт» (1.50.0).
+  const repLine = (r, href = '', { shop = false, deals = true, official = false } = {}) => {
     if (!r) return '';
-    const inner = html`${levelMedal(r.level, 18)}<b>${shop && !r.level ? 'Новый магазин' : r.levelName}</b>${deals && r.deals ? html`<span>· ${dealsWord(r.deals)}</span>` : ''}`;
+    const inner = official ? html`${verifiedSeal(18)}<b>Официальный аккаунт</b>`
+      : html`${levelMedal(r.level, 18)}<b>${shop && !r.level ? 'Новый магазин' : r.levelName}</b>${deals && r.deals ? html`<span>· ${dealsWord(r.deals)}</span>` : ''}`;
     return href ? html`<a class="rep-line l${r.level}" href="${href}">${inner}</a>` : html`<span class="rep-line l${r.level}">${inner}</span>`;
   };
   const REPLY_TXT = { hour: '~1 ч', hours: '1–3 ч', day: '< суток', days: '1–2 дня' };
@@ -3592,7 +3594,7 @@
   // Насколько заполнен профиль: имя есть всегда, дальше фото, город и (если есть почта) подтверждённый email.
   // 1.49.0: с тарифом — и витрина. Каждый пункт — [готово, что, действие, ключ]; ключ ведёт туда, где это заполнить.
   function profileTodo(u) {
-    const sh = u.plan ? u.shop : null;
+    const sh = u.shop; // витрина — при тарифе или у официального аккаунта
     const todo = [
       [!!u.avatar, 'Фото профиля', 'Добавить', 'avatar'],
       [!!u.city, 'Город', 'Указать', 'city'],
@@ -3607,17 +3609,18 @@
   // у магазина — своя обложка и две плитки: «Статистика» и «Настройка витрины».
   function idCard(u, stats = []) {
     const { todo, pct } = profileTodo(u);
-    const sh = u.plan ? u.shop : null;
+    const sh = u.shop; // витрина — при тарифе или у официального аккаунта
     const badges = html`${trustBadges(u.badges && { ...u.badges, shop: false, tm: null })}${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
-    return html`<div class="pf-card ${sh ? `shop ${u.plan.id}` : ''}">
+    return html`<div class="pf-card ${sh ? `shop ${sh.plan}` : ''}">
       ${sh ? html`<a class="pf-cover ${sh.cover ? 'has' : ''}" href="/profile/business/shop"${sh.cover ? raw(` style="--cv:url('${esc(sh.cover)}')"`) : ''}>
-        <span class="pf-plan">${ic('store', 14, 2.2)}${u.plan.name}${u.plan.trial ? ' · бесплатно' : ''}</span><span class="pf-until">до ${new Date(u.plan.until).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</span></a>` : ''}
+        ${sh.official ? html`<span class="pf-plan">${verifiedSeal(15)}Официальный аккаунт</span>` : html`<span class="pf-plan">${ic('store', 14, 2.2)}${u.plan.name}</span>${u.plan.trial ? html`<span class="pf-trial">${ic('gift', 13, 2.2)}Бесплатно</span>` : ''}
+        <span class="pf-until">${ic('clock', 13, 2.2)}до ${new Date(u.plan.until).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</span>`}</a>` : ''}
       <div class="pf-who">
         <div class="pf-ava">${ava(u, 'lg')}<button class="pf-cam" type="button" data-ava-pick aria-label="${u.avatar ? 'Сменить фото профиля' : 'Добавить фото профиля'}">${ic('camera', 15, 2)}</button></div>
         <div class="pf-who-txt">
           <div class="pf-name">${nameSeal(u.name, u.badges)}</div>
           <div class="pf-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
-          ${u.rep ? repLine(u.rep, '/profile/reputation', { shop: !!sh }) : ''}
+          ${u.rep ? repLine(u.rep, '/profile/reputation', { shop: !!sh, official: !!(sh && sh.official) }) : ''}
         </div>
         <a class="icon-btn pf-gear" href="/profile/settings" aria-label="Настройки">${ic('gear', 20)}</a>
       </div>
@@ -3666,10 +3669,12 @@
   }
   // Имя с галочкой — только у проверенного бренда (товарный знак из реестра Роспатента).
   // 1.49.0: последнее слово и галочка не разрываются — галочка не уходит одна на новую строку.
+  // 1.50.0: у официального аккаунта Торганы — та же галочка, что у «Поддержки Торганы».
   const nameSeal = (name, b) => {
-    if (!(b && b.tm)) return name;
+    if (!(b && (b.official || b.tm))) return name;
     const n = String(name); const cut = n.lastIndexOf(' ') + 1;
-    return html`${n.slice(0, cut)}<span class="ns-tail">${n.slice(cut)}<span class="name-seal" title="Проверенный бренд «${b.tm.name}» — товарный знак № ${b.tm.number} в реестре Роспатента">${verifiedSeal(22)}</span></span>`;
+    const title = b.official ? 'Официальный аккаунт Торганы' : `Проверенный бренд «${b.tm.name}» — товарный знак № ${b.tm.number} в реестре Роспатента`;
+    return html`${n.slice(0, cut)}<span class="ns-tail">${n.slice(cut)}<span class="name-seal" title="${title}">${verifiedSeal(22)}</span></span>`;
   };
   const trustBadges = (b) => (b ? html`${b.shop ? html`<span class="pf-badge dark">${ic('store', 13, 2)} Магазин</span>` : ''}${b.tm ? html`<span class="pf-badge seal" title="Товарный знак «${b.tm.name}», свидетельство Роспатента № ${b.tm.number}">${verifiedSeal(15)} Проверенный бренд</span>` : ''}${b.biz ? html`<span class="pf-badge ok" title="${b.biz.name}">${ic('shield', 13, 2)} ${b.biz.kind === 'ИП' ? 'ИП проверен' : 'Компания проверена'}</span>` : ''}${b.phone ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Телефон подтверждён</span>` : ''}` : '');
 
@@ -3824,7 +3829,7 @@
       ? html`<div class="pf-head"><h1>Подписки</h1></div>`
       : sec === 'reputation'
       ? html`<div class="pf-head"><h1>Репутация</h1></div>`
-      : html`<div class="pf-head"><h1>Мои объявления</h1><a class="btn btn-accent" href="/new" aria-label="Разместить объявление">${ic('plus', 18, 2.2)}<span>Разместить</span></a></div>`;
+      : html`<div class="pf-head"><h1>Мои объявления</h1></div>`; // 1.50.0: «Разместить» — в шапке сайта (на телефоне — «+» внизу), второй кнопки здесь нет
     app.innerHTML = String(html`<div class="wrap pf2 ${hub ? 'is-hub' : 'is-section'}">
       <aside class="pf-side">
         ${idCard(u, [[count('active'), plural(count('active'), 'активное', 'активных', 'активных'), '/profile?status=active'], [count('sold'), 'продано', '/profile?status=sold']])}
@@ -3846,7 +3851,8 @@
     return renderMyListings(items, q.get('status') || 'active', again);
   }
 
-  const pinnedIds = () => (S.user && S.user.plan && S.user.shop ? S.user.shop.pins || [] : []);
+  const pinnedIds = () => (S.user && S.user.shop ? S.user.shop.pins || [] : []);
+  const canPin = () => !!(S.user && S.user.shop && (S.user.shop.official || S.user.shop.plan === 'pro'));
   function renderMyListings(items, status, reload) {
     const groups = { active: [], scheduled: [], pending: [], rejected: [], sold: [], archived: [] };
     items.forEach((i) => (groups[i.status] || groups.archived).push(i));
@@ -3887,7 +3893,7 @@
           <div class="pf-empty-ic">${svg(P.tag, 34, 1.6)}</div>
           <h3>Пока нет объявлений</h3>
           <p>Бесплатно и за пару минут.</p>
-          <a class="btn btn-dark" href="/new">${ic('plus', 18, 2.2)}Разместить</a>
+          <a class="btn btn-dark" href="/new">${ic('plus', 18, 2.2)}Создать первое объявление</a>
         </div>`
       : html`<div class="pf-empty sm"><h3>Здесь пусто</h3><p>${{ active: 'Нет опубликованных объявлений.', scheduled: 'Нет объявлений, ждущих выбранного времени.', pending: 'Сейчас ничего не ждёт проверки.', rejected: 'Нет объявлений, которые нужно исправить.', sold: 'Отметьте объявление «Продано», и оно появится здесь.', archived: 'Снятые с публикации объявления появятся здесь.' }[status]}</p></div>`}`);
     const byId = Object.fromEntries(items.map((i) => [String(i.id), i]));
@@ -3906,7 +3912,7 @@
         if (['active', 'pending', 'scheduled'].includes(i.status) && (boostOn() || i.promo || (i.boost || []).length)) acts.splice(1, 0, { icon: 'trend', label: 'Продвинуть', run: () => boostModal(i.id, i.title, i.promo) });
         if (i.status === 'active') acts.push({ icon: 'share', label: 'Поделиться', run: () => shareLink(`${location.origin}${lpath(i)}`, i.title) });
         // 1.49.0: «Магазин Про» — до 3 объявлений в начале витрины.
-        if (i.status === 'active' && S.user.plan && S.user.plan.id === 'pro') {
+        if (i.status === 'active' && canPin()) {
           const on = pinnedIds().includes(i.id);
           acts.push({ icon: 'pushpin', label: on ? 'Открепить с витрины' : 'Закрепить на витрине', run: async () => { if (await setPin(i.id, !on)) reload(); } });
         }
@@ -4413,12 +4419,12 @@
     app.innerHTML = String(html`<div class="wrap pub">
       ${own ? html`<div class="pub-own">${ic('eye', 18)}<span>Так ваш профиль видят покупатели</span><a href="/profile/settings">Изменить профиль</a><a href="/profile">Мой профиль</a></div>` : ''}
       <section class="pub-hero ${sh ? `is-shop ${sh.plan}` : ''}" aria-label="${sh ? 'Магазин' : 'Продавец'}">
-        ${sh ? html`<div class="psh-cover">${sh.cover ? html`<img src="${sh.cover}" alt="">` : ''}<span class="pf-plan">${ic('store', 14, 2.2)}${sh.plan === 'pro' ? 'Магазин Про' : 'Магазин'}</span></div>` : ''}
+        ${sh ? html`<div class="psh-cover">${sh.cover ? html`<img src="${sh.cover}" alt="">` : ''}<span class="pf-plan">${sh.official ? html`${verifiedSeal(15)}Официальный аккаунт` : html`${ic('store', 14, 2.2)}${sh.plan === 'pro' ? 'Магазин Про' : 'Магазин'}`}</span></div>` : ''}
         <div class="pub-ava">${ava(u, 'xl')}</div>
         <div class="pub-who">
           <h1>${nameSeal(sh ? sh.name : u.name, u.badges)}</h1>
           <div class="pub-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
-          ${repLine(u.rep, `/u/${u.id}?tab=rep`, { shop: !!sh, deals: false })}
+          ${repLine(u.rep, `/u/${u.id}?tab=rep`, { shop: !!sh, deals: false, official: !!(sh && sh.official) })}
           ${sh && sh.about ? html`<p class="shop-about">${sh.about}</p>` : ''}
           ${badges ? html`<div class="pf-badges">${raw(badges)}</div>` : ''}
         </div>
@@ -4766,18 +4772,21 @@
     const d = await api('GET', '/api/my/business');
     const box = $('#box');
     const biz = d.bizAccount; // 1.45.0: тарифы — после включения бизнес-аккаунта, проверка ИНН не нужна
-    const lock = (need) => (!d.plan ? `в тарифе «${PLAN_NAME[need]}»` : need === 'pro' && d.plan.id !== 'pro' ? 'в тарифе «Магазин Про»' : '');
+    const official = !!(d.shop && d.shop.official); // 1.50.0: официальному аккаунту всё открыто без тарифа
+    const lock = (need) => (official ? '' : !d.plan ? `в тарифе «${PLAN_NAME[need]}»` : need === 'pro' && d.plan.id !== 'pro' ? 'в тарифе «Магазин Про»' : '');
     const gate = (need, text) => html`<div class="biz-gate">${ic('store', 26, 1.8)}<div><b>${text}</b><span>${lock(need) ? `Доступно ${lock(need)}.` : ''} ${biz ? '' : 'Сначала включите бизнес-аккаунт — это бесплатно.'}</span></div><a class="btn btn-dark" href="/business">${biz ? 'Выбрать тариф' : 'Включить бизнес-аккаунт'}</a></div>`;
     if (sub === 'shop') return lock('shop') ? (box.innerHTML = String(gate('shop', 'Витрина магазина'))) : renderShopEditor(box, d, reload);
     if (sub === 'stats') return lock('shop') ? (box.innerHTML = String(gate('shop', 'Статистика магазина'))) : renderShopStats(box, days);
     const tool = (href, icon, t, sub2, need) => html`<a class="biz-tool ${lock(need) ? 'locked' : ''}" href="${href}"><span class="bt-ic">${ic(icon, 22)}</span><b>${t}</b><small>${lock(need) ? html`${ic('lock', 13, 2)} ${lock(need)}` : sub2}</small></a>`;
     box.innerHTML = String(html`<div class="bizhub">
-      ${!biz ? html`<div class="biz-gate">${ic('store', 26, 1.8)}<div><b>Включите бизнес-аккаунт</b><span>Бесплатно. После этого можно подключить тариф — первым бизнес-аккаунтам он бесплатный.</span></div><button type="button" class="btn btn-dark" data-biz-on>Включить</button></div>` : ''}
-      <div class="plan-now ${d.plan ? d.plan.id : 'none'}">
+      ${!biz && !official ? html`<div class="biz-gate">${ic('store', 26, 1.8)}<div><b>Включите бизнес-аккаунт</b><span>Бесплатно. После этого можно подключить тариф — первым бизнес-аккаунтам он бесплатный.</span></div><button type="button" class="btn btn-dark" data-biz-on>Включить</button></div>` : ''}
+      ${official ? html`<div class="plan-now pro">
+        <div class="pn-txt"><span class="pn-k">Аккаунт</span><b>«Официальный аккаунт Торганы»</b><span>Витрина, статистика и закреплённые — без тарифа и без срока.</span></div>
+      </div>` : html`<div class="plan-now ${d.plan ? d.plan.id : 'none'}">
         <div class="pn-txt"><span class="pn-k">${d.plan && d.plan.trial ? 'Бесплатный тариф' : 'Тариф'}</span><b>${d.plan ? `«${d.plan.name}»` : 'Не подключён'}</b>
           <span>${d.plan ? `до ${dateLong(d.plan.until)} · осталось ${daysLeft(d.plan.until)} ${plural(daysLeft(d.plan.until), 'день', 'дня', 'дней')}` : `Витрина и статистика магазина — от ${rub(d.prices.shop[1])} в месяц. Размещение объявлений бесплатно всегда.`}</span></div>
         <a class="btn ${d.plan ? 'btn-light' : 'btn-dark'}" href="/business">${d.plan ? 'Продлить или сменить' : 'Выбрать тариф'}</a>
-      </div>
+      </div>`}
       <div class="biz-tools">
         ${tool('/profile/business/shop', 'store', 'Витрина', d.shop.about || d.shop.cover ? 'заполнена · как видят покупатели' : 'обложка, описание, адрес, сайт', 'shop')}
         ${tool('/profile/business/stats', 'chart', 'Статистика магазина', 'все объявления · выгрузка в Excel', 'shop')}
@@ -4832,7 +4841,7 @@
       </section>
       <section class="set-group set-wide">
         <h2>Главное в магазине</h2>
-        ${d.plan.id !== 'pro' ? html`<p class="muted" style="margin:0;font-size:14px">${ic('lock', 14, 2)} До 3 объявлений в начале витрины — в тарифе «Магазин Про».</p>`
+        ${!d.shop.official && d.plan.id !== 'pro' ? html`<p class="muted" style="margin:0;font-size:14px">${ic('lock', 14, 2)} До 3 объявлений в начале витрины — в тарифе «Магазин Про».</p>`
     : html`${d.pinned.length ? html`<div class="pin-list">${d.pinned.map((l) => html`<div class="pin-row"><span class="pin-ic">${ic('pushpin', 16, 2)}</span><a href="/l/${l.id}">${l.title}</a><button type="button" class="btn btn-line btn-sm" data-unpin="${l.id}">Открепить</button></div>`)}</div>` : ''}
         <p class="muted" style="margin:0;font-size:14px">${d.pinned.length >= 3 ? 'Закреплено 3 из 3 — чтобы закрепить другое, открепите одно.' : `Закреплено ${d.pinned.length} из 3. Закрепить: «Мои объявления» → ⋯ → «Закрепить на витрине».`} Закреплённые покупатели видят первыми.</p>`}
       </section>
@@ -4910,7 +4919,8 @@
       sh.delivery && ['truck', 'Доставка', sh.delivery],
       site && ['link', 'Сайт', html`<a href="${sh.site}" target="_blank" rel="nofollow noopener ugc">${site}</a>`]
     ].filter(Boolean);
-    return rows.length ? html`<aside class="shop-info" aria-label="О магазине"><h2>О магазине</h2>${rows.map(([icn, k, v]) => html`<div class="si-row"><span class="si-ic">${ic(icn, 18, 2)}</span><div><small>${k}</small><span>${v}</span></div></div>`)}</aside>` : '';
+    const t = sh.official ? 'О Торгане' : 'О магазине';
+    return rows.length ? html`<aside class="shop-info" aria-label="${t}"><h2>${t}</h2>${rows.map(([icn, k, v]) => html`<div class="si-row"><span class="si-ic">${ic(icn, 18, 2)}</span><div><small>${k}</small><span>${v}</span></div></div>`)}</aside>` : '';
   }
 
   // ================= модерация =================

@@ -90,7 +90,8 @@ function requireAdmin(ctx) {
 
 const photoUrl = (file) => (file ? `/uploads/${file}` : null);
 // Значки продавца: доверие (lib/trust.js) и «Магазин» при оплаченном тарифе.
-const badgesOf = (u) => ({ ...trust.badgesOf(u), shop: !!business.planOf(u) });
+// 1.50.0: official — галочка «Официальный аккаунт Торганы» у имени (аккаунт владельца); значка «Магазин» у него нет.
+const badgesOf = (u) => ({ ...trust.badgesOf(u), shop: !!business.planOf(u) && !business.isOfficial(u), official: business.isOfficial(u) });
 
 // Переключатели уведомлений: поле API → колонка users (письма и push по видам).
 const NOTIFY_FIELDS = {

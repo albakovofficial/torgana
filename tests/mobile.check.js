@@ -345,6 +345,8 @@ function pages(d) {
     ['pay-ok', `/pay/${d.planPay}`, d.shop],
     ['pay-wait', `/pay/${d.pendingPay}`, d.shop],
     ['storefront', `/u/${d.shop.user.id}`, null],
+    ['official', `/u/${d.admin.user.id}`, null], // 1.50.0: официальный аккаунт Торганы (владелец)
+    ['official-profile', '/profile', d.admin],
     ['search-ad', `/search?q=${encodeURIComponent('самокат')}`, null],
     ['listing-promo', `/l/${d.s1}`, d.shop],
     ['promote-modal', `/l/${d.s1}`, d.shop, '[data-promote]'],
