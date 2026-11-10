@@ -3622,6 +3622,7 @@
         <a class="icon-btn pf-gear" href="/profile/settings" aria-label="Настройки">${ic('gear', 20)}</a>
       </div>
       ${String(badges).trim() ? html`<div class="pf-badges">${badges}</div>` : ''}
+      ${sh && sh.about ? html`<div class="pf-about"><p data-about>${sh.about}</p><div class="pf-about-acts"><button type="button" class="pf-about-more" data-about-more hidden>Ещё</button><a href="/profile/business/shop#sh-about">${ic('edit', 14, 2.2)}Изменить</a></div></div>` : ''}
       ${stats.length ? html`<div class="pf-nums">${stats.map(([n, k, href]) => html`<a class="pf-num" href="${href}"><b>${NF.format(n)}</b><span>${k}</span></a>`)}</div>` : ''}
       ${sh ? html`<div class="pf-tools">
         <a class="pft" href="/profile/business/stats"><span class="pft-ic">${ic('chart', 19, 2.2)}</span><b>Статистика</b><small>Показы и переходы</small><span class="pft-go">${ic('right', 16, 2.4)}</span></a>
@@ -3640,6 +3641,12 @@
   // «Что ещё заполнить»: фото — сразу выбор файла, город — настройки, почта — письмо с кодом, витрина — нужное поле.
   function bindIdCard(again) {
     $('[data-ava-pick]').onclick = () => pickAvatar(again);
+    // 1.50.4: своё описание магазина — первые строки и «Ещё», если текст длиннее.
+    const ab = $('[data-about]'); const more = $('[data-about-more]');
+    if (ab && more) {
+      more.hidden = ab.scrollHeight <= ab.clientHeight + 1;
+      more.onclick = () => { const open = ab.classList.toggle('open'); more.textContent = open ? 'Свернуть' : 'Ещё'; };
+    }
     const tg = $('[data-todo-toggle]');
     if (tg) tg.onclick = () => {
       const closed = tg.parentElement.classList.toggle('closed');

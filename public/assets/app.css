@@ -326,6 +326,14 @@ button { cursor: pointer; }
 .pf-progress-head { display: flex; align-items: center; gap: 4px 8px; width: 100%; padding: 0; border: 0; background: none; font: inherit; font-size: 13px; font-weight: 600; color: var(--text); text-align: left; cursor: pointer; }
 .pf-progress-head span { flex: 1; }
 .pf-progress-head b { color: var(--accent); font-weight: 800; }
+/* 1.50.4: своё описание магазина в карточке профиля — 3 строки, «Ещё» раскрывает целиком */
+.pf-about { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 18px; background: var(--surface); }
+.pf-about p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-2); white-space: pre-line; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.pf-about p.open { display: block; }
+.pf-about-acts { display: flex; align-items: center; gap: 16px; }
+.pf-about-acts a, .pf-about-more { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: none; font: inherit; font-size: 13.5px; font-weight: 700; color: var(--accent); cursor: pointer; }
+.pf-about-acts a { margin-left: auto; }
+.pf-about-more[hidden] { display: none; }
 /* 1.50.3: свернуть «Что ещё заполнить» — стрелка поворачивается, остаются заголовок и полоса */
 .pf-progress-head svg { flex: none; color: var(--muted); transition: transform .2s; }
 .pf-progress.closed .pf-progress-head svg { transform: rotate(-90deg); }
