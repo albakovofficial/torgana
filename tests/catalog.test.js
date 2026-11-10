@@ -87,11 +87,13 @@ test('характеристики проверяются: чужие поля �
   const own = await seller.post('/api/listings', { title: 'Машина 2', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', year: 2010, mileage: 150000, gearbox: 'Механика', owners: 5 } });
   assert.equal(own.status, 200, JSON.stringify(own.data));
   assert.equal((await seller.get(`/api/listings/${own.data.id}`)).data.listing.attrs.owners, '5');
-  assert.match((await seller.post('/api/listings', { title: 'Машина 3', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', year: 2010, mileage: 1, gearbox: 'Механика', owners: 31 } })).data.error, /Владельцев по ПТС».*от 1 до 30/);
+  assert.match((await seller.post('/api/listings', { title: 'Машина 3', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', year: 2010, mileage: 1, gearbox: 'Механика', owners: 31 } })).data.error, /Владельцев по ПТС».*от 0 до 30/);
   const { cleanAttrs, fmt, SUB } = require('../lib/taxonomy');
   assert.equal(cleanAttrs('cars', { owners: '4+' }).owners, '4+');
+  assert.equal(cleanAttrs('cars', { owners: 0 }).owners, '0', 'новая машина — 0 владельцев');
+  assert.deepEqual(require('../lib/taxonomy').describe('cars', { owners: '0' }), [{ key: 'owners', label: 'Владельцев по ПТС', value: 'Нет, новая машина' }]);
   const fo = SUB.cars.fields.find((f) => f.key === 'owners');
-  assert.deepEqual(['1', '2', '5', '21', '12', '4+'].map((v) => fmt(fo, v)), ['1 владелец', '2 владельца', '5 владельцев', '21 владелец', '12 владельцев', '4 и более владельцев']);
+  assert.deepEqual(['0', '1', '2', '5', '21', '12', '4+'].map((v) => fmt(fo, v)), ['нет владельцев, новая', '1 владелец', '2 владельца', '5 владельцев', '21 владелец', '12 владельцев', '4 и более владельцев']);
   assert.equal(k.attrs.engine, 1.6, 'дробное — с шагом');
   assert.equal(k.attrs.power, 123, 'целое — округляется');
   assert.ok(k.specs.some((x) => x.label === 'Владельцев по ПТС' && x.value === '1'));

@@ -3117,18 +3117,15 @@ html.dw-open { overflow: hidden; }
   .f-switches .switch:has(input:checked) { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
   .f-switches .switch:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
-/* 1.47.3: «Владельцев по ПТС» — одна капсула «1 | 2 | 3 | − 4 +» и подпись под ней */
-.own-seg { display: flex; align-items: center; gap: 4px; width: max-content; max-width: 100%; padding: 4px; border-radius: 999px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
-.own-opt, .own-n, .own-pm { display: grid; place-items: center; border: 0; background: transparent; font: inherit; color: var(--text); cursor: pointer; transition: background .15s, color .15s, box-shadow .15s; }
-.own-opt { width: 46px; height: 40px; border-radius: 999px; font-size: 16px; font-weight: 650; }
-.own-opt:hover { background: var(--surface); }
-.own-opt.on { background: var(--grad); color: #fff; box-shadow: 0 6px 16px rgba(61, 103, 208, .3); }
-.own-step { display: flex; align-items: center; gap: 2px; height: 40px; margin-left: 4px; padding: 0 3px; border-radius: 999px; background: var(--surface); transition: background .15s, box-shadow .15s; }
-.own-step.on { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
-.own-pm { width: 32px; height: 32px; border-radius: 50%; color: var(--accent); }
-.own-pm:hover:not(:disabled) { background: #fff; }
-.own-pm:disabled { color: var(--faint); cursor: default; }
-.own-n { min-width: 44px; height: 34px; padding: 0 8px; border-radius: 999px; font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-2); }
-.own-step.on .own-n { color: var(--accent); }
-.own-hint { display: block; margin-top: 8px; font-size: 13.5px; color: var(--muted); }
-.own-opt:focus-visible, .own-n:focus-visible, .own-pm:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* 1.47.3: «Владельцев по ПТС» — строка: подпись и значение слева, маленький счётчик «− 5 +» справа */
+.own-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 10px 10px 14px; border-radius: 18px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
+.own-t { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.own-l { font-size: 15px; font-weight: 650; color: var(--text); white-space: nowrap; }
+.own-t small { font-size: 13px; color: var(--muted); }
+.own-st { flex: none; display: flex; align-items: center; gap: 2px; height: 40px; padding: 4px; border-radius: 999px; background: var(--surface); }
+.own-pm { width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 50%; background: #fff; color: var(--accent); cursor: pointer; box-shadow: 0 1px 2px rgba(30, 42, 107, .08); transition: background .15s, transform .1s; }
+.own-pm:active:not(:disabled) { transform: scale(.92); }
+.own-pm:disabled { background: transparent; color: var(--faint); box-shadow: none; cursor: default; }
+.own-pm:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.own-n { min-width: 28px; text-align: center; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); }
+.own-n.own-none { color: var(--faint); font-weight: 600; }

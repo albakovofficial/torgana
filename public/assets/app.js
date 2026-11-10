@@ -171,7 +171,7 @@
     if (f.key === 'shoeSize') return `${v} размер`;
     if (f.key === 'size') return `размер ${v}`;
     if (f.key === 'year') return `${v} г.`;
-    if (f.key === 'owners') { if (String(v) === '4+') return '4 и более владельцев'; const n = Number(v); const a = n % 10; const b = n % 100; return `${n} ${a === 1 && b !== 11 ? 'владелец' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? 'владельца' : 'владельцев'}`; }
+    if (f.key === 'owners') { if (String(v) === '4+') return '4 и более владельцев'; if (String(v) === '0') return 'нет владельцев, новая'; const n = Number(v); const a = n % 10; const b = n % 100; return `${n} ${a === 1 && b !== 11 ? 'владелец' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? 'владельца' : 'владельцев'}`; }
     if (f.type === 'number') return `${attrNum(v)}${f.unit ? ` ${f.unit}` : ''}`;
     return String(v);
   }
@@ -378,27 +378,24 @@
     if (f.color) {
       return html`<div class="field wide av" data-field="${f.key}">${head}<div class="av-sw-row" role="radiogroup" aria-label="${f.label}">${f.options.map((o) => html`<button type="button" role="radio" class="av-sw${o === v ? ' on' : ''}" data-av="${o}" title="${o}" aria-label="${o}" aria-checked="${o === v ? 'true' : 'false'}" style="--sw:${COLOR_HEX[o] || '#ccc'}"></button>`)}</div></div>`;
     }
-    // 1.47.3: «Владельцев по ПТС» — одна капсула: «1 | 2 | 3 | − 4 +». Четвёртая часть — счётчик от 4 до 30
-    // (без клавиатуры); под капсулой — как это прочитают: «5 владельцев». В фильтре — «1», «2», «3», «4+».
+    // 1.47.3: «Владельцев по ПТС» — строка с маленьким счётчиком справа (как в настройках iPhone): от 0 (новая) до 30.
+    // В фильтре — плашки «Без владельцев», «1», «2», «3», «4+».
     if (f.custom) {
       const plus = `${f.options.length + 1}+`;
       if (filter) {
+        const list = [...(f.custom.min === 0 ? ['0'] : []), ...f.options, plus];
         return html`<div class="field wide av" data-field="${f.key}">${head}<div class="av-chips" role="radiogroup" aria-label="${f.label}">
-          ${[...f.options, plus].map((o) => html`<button type="button" role="radio" class="av-chip${o === String(v) ? ' on' : ''}" data-av="${o}" aria-checked="${o === String(v) ? 'true' : 'false'}">${o}</button>`)}</div></div>`;
+          ${list.map((o) => html`<button type="button" role="radio" class="av-chip${o === String(v) ? ' on' : ''}" data-av="${o}" aria-checked="${o === String(v) ? 'true' : 'false'}">${o === '0' ? 'Без владельцев' : o}</button>`)}</div></div>`;
       }
       const sv = has ? String(v) : '';
-      const many = has && !f.options.includes(sv);
-      const n = many ? (sv === plus ? f.options.length + 1 : Number(sv)) : f.options.length + 1;
-      return html`<div class="field wide av" data-field="${f.key}">${head}
-        <div class="own-seg" role="group" aria-label="${f.label}">
-          ${f.options.map((o) => html`<button type="button" class="own-opt${o === sv ? ' on' : ''}" data-av="${o}" aria-pressed="${o === sv ? 'true' : 'false'}">${o}</button>`)}
-          <div class="own-step${many ? ' on' : ''}">
-            <button type="button" class="own-pm" data-own="-1" aria-label="Меньше" ${many ? '' : raw('disabled')}>${ic('minus', 16, 2.4)}</button>
-            <button type="button" class="own-n" data-own="0" aria-pressed="${many ? 'true' : 'false'}" aria-label="${many ? attrText(f, sv) : `${n} и больше`}">${many ? (sv === plus ? plus : n) : `${n}+`}</button>
-            <button type="button" class="own-pm" data-own="1" aria-label="Больше" ${n >= f.custom.max && many ? raw('disabled') : ''}>${ic('plus', 16, 2.4)}</button>
-          </div>
-        </div>
-        <span class="own-hint" aria-live="polite">${has ? attrText(f, sv) : 'Столько записей о владельцах в ПТС'}</span></div>`;
+      const n = !has ? null : sv === plus ? f.options.length + 1 : Number(sv);
+      return html`<div class="field wide own-row" data-field="${f.key}">
+        <span class="own-t"><span class="own-l">${f.label}${f.req ? html`<i class="rq">*</i>` : ''}</span><small aria-live="polite">${has ? (n === 0 ? 'Нет — новая машина' : attrText(f, sv)) : 'Не указано'}</small></span>
+        <span class="own-st" role="group" aria-label="${f.label}">
+          <button type="button" class="own-pm" data-own="-1" aria-label="Меньше" ${has ? '' : raw('disabled')}>${ic('minus', 16, 2.4)}</button>
+          <b class="own-n${has ? '' : ' own-none'}">${has ? (sv === plus ? plus : n) : '—'}</b>
+          <button type="button" class="own-pm" data-own="1" aria-label="Больше" ${has && n >= f.custom.max ? raw('disabled') : ''}>${ic('plus', 16, 2.4)}</button>
+        </span></div>`;
     }
     const long = f.popular && f.options.length > f.popular.length;
     const shown = long ? [...f.popular, ...(has && !f.popular.includes(v) ? [v] : [])] : f.options;
@@ -419,13 +416,14 @@
       const key = fieldEl.dataset.field;
       const f = fields.find((x) => x.key === key);
       if (!f) return;
-      // Счётчик «− 4 +»: «4+» — включить (4), «+» — больше (до 30), «−» — меньше (с 4 — на «3»).
+      // Счётчик владельцев.
       const st = e.target.closest('[data-own]');
       if (st && f.custom) {
-        const base = f.options.length + 1; const cur = get(key); const sv = cur === undefined ? '' : String(cur);
-        const now = f.options.includes(sv) || sv === '' ? 0 : (sv === `${base}+` ? base : Number(sv));
+        // «+»: «Не указано» → 0 (новая) → 1 → … → 30; «−»: обратно, с 0 — снова «Не указано».
+        const cur = get(key); const sv = cur === undefined || cur === null ? '' : String(cur);
+        const now = sv === '' ? null : sv === `${f.options.length + 1}+` ? f.options.length + 1 : Number(sv);
         const d = Number(st.dataset.own);
-        const next = d === 0 ? (now ? undefined : base) : d > 0 ? Math.min(f.custom.max, Math.max(base, now + 1)) : (now > base ? now - 1 : f.options.length);
+        const next = d > 0 ? (now === null ? f.custom.min : Math.min(f.custom.max, now + 1)) : (now === null || now <= f.custom.min ? undefined : now - 1);
         set(key, next === undefined ? undefined : String(next));
         paint(key);
         const again = $(`[data-field="${key}"] [data-own="${st.dataset.own}"]`, box);
