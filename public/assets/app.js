@@ -170,6 +170,7 @@
     if (f.key === 'shoeSize') return `${v} размер`;
     if (f.key === 'size') return `размер ${v}`;
     if (f.key === 'year') return `${v} г.`;
+    if (f.key === 'owners') { if (String(v) === '4+') return '4 и более владельцев'; const n = Number(v); const a = n % 10; const b = n % 100; return `${n} ${a === 1 && b !== 11 ? 'владелец' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? 'владельца' : 'владельцев'}`; }
     if (f.type === 'number') return `${attrNum(v)}${f.unit ? ` ${f.unit}` : ''}`;
     return String(v);
   }
@@ -370,11 +371,23 @@
   const COLOR_HEX = { Чёрный: '#141414', Белый: '#FFFFFF', Серый: '#9A9A96', Серебристый: '#C9CDD2', Бежевый: '#E5D5BA', Коричневый: '#7A5235', Красный: '#C8312B', Оранжевый: '#EE7B30', Жёлтый: '#F2C94C', Зелёный: '#2E8B57', Голубой: '#86C8F0', Синий: '#2D4F9E', Фиолетовый: '#7B4FB8', Розовый: '#F2A7C3', Золотой: '#D4AF37',
     Разноцветный: 'conic-gradient(#C8312B, #F2C94C, #2E8B57, #2D4F9E, #7B4FB8, #C8312B)' };
   const optLabel = (f, o) => (f.key === 'rooms' && o !== 'Студия' ? `${o}${o === '5+' ? ' комн.' : '-комн.'}` : o);
-  function attrChoice(f, v, { filter = false } = {}) {
+  function attrChoice(f, v, opts = {}) {
+    const filter = !!opts.filter;
     const has = v !== undefined && v !== null && v !== '';
     const head = html`<span class="label">${f.label}${f.req && !filter ? html`<i class="rq">*</i>` : ''}${f.color && has ? html`<em class="av-val">${v}</em>` : ''}</span>`;
     if (f.color) {
       return html`<div class="field wide av" data-field="${f.key}">${head}<div class="av-sw-row" role="radiogroup" aria-label="${f.label}">${f.options.map((o) => html`<button type="button" role="radio" class="av-sw${o === v ? ' on' : ''}" data-av="${o}" title="${o}" aria-label="${o}" aria-checked="${o === v ? 'true' : 'false'}" style="--sw:${COLOR_HEX[o] || '#ccc'}"></button>`)}</div></div>`;
+    }
+    // 1.47.3: «1», «2», «3» и «Другое» с полем для точного числа (в фильтре вместо «Другого» — «4+»).
+    if (f.custom) {
+      const plus = `${f.options.length + 1}+`;
+      const own = !filter && (opts.own || (has && !f.options.includes(String(v)) && String(v) !== plus));
+      const list = filter ? [...f.options, plus] : [...f.options, ...(String(v) === plus ? [plus] : [])];
+      return html`<div class="field wide av" data-field="${f.key}">${head}<div class="av-chips" role="radiogroup" aria-label="${f.label}">
+        ${list.map((o) => html`<button type="button" role="radio" class="av-chip${o === String(v) && !own ? ' on' : ''}" data-av="${o}" aria-checked="${o === String(v) && !own ? 'true' : 'false'}">${o}</button>`)}
+        ${filter ? '' : own
+          ? html`<label class="av-own"><span class="sr">${f.label}: своё число</span><input class="input" type="text" inputmode="numeric" maxlength="2" data-av-own-input placeholder="Сколько" value="${has && String(v) !== plus ? v : ''}"></label>`
+          : html`<button type="button" class="av-chip" data-av-own>Другое</button>`}</div></div>`;
     }
     const long = f.popular && f.options.length > f.popular.length;
     const shown = long ? [...f.popular, ...(has && !f.popular.includes(v) ? [v] : [])] : f.options;
@@ -384,19 +397,34 @@
   }
   // get(key) / set(key, value|undefined) — где хранится значение (состояние формы или скрытые поля фильтров).
   function bindAttrChoices(box, fields, get, set, opts = {}) {
+    const ownOpen = new Set(); // где открыто поле «Другое»
     const paint = (key) => {
       const f = fields.find((x) => x.key === key);
       const el = $(`[data-field="${key}"]`, box);
-      if (f && el) el.outerHTML = String(attrChoice(f, get(key), opts));
+      if (f && el) el.outerHTML = String(attrChoice(f, get(key), { ...opts, own: ownOpen.has(key) }));
     };
+    box.addEventListener('input', (e) => {
+      const inp = e.target.closest('[data-av-own-input]');
+      if (!inp) return;
+      const key = inp.closest('[data-field]').dataset.field;
+      const f = fields.find((x) => x.key === key);
+      inp.value = inp.value.replace(/\D/g, '').slice(0, 2);
+      const n = Number(inp.value);
+      set(key, inp.value && f && n >= f.custom.min && n <= f.custom.max ? String(n) : undefined);
+    });
     box.addEventListener('click', (e) => {
       const fieldEl = e.target.closest('[data-field]');
       if (!fieldEl) return;
       const key = fieldEl.dataset.field;
       const f = fields.find((x) => x.key === key);
       if (!f) return;
+      if (e.target.closest('[data-av-own]')) {
+        ownOpen.add(key); set(key, undefined); paint(key);
+        const inp = $(`[data-field="${key}"] [data-av-own-input]`, box); if (inp) inp.focus();
+        return;
+      }
       const b = e.target.closest('[data-av]');
-      if (b) { set(key, get(key) === b.dataset.av ? undefined : b.dataset.av); paint(key); return; }
+      if (b) { ownOpen.delete(key); set(key, get(key) === b.dataset.av ? undefined : b.dataset.av); paint(key); return; }
       const m = e.target.closest('[data-av-more]');
       if (m) pickList({ anchor: m, title: f.label, value: get(key) || '', items: f.options.map((o) => ({ value: o, label: optLabel(f, o) })), onPick: (val) => { set(key, val); paint(key); } });
     });
