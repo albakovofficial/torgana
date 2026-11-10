@@ -96,10 +96,10 @@ test('коды Вебмастера, Search Console и счётчик Метри
 });
 
 test('1.33: разделы второго уровня, страницы помощи, главная, карта сайта, данные для блока «О разделе»', async () => {
-  const cars = await publish(seller, admin, { title: 'Toyota Camry 2.5', category: 'transport', subcategory: 'cars', attrs: { brand: 'Toyota', year: 2018, mileage: 86500, gearbox: 'Автомат' }, city: 'Москва', price: 2350000, description: 'Один владелец, обслуживание у дилера.' });
+  const cars = await publish(seller, admin, { title: 'Toyota Camry 2.5', category: 'transport', subcategory: 'cars', attrs: { brand: 'Toyota', model: 'Camry', year: 2018, mileage: 86500, gearbox: 'Автомат' }, city: 'Москва', price: 2350000, description: 'Один владелец, обслуживание у дилера.' });
   // объявление: характеристики в заголовке и описании, марка и свойства в разметке, путь через раздел
   const l = await page(`/l/${cars}`);
-  assert.match(l.html, /<title>Toyota Camry 2\.5, 2018 г\., 86 500 км, Автомат — 2 350 000 ₽ в Москве<\/title>|<title>Toyota Camry 2\.5, 2018[^<]*в Москве/);
+  assert.match(l.html, /<title>Toyota Camry AT, 2018, 86 500 км — 2 350 000 ₽ в Москве[^<]*<\/title>/);
   const ld = JSON.parse(/<script type="application\/ld\+json">(.+?)<\/script>/.exec(l.html)[1]);
   assert.equal(ld.brand.name, 'Toyota');
   assert.ok(ld.additionalProperty.some((x) => x.name === 'Пробег'));

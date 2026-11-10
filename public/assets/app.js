@@ -78,6 +78,11 @@
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     minus: '<path d="M5 12h14"/>',
+    copy: '<rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"/>',
+    ban: '<circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/>',
+    moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
+    auto: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor" stroke="none"/>',
     home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
     camera: '<rect x="3" y="6" width="18" height="14" rx="3"/><circle cx="12" cy="13" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/>',
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
@@ -163,19 +168,97 @@
   const subOf = (id) => { for (const list of Object.values(S.config.subcategories || {})) { const x = list.find((s) => s.id === id); if (x) return x; } return null; };
   const subName = (id) => (subOf(id) || {}).name || '';
   const attrNum = (v) => (Math.abs(Number(v)) >= 10000 ? NF.format(v) : String(v).replace('.', ','));
+  // <auto-title> 1.48.0: название из характеристик, как на Авито — только главное. Тот же код — в lib/taxonomy.js (тест сверяет).
+  const TITLE_SUBS = new Set(['cars', 'moto', 'phones', 'flats', 'flats_rent', 'daily', 'rooms', 'houses', 'land', 'garages', 'commercial']);
+  function autoTitle(sub, a) {
+    if (!TITLE_SUBS.has(sub) || !a) return '';
+    const n = (v) => (Math.abs(Number(v)) >= 10000 ? new Intl.NumberFormat('ru-RU').format(v) : String(v).replace('.', ','));
+    const has = (k) => a[k] !== undefined && a[k] !== null && a[k] !== '';
+    const join = (...xs) => xs.filter(Boolean).join(', ');
+    const floor = () => (has('floor') ? `${a.floor}${has('floors') ? `/${a.floors}` : ''} эт.` : '');
+    const flat = () => (a.rooms === 'Студия' ? 'Квартира-студия' : a.rooms === '5+' ? 'Многокомнатная квартира' : `${a.rooms}-к. квартира`);
+    const named = (brand, model, skip) => {
+      if (!model) return '';
+      const m = String(model);
+      if (!brand || skip || m.toLowerCase().startsWith(String(brand).toLowerCase())) return m;
+      return `${brand} ${m}`;
+    };
+    if (sub === 'cars') {
+      if (!has('brand') || !has('model') || !has('year')) return '';
+      const gb = { Механика: 'MT', Автомат: 'AT', Робот: 'AMT', Вариатор: 'CVT' }[a.gearbox] || '';
+      const eng = has('engine') && a.fuel !== 'Электро' ? Number(a.engine).toFixed(1) : '';
+      const head = [named(a.brand, a.model, a.brand === 'Другая'), eng, gb].filter(Boolean).join(' ');
+      return join(head, String(a.year), Number(a.mileage) > 0 ? `${n(a.mileage)} км` : '');
+    }
+    if (sub === 'moto') {
+      if (!has('motoType') || !has('model') || !has('year')) return '';
+      const head = [a.motoType === 'Мотоцикл' ? '' : a.motoType, a.model].filter(Boolean).join(' ');
+      return join(head, String(a.year), Number(a.mileage) > 0 ? `${n(a.mileage)} км` : '');
+    }
+    if (sub === 'phones') {
+      if (!has('brand') || !has('model') || !has('memory')) return '';
+      return join(named(a.brand, a.model, a.brand === 'Другой' || (a.brand === 'Apple' && /^iphone/i.test(a.model))), a.memory);
+    }
+    if (sub === 'flats' || sub === 'flats_rent') {
+      if (!has('rooms') || !has('area')) return '';
+      return join(flat(), `${n(a.area)} м²`, floor());
+    }
+    if (sub === 'daily') {
+      if (!has('rooms') || !has('guests')) return '';
+      const g = Number(a.guests);
+      return join(flat(), `до ${g} ${g % 10 === 1 && g % 100 !== 11 ? 'гостя' : 'гостей'}`);
+    }
+    if (sub === 'rooms') return has('area') ? join(`Комната ${n(a.area)} м²`, floor()) : '';
+    if (sub === 'houses') return has('houseType') && has('area') ? `${a.houseType} ${n(a.area)} м²${Number(a.land) > 0 ? ` на участке ${n(a.land)} сот.` : ''}` : '';
+    if (sub === 'land') {
+      if (!has('land')) return '';
+      const use = { ИЖС: 'ИЖС', 'СНТ, ДНП': 'СНТ, ДНП', Сельхозназначение: 'сельхозназначения', Промназначение: 'промназначения' }[a.landUse];
+      return `Участок ${n(a.land)} сот.${use ? ` (${use})` : ''}`;
+    }
+    if (sub === 'garages') return has('garageType') ? join(a.garageType, has('area') ? `${n(a.area)} м²` : '') : '';
+    if (sub === 'commercial') {
+      if (!has('commType') || !has('area')) return '';
+      const t = { Торговое: 'Торговое помещение', Производство: 'Производственное помещение', Общепит: 'Помещение общепита', 'Свободное назначение': 'Помещение свободного назначения' }[a.commType] || a.commType;
+      return join(t, `${n(a.area)} м²`);
+    }
+    return '';
+  }
+  // </auto-title>
+  // Слова для строки в карточке: «Седан, бензин, передний привод» (то же — в app.js).
+  const CARD_WORDS = {
+    fuel: { Бензин: 'бензин', Дизель: 'дизель', Гибрид: 'гибрид', Электро: 'электро', Газ: 'газ' },
+    drive: { Передний: 'передний привод', Задний: 'задний привод', Полный: 'полный привод' },
+    body: { Седан: 'седан', Хэтчбек: 'хэтчбек', Универсал: 'универсал', Внедорожник: 'внедорожник', Кроссовер: 'кроссовер', Лифтбек: 'лифтбек', Купе: 'купе', Минивэн: 'минивэн', Пикап: 'пикап', Фургон: 'фургон' },
+    market: { Вторичка: 'вторичка', Новостройка: 'новостройка' },
+    renovation: { 'Без ремонта': 'без ремонта', Косметический: 'косметический ремонт', Евро: 'евроремонт', Дизайнерский: 'дизайнерский ремонт' },
+    house: { Панельный: 'панельный дом', Кирпичный: 'кирпичный дом', Монолитный: 'монолитный дом', Блочный: 'блочный дом', Деревянный: 'деревянный дом' },
+    furnished: { Есть: 'с мебелью', Частично: 'частично с мебелью', Нет: 'без мебели' },
+    pets: { Да: 'можно с животными', Нет: 'без животных' },
+    wall: { Кирпич: 'кирпич', 'Брус, бревно': 'брус или бревно', Газоблок: 'газоблок', Каркас: 'каркас', Монолит: 'монолит', Другой: '' },
+    battery: { 'Больше 90%': 'аккумулятор больше 90%', '80–90%': 'аккумулятор 80–90%', 'Меньше 80%': 'аккумулятор меньше 80%' },
+    color: null
+  };
   function attrText(f, v) {
     if (v === undefined || v === null || v === '') return '';
     if (f.key === 'rooms') return v === 'Студия' ? 'студия' : `${v}-комн.`;
     if (f.key === 'floor') return `${v} этаж`;
-    if (f.key === 'guests') return `до ${v} гостей`;
+    if (f.key === 'guests') return `до ${v} ${Number(v) % 10 === 1 && Number(v) % 100 !== 11 ? 'гостя' : 'гостей'}`;
     if (f.key === 'shoeSize') return `${v} размер`;
     if (f.key === 'size') return `размер ${v}`;
     if (f.key === 'year') return `${v} г.`;
     if (f.key === 'owners') { if (String(v) === '4+') return '4 и более владельцев'; if (String(v) === '0') return 'нет владельцев, новая'; const n = Number(v); const a = n % 10; const b = n % 100; return `${n} ${a === 1 && b !== 11 ? 'владелец' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? 'владельца' : 'владельцев'}`; }
+    if (CARD_WORDS[f.key] && v in CARD_WORDS[f.key]) return CARD_WORDS[f.key][v];
+    if (f.key === 'floors') { const n = Number(v); return `${v} ${n % 10 === 1 && n % 100 !== 11 ? 'этаж' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'этажа' : 'этажей'}`; }
     if (f.type === 'number') return `${attrNum(v)}${f.unit ? ` ${f.unit}` : ''}`;
     return String(v);
   }
-  const attrSummary = (subId, attrs) => { const x = subOf(subId); return x && attrs ? x.summary.map((k) => { const f = x.fields.find((y) => y.key === k); return f ? attrText(f, attrs[k]) : ''; }).filter(Boolean).join(', ') : ''; };
+  // В карточке: у разделов с названием из характеристик — то, чего нет в названии (card), как на сервере.
+  const attrSummary = (subId, attrs) => {
+    const x = subOf(subId);
+    if (!x || !attrs) return '';
+    const line = (x.card || x.summary).map((k) => { const f = x.fields.find((y) => y.key === k); return f ? attrText(f, attrs[k]) : ''; }).filter(Boolean).join(', ');
+    return line ? line[0].toUpperCase() + line.slice(1) : '';
+  };
   const metroKey = (c) => String(c || '').toLowerCase().replace(/ё/g, 'е').trim();
   const hasMetro = (city) => (S.config.metroCities || []).includes(metroKey(city));
   const metroCache = {};
@@ -613,6 +696,34 @@
     });
   }
 
+  // 1.48.0: оформление — как на устройстве, светлое или тёмное (выбор хранится на этом устройстве; до отрисовки его ставит theme.js).
+  const THEMES = [['auto', 'auto', 'Как на устройстве', 'Само переключится вместе с телефоном или компьютером'], ['light', 'sun', 'Светлое', 'Всегда светлое'], ['dark', 'moon', 'Тёмное', 'Бережёт глаза вечером']];
+  const themeGet = () => { try { const t = localStorage.getItem('theme'); return t === 'light' || t === 'dark' ? t : 'auto'; } catch { return 'auto'; } };
+  const darkNow = () => document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const themeMeta = () => { const m = $('meta[name="theme-color"]'); if (m) m.setAttribute('content', darkNow() ? '#0F121B' : '#FFFFFF'); };
+  function themeSet(t) {
+    try { if (t === 'auto') localStorage.removeItem('theme'); else localStorage.setItem('theme', t); } catch { /* закрытое хранилище — до перезагрузки */ }
+    if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+    themeMeta();
+  }
+  try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeMeta); } catch { /* старый браузер */ }
+
+  // 1.48.0: заблокировать / разблокировать. Возвращает новое состояние (true — заблокирован) или undefined — передумали.
+  async function blockFlow(user, blocked) {
+    try {
+      if (blocked) {
+        await api('DELETE', `/api/blocks/${user.id}`);
+        toast(`${user.name} разблокирован — снова может вам писать`);
+        return false;
+      }
+      const ok = await confirmModal(`Заблокировать ${user.name}?`, 'Он не сможет писать вам и предлагать цену, а его объявления пропадут из вашей ленты и поиска. Разблокировать можно в любой момент — здесь или в настройках, раздел «Чёрный список».', 'Заблокировать', true);
+      if (!ok) return undefined;
+      await api('POST', '/api/blocks', { userId: user.id });
+      toast('Заблокирован. Если он нарушает правила — напишите в поддержку, модератор разберётся');
+      return true;
+    } catch (e) { toast(e.message, true); return undefined; }
+  }
+
   function cityModal(onPick) {
     const list = (q) => {
       const n = q.trim().toLowerCase().replace(/ё/g, 'е');
@@ -780,7 +891,8 @@
     const tags = bo && bo.tags && bo.tags.length ? bo.tags : null;
     const side = xl ? [...(bo.photos || [])] : [];
     // «Новое» / «Цена упала» — внизу слева на фото, где им не мешает сердечко.
-    const low = tags || ad || it.status === 'sold' ? '' : it.fresh ? html`<span class="tag drop-badge">Новое</span>`
+    // 1.48.0: «Хорошая цена» — дешевле похожих (lib/goodprice.js); важнее «Новое» и «Цена упала».
+    const low = tags || ad || it.status === 'sold' ? '' : it.goodPrice ? html`<span class="tag drop-badge is-good" title="Цена ниже, чем у похожих объявлений на Торгане">${ic('check', 12, 3)}Хорошая цена</span>` : it.fresh ? html`<span class="tag drop-badge">Новое</span>`
       : it.priceWas ? html`<span class="tag drop-badge is-drop" title="Цена упала, было ${price(it.priceWas, it.priceUnit)}">Цена упала</span>` : '';
     return html`<div class="card${ad ? ' is-ad' : ''}${xl ? ' is-xl' : ''}${bo && bo.frame ? ' is-frame' : ''}">
       <a href="${lpath(it)}" class="card-link"${ad ? raw(` data-adid="${Number(ad.id)}"`) : ''}>
@@ -1287,7 +1399,7 @@
       $('#f-extra').innerHTML = String(html`
         ${subs.length ? html`<div class="field"><label for="f-sub">Раздел</label><select id="f-sub" name="sub" class="select"><option value="">Все разделы</option>
           ${subs.map((y) => html`<option value="${y.id}" ${y.id === sb ? raw('selected') : ''}>${y.name}</option>`)}</select></div>` : ''}
-        ${x ? x.fields.map((f) => (f.type === 'select'
+        ${x ? x.fields.filter((f) => f.type !== 'text').map((f) => (f.type === 'select'
     ? html`<input type="hidden" name="a_${f.key}" value="${val(`a_${f.key}`)}">${attrChoice(f, val(`a_${f.key}`), { filter: true })}`
     : html`<div class="field"><span class="label">${f.label}${f.unit ? `, ${f.unit}` : ''}</span><div class="row">
         <label class="sr" for="fa-${f.key}-min">${f.label} от</label><input id="fa-${f.key}-min" name="a_${f.key}_min" class="input" inputmode="numeric" placeholder="от" value="${val(`a_${f.key}_min`)}">
@@ -1566,7 +1678,10 @@
           <section class="sp-sec"><h2 class="h2">Характеристики</h2>
             <nav class="sp-path" aria-label="Раздел">${specPath.map((t, k) => html`${k ? html`<span aria-hidden="true">›</span>` : ''}<a href="${k ? `/c/${l.category}/${l.subcategory}` : cpath(l.category)}">${t}</a>`)}</nav>
             ${tiles.length ? html`<div class="sp-tiles">${tiles.map((x) => html`<div class="sp-tile"><small>${x.label}</small><b>${specVal(x)}</b></div>`)}</div>` : ''}
-            ${rest.length ? kv(rest) : ''}</section>
+            ${rest.length ? kv(rest) : ''}
+            ${l.vinMasked ? html`<div class="vin-row" id="vin-row"><span class="vin-ic">${ic('shield', 18, 2)}</span><div class="vin-t"><small>VIN или номер кузова</small><b id="vin-val">${l.vin || l.vinMasked}</b></div>
+              ${l.vin ? html`<button type="button" class="btn btn-soft btn-sm" data-vin-copy aria-label="Скопировать VIN">${ic('copy', 15, 2)}<span class="vin-bt">Скопировать</span></button>` : html`<button type="button" class="btn btn-soft btn-sm" data-vin-show aria-label="Показать VIN целиком">${ic('eye', 15, 2)}<span class="vin-bt">Показать</span></button>`}</div>
+              <p class="vin-note hidden" id="vin-note">По VIN можно проверить историю машины — например, на <a href="https://xn--90adear.xn--p1ai/check/auto" target="_blank" rel="noopener">сайте Госавтоинспекции</a>: регистрации, ДТП, розыск и ограничения.</p>` : ''}</section>
           ${l.description ? html`<section><h2 class="h2">Описание</h2><p class="desc">${l.description}</p></section>` : ''}
           <section class="sp-sec"><h2 class="h2">Условия</h2><div class="sp-terms">
             ${terms.map(([icon, t, tone]) => html`<span class="sp-term ${tone}">${ic(icon, 17, 2)}${t}</span>`)}
@@ -1582,7 +1697,9 @@
               <button class="icon-btn" data-share aria-label="Поделиться">${ic('share', 20)}</button>
             </div>
             <div><div class="item-price">${price(l.price, l.priceUnit)}${l.priceWas ? html` <s class="price-was">${price(l.priceWas, l.priceUnit)}</s>` : ''}</div>
-              ${marketChip ? html`<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${marketChip}<span class="muted" style="font-size:13px">по ${market.count} ${plural(market.count, 'похожему объявлению', 'похожим объявлениям', 'похожим объявлениям')}</span></div>` : ''}
+              ${market && market.level === 'good' ? html`<div class="gp-box"><span class="gp-ic">${ic('check', 16, 2.8)}</span><div><b>Хорошая цена</b>
+                <span>${market.perM2 ? 'Цена за м² на' : 'На'} ${market.pct}% ниже, чем в среднем у ${market.count} ${plural(market.count, 'похожего объявления', 'похожих объявлений', 'похожих объявлений')} на Торгане${market.basis ? ` — ${market.basis}` : ''}</span></div></div>`
+    : marketChip ? html`<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${marketChip}<span class="muted" style="font-size:13px">по ${market.count} ${plural(market.count, 'похожему объявлению', 'похожим объявлениям', 'похожим объявлениям')}${market.basis ? ` · ${market.basis}` : ''}</span></div>` : ''}
             </div>
             ${actions}
             <div style="display:${l.isOwner ? 'none' : 'flex'};flex-direction:column;gap:14px">
@@ -1675,6 +1792,23 @@
     g.addEventListener('touchcancel', swEnd);
     window.addEventListener('resize', () => place(0, false), { passive: true });
 
+    // 1.48.0: VIN целиком — по кнопке, только вошедшим.
+    const vinCopy = (btn) => { btn.onclick = async () => { try { await navigator.clipboard.writeText($('#vin-val').textContent.trim()); toast('VIN скопирован'); } catch { toast('Не удалось скопировать — выделите VIN и скопируйте вручную', true); } }; };
+    const vs = $('[data-vin-show]');
+    if (vs) {
+      vs.onclick = async () => {
+        if (!requireAuth()) return;
+        try {
+          const r = await api('GET', `/api/listings/${l.id}/vin`);
+          $('#vin-val').textContent = r.vin;
+          $('#vin-row').classList.add('open');
+          $('#vin-note').classList.remove('hidden');
+          vs.outerHTML = String(html`<button type="button" class="btn btn-soft btn-sm" data-vin-copy aria-label="Скопировать VIN">${ic('copy', 15, 2)}<span class="vin-bt">Скопировать</span></button>`);
+          vinCopy($('[data-vin-copy]'));
+        } catch (e) { toast(e.message, true); }
+      };
+    }
+    if ($('[data-vin-copy]')) vinCopy($('[data-vin-copy]'));
     $('[data-share]').onclick = async () => {
       const url = location.href;
       if (navigator.share) { try { await navigator.share({ title: l.title, url }); return; } catch { /* отмена */ } }
@@ -1796,6 +1930,22 @@
   // Новое объявление пишется в черновик в браузере (tg_draft) вместе с шагом — закрыли страницу, ничего не потеряли.
   const UNIT_LABEL = { '': 'за всё', мес: 'в месяц', сутки: 'за сутки', час: 'за час', 'м²': 'за м²', шт: 'за штуку' };
   const DESC_TIPS = ['Состояние', 'Комплектация', 'Причина продажи', 'Дефекты', 'Где можно посмотреть'];
+  // 1.48.0: что написать в описании — под раздел.
+  const descTips = (cat, sub) => (['cars', 'moto', 'trucks', 'water'].includes(sub) ? ['Обслуживание', 'Вложения', 'ДТП и окрасы', 'Комплектация', 'Причина продажи']
+    : sub === 'parts' ? ['Совместимость', 'Состояние', 'Номер детали', 'Причина продажи']
+      : ['flats_rent', 'daily'].includes(sub) ? ['Что есть в квартире', 'Условия', 'Коммунальные платежи', 'Транспорт рядом']
+        : sub === 'land' ? ['Коммуникации', 'Документы', 'Подъезд', 'Что рядом']
+          : cat === 'realty' ? ['Документы', 'Ремонт', 'Что рядом', 'Транспорт рядом', 'Собственники']
+            : sub === 'resumes' ? ['Опыт', 'Навыки', 'Образование', 'Пожелания']
+              : cat === 'jobs' ? ['Обязанности', 'Требования', 'Условия', 'График']
+                : cat === 'services' ? ['Что входит', 'Сроки', 'Опыт', 'Гарантия']
+                  : cat === 'personal' ? ['Размер по бирке', 'Замеры', 'Материал', 'Состояние']
+                    : cat === 'animals' ? ['Характер', 'Прививки', 'Питание', 'Родители']
+                      : cat === 'electronics' ? ['Состояние', 'Комплект', 'Гарантия', 'Дефекты', 'Причина продажи'] : DESC_TIPS);
+  // 1.48.0: советы, что добавить, — под раздел; только то, что правда помогает (без обещаний «в N раз больше просмотров»).
+  const PHOTO_TIP = { cars: 'салон, приборную панель с пробегом, багажник, колёса', moto: 'с обеих сторон, приборы с пробегом, двигатель', phones: 'включённый экран и корпус со всех сторон',
+    laptops: 'включённый экран, клавиатуру, корпус', flats: 'каждую комнату, кухню, санузел, вид из окна', flats_rent: 'каждую комнату, кухню, санузел, вид из окна', daily: 'каждую комнату, кухню, санузел, вид из окна',
+    houses: 'дом снаружи, комнаты, участок', women: 'вещь целиком, бирку с размером, детали', men: 'вещь целиком, бирку с размером, детали', shoes: 'пару целиком, подошву, бирку с размером', furniture: 'целиком, детали, размеры рядом с рулеткой' };
   const DRAFT_KEY = 'tg_draft';
   // Удаление объявления — одно для страницы объявления и «Моих объявлений». С сайта пропадает, переписки остаются (1.42.0).
   async function deleteListing(id) {
@@ -1972,7 +2122,7 @@
       photos: (src.photos || []).filter((p) => p.file),
       category: src.category || '', condition: src.condition || '', priceUnit: src.priceUnit || '',
       sub: src.subcategory || '', attrs: { ...(src.attrs || {}) }, video: srcVideo,
-      negotiable: !!src.negotiable, busy: 0, tried: false,
+      negotiable: !!src.negotiable, busy: 0, tried: false, vin: src.vin || '',
       step: Math.min(Math.max(Number(src.step) || 0, 0), ED_STEPS.length - 1)
     };
     const units = S.config.priceUnits || [''];
@@ -2010,13 +2160,14 @@
             <div id="ai-slot"></div>
             <input type="file" id="vfile" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" class="sr" tabindex="-1">`)}
           ${step(2, 's-what', 'Что и сколько', '', html`
-            <div class="field"><label for="title">Название</label>
+            <div class="field" id="title-field"><label for="title">Название</label>
               <div class="ed-input"><input id="title" name="title" class="input" maxlength="80" placeholder="Например: iPhone 15 Pro, 256 ГБ" value="${src.title || ''}" autocomplete="off"><span class="ed-count" id="title-count"></span></div>
               <span class="help">Марка, модель и главное — так объявление легче найти.</span></div>
             <div class="field"><span class="label">Категория</span><div class="ed-cats" role="radiogroup" aria-label="Категория">
               ${S.config.categories.map((c) => html`<button type="button" role="radio" aria-checked="false" data-cat="${c.id}"><span class="ed-cat-ic">${catIc(c.id, 24)}</span><span>${c.name}</span></button>`)}</div></div>
             <div class="field hidden" id="sub-field"><span class="label">Раздел</span><div class="ed-subs" id="subs" role="radiogroup" aria-label="Раздел"></div></div>
             <div class="ed-attrs hidden" id="attrs"></div>
+            <div class="ed-autot hidden" id="auto-title" aria-live="polite"></div>
             <div class="field hidden" id="cond-field"><span class="label">Состояние</span><div class="ed-seg" role="radiogroup" aria-label="Состояние">
               ${[['new', 'Новое'], ['used', 'Б/у'], ['', 'Не указывать']].map(([v, t]) => html`<button type="button" role="radio" data-cond="${v}">${t}</button>`)}</div></div>
             <div class="field ed-price"><label class="label" for="price">Цена</label>
@@ -2033,7 +2184,7 @@
             <div class="field"><label for="city">Город</label>
               <div class="ed-icon-input">${ic('pin', 18)}<input id="city" name="city" class="input" data-cities autocomplete="off" value="${src.city || S.user.city || S.city || ''}" placeholder="Начните вводить город"></div></div>
             <div class="field"><label for="desc">Описание <small class="muted">— по желанию</small></label>
-            <div class="ed-tips" aria-label="Что написать">${DESC_TIPS.map((t) => html`<button type="button" class="chip" data-tip="${t}">${ic('plus', 14, 2.2)}${t}</button>`)}</div>
+            <div class="ed-tips" id="desc-tips" aria-label="Что написать"></div>
             <div class="ed-input"><label for="desc" class="sr">Описание</label><textarea id="desc" name="description" class="textarea" maxlength="4000" placeholder="Состояние, комплектация, причина продажи, особенности">${src.description || ''}</textarea><span class="ed-count" id="desc-count"></span></div></div>
             <details class="ed-more" id="ed-more"><summary><span class="em-ic">${ic('sparkle', 20, 1.9)}</span><span class="eb-t"><b>Дополнительно</b><small id="more-sub">метро, район, характеристики, видео — по желанию</small></span><span class="em-open">${ic('down', 18, 2)}</span></summary>
               <div class="ed-more-in">
@@ -2044,10 +2195,12 @@
                 <input id="district" name="district" class="input" maxlength="60" autocomplete="off" placeholder="Например: Центральный" value="${src.district || ''}"></div>
             </div>
                 <div class="ed-attrs hidden" id="attrs-more"></div>
+                <div id="vin-slot"></div>
                 <div id="video-slot"></div>
               </div>
             </details>`)}
           ${step(3, 's-publish', 'Проверьте и отправьте', l && l.status === 'active' && l.expiresAt ? `Так увидят покупатели · опубликовано до ${dateShort(l.expiresAt)}` : 'Так увидят покупатели · 30 дней бесплатно', html`
+            <div class="ed-advice hidden" id="advice"></div>
             <div class="rv" id="review"></div>
             ${canSchedule ? html`<fieldset class="ed-when"><legend class="sr">Когда опубликовать</legend>
               <div class="ed-seg">
@@ -2070,6 +2223,7 @@
             <div class="ed-preview" id="preview" aria-hidden="true"></div>
             <div class="ed-ready"><div class="ed-ready-h"><b id="ready-n"></b><span id="ready-t"></span></div><div class="ed-bar-track"><i id="ready-bar"></i></div>
               <ul class="ed-check" id="check"></ul><small class="ed-req">* обязательно, остальное — по желанию</small></div>
+            <div class="ed-advice side hidden" id="advice-side"></div>
             <button type="button" class="btn btn-dark btn-lg btn-block" data-submit>${sendLabel}</button>
             <a class="btn btn-soft btn-block" href="${l ? `/l/${l.id}` : '/profile'}">Отмена</a>
           </div>
@@ -2150,7 +2304,7 @@
       st.aiBusy = true; renderAi();
       try {
         const r = await api('POST', '/api/ai/suggest', { file: first.file });
-        if (r.title && (manual || !form.title.value.trim())) form.title.value = r.title;
+        if (r.title && (manual || !form.title.value.trim())) form.title.value = r.title; // у разделов с названием из характеристик оно не нужно, но пусть будет, если раздел сменят
         if (r.description && !form.description.value.trim()) form.description.value = r.description;
         if (r.category && (manual || !st.category)) setCat(r.category);
         if (r.subcategory && (manual || !st.sub)) setSub(r.subcategory);
@@ -2252,19 +2406,43 @@
     };
     const fmtAttrInput = (f, v) => (v === undefined || v === null || v === '' ? '' : f.max >= 100000 ? NF.format(Number(v)) : String(v).replace('.', ','));
     // Главные характеристики (req) — на шаге «Что и сколько», остальные — в «Ещё по желанию» на последнем шаге.
+    // 1.48.0: модель — поле с подсказками частых моделей выбранной марки.
+    const modelSug = (f) => { const list = f.suggest ? (f.suggest[st.attrs.brand] || []) : []; const v = st.attrs[f.key];
+      return list.length ? html`<div class="av-chips at-sug" role="group" aria-label="Частые модели">${list.map((o) => html`<button type="button" class="av-chip${o === v ? ' on' : ''}" data-sug="${o}">${o}</button>`)}</div>` : ''; };
     const attrField = (f) => {
       const v = st.attrs[f.key];
       if (f.type === 'select') return attrChoice(f, v);
+      if (f.type === 'text') {
+        return html`<div class="field wide at-text" data-tfield="${f.key}"><label for="at-${f.key}">${f.label}${f.req ? html`<i class="rq">*</i>` : ''}</label>
+          <input id="at-${f.key}" class="input" maxlength="${f.max || 40}" autocomplete="off" autocapitalize="sentences" data-akt="${f.key}" placeholder="${f.placeholder || ''}" value="${v || ''}">
+          <span class="at-sug-box">${modelSug(f)}</span></div>`;
+      }
       return html`<div class="field"><label for="at-${f.key}">${f.label}${f.req ? html`<i class="rq">*</i>` : ''}</label><div class="ed-unit-input"><input id="at-${f.key}" class="input" inputmode="${f.key === 'area' || f.key === 'land' ? 'decimal' : 'numeric'}" autocomplete="off" data-akn="${f.key}" data-max="${f.max}" placeholder="${f.key === 'year' ? `например, ${new Date().getFullYear() - 5}` : '—'}" value="${fmtAttrInput(f, v)}">${f.unit ? html`<span>${f.unit}</span>` : ''}</div></div>`;
     };
     const paintAttrs = (box, fields, head) => {
       box.classList.toggle('hidden', !fields.length);
       if (!fields.length) { box.innerHTML = ''; return; }
-      box.innerHTML = String(html`${head}<div class="ed-attrs-grid">${[...fields].sort((a, b) => (a.type !== 'select') - (b.type !== 'select')).map(attrField)}</div>`);
+      // Сначала списки, потом числа; модель — сразу после марки.
+      const sorted = [...fields].filter((f) => f.type !== 'text').sort((a, b) => (a.type !== 'select') - (b.type !== 'select'));
+      for (const t of fields.filter((f) => f.type === 'text')) { const at = sorted.findIndex((f) => f.key === 'brand'); sorted.splice(at >= 0 ? at + 1 : sorted.findIndex((f) => f.type !== 'select') < 0 ? sorted.length : sorted.findIndex((f) => f.type !== 'select'), 0, t); }
+      box.innerHTML = String(html`${head}<div class="ed-attrs-grid">${sorted.map(attrField)}</div>`);
       if (!box.dataset.bound) {
         box.dataset.bound = '1';
-        bindAttrChoices(box, { find: (fn) => (subOf(st.sub) || { fields: [] }).fields.find(fn) }, (k) => st.attrs[k], (k, val) => { if (val === undefined) delete st.attrs[k]; else st.attrs[k] = val; changed(); });
+        bindAttrChoices(box, { find: (fn) => (subOf(st.sub) || { fields: [] }).fields.find(fn) }, (k) => st.attrs[k], (k, val) => {
+          if (val === undefined) delete st.attrs[k]; else st.attrs[k] = val;
+          if (k === 'brand') paintSug();
+          changed();
+        });
+        box.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-sug]'); if (!b) return;
+          const wrap = b.closest('[data-tfield]'); const key = wrap.dataset.tfield;
+          st.attrs[key] = b.dataset.sug; $('input', wrap).value = b.dataset.sug;
+          paintSug(); changed();
+        });
       }
+      $$('[data-akt]', box).forEach((inp) => {
+        inp.oninput = () => { const t = inp.value.replace(/\s+/g, ' ').replace(/^\s/, ''); if (t.trim()) st.attrs[inp.dataset.akt] = t.trim(); else delete st.attrs[inp.dataset.akt]; paintSug(false); changed(); };
+      });
       $$('[data-akn]', box).forEach((inp) => {
         inp.oninput = () => {
           const big = Number(inp.dataset.max) >= 100000;
@@ -2276,11 +2454,95 @@
         };
       });
     };
+    // Плашки моделей: под выбранную марку; выбранная подсвечена.
+    function paintSug(full = true) {
+      $$('[data-tfield]').forEach((w) => {
+        const f = (subOf(st.sub) || { fields: [] }).fields.find((x) => x.key === w.dataset.tfield);
+        if (!f) return;
+        const box = $('.at-sug-box', w);
+        if (full) box.innerHTML = String(modelSug(f));
+        else $$('[data-sug]', box).forEach((b) => b.classList.toggle('on', b.dataset.sug === st.attrs[f.key]));
+      });
+    }
     const renderAttrs = () => {
       const fields = (subOf(st.sub) || { fields: [] }).fields;
       paintAttrs($('#attrs'), fields.filter((f) => f.req), '');
       paintAttrs($('#attrs-more'), fields.filter((f) => !f.req), html`<div class="ed-attrs-h"><b>Характеристики</b><span>По ним покупатели находят объявление в фильтрах</span></div>`);
+      renderVin(); renderDescTips();
     };
+    // 1.48.0: название из характеристик — у машин, квартир, телефонов и других разделов, где оно есть (как на Авито).
+    const isAuto = () => !!(subOf(st.sub) || {}).auto;
+    const renderAuto = () => {
+      const on = isAuto();
+      $('#title-field').classList.toggle('hidden', on);
+      const box = $('#auto-title');
+      box.classList.toggle('hidden', !on);
+      if (!on) return;
+      const t = autoTitle(st.sub, st.attrs);
+      const need = (subOf(st.sub) || { fields: [] }).fields.filter((f) => f.req && st.attrs[f.key] === undefined).map((f) => f.label.toLowerCase());
+      box.innerHTML = String(html`<span class="at-ic">${ic('sparkle', 18, 2)}</span><div class="at-t"><small>Название объявления</small>
+        ${t ? html`<b>${t}</b>` : html`<b class="at-wait">Появится, когда укажете ${need.length ? need.join(', ') : 'главное'}</b>`}
+        <span>Собирается из характеристик — только главное. Поменяете их — название обновится.</span></div>`);
+    };
+    // 1.48.0: VIN или номер кузова — у машин. В объявлении виден частично, целиком — по кнопке «Показать».
+    const LAT = { А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H', О: 'O', Р: 'P', С: 'C', Т: 'T', Х: 'X', У: 'Y' };
+    const vinNorm = (v) => { let t = String(v || '').toUpperCase().replace(/\s/g, '').replace(/[АВЕКМНОРСТХУ]/g, (c) => LAT[c]).replace(/[^A-Z0-9-]/g, '').slice(0, 17); if (t.length === 17) t = t.replace(/O|Q/g, '0').replace(/I/g, '1'); return t; };
+    const vinOk = (v) => (v.length === 17 ? /^[A-HJ-NPR-Z0-9]{17}$/.test(v) : /^[A-Z0-9-]{6,17}$/.test(v) && /\d{4}/.test(v));
+    const vinState = (v) => (!v ? '' : v.length === 17 && vinOk(v) ? '17 из 17 · формат верный' : vinOk(v) ? `${v.length} из 17 — если это номер кузова, всё верно` : /[IOQ]/.test(v) ? 'В VIN нет букв I, O и Q' : `${v.length} из 17`);
+    function renderVin() {
+      const box = $('#vin-slot');
+      if (st.sub !== 'cars') { box.innerHTML = ''; return; }
+      if ($('#vin', box)) return;
+      box.innerHTML = String(html`<div class="field ed-vin"><label for="vin">VIN или номер кузова <small class="muted">— по желанию</small></label>
+        <div class="ed-vin-in">${ic('shield', 18, 2)}<input id="vin" class="input" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" placeholder="17 латинских букв и цифр" value="${st.vin}"></div>
+        <span class="ed-vin-st" id="vin-st" aria-live="polite"></span>
+        <span class="help">В объявлении будет видна часть VIN, целиком — по кнопке «Показать» для вошедших на Торгану. По VIN покупатель сам проверит историю машины.</span></div>`);
+      const inp = $('#vin', box);
+      const paint = () => { const v = st.vin; const ok = !v || vinOk(v); const el = $('#vin-st'); el.textContent = vinState(v); el.classList.toggle('ok', !!v && ok); el.classList.toggle('bad', !!v && !ok && v.length >= 17); };
+      inp.oninput = () => { const pos = inp.selectionStart; const before = inp.value.length; st.vin = vinNorm(inp.value); inp.value = st.vin; try { const d = inp.value.length - before; inp.setSelectionRange(pos + d, pos + d); } catch { /* нет выделения */ } paint(); changed(); };
+      paint();
+    }
+    // Что написать в описании — плашки под раздел.
+    let tipsFor = null;
+    function renderDescTips() {
+      const key = `${st.category}|${st.sub}`;
+      if (tipsFor === key) return;
+      tipsFor = key;
+      $('#desc-tips').innerHTML = String(html`${descTips(st.category, st.sub).map((t) => html`<button type="button" class="chip" data-tip="${t}">${ic('plus', 14, 2.2)}${t}</button>`)}`);
+    }
+    // 1.48.0: советы — что ещё добавить. Только правда: про фильтры, VIN, фото; без обещаний просмотров.
+    const adviceOf = (b) => {
+      const out = [];
+      const x = subOf(b.subcategory);
+      const n = b.photos.length;
+      if (n > 0 && n < 3) out.push(['camera', `Добавьте ещё фото — ${PHOTO_TIP[b.subcategory] || 'с разных сторон и детали крупно'}`, 's-photos', 'photos']);
+      if (b.subcategory === 'cars' && !b.vin) out.push(['shield', 'Укажите VIN — покупатель сможет сам проверить историю машины', 's-what', 'vin']);
+      if (!b.price && !st.negotiable) out.push(['tag', 'Укажите цену — без неё объявление не покажется тем, кто ищет с фильтром по цене', 's-what', 'price']);
+      const lc = (t) => (/^[А-ЯЁA-Z]{2}/.test(t) ? t : t[0].toLowerCase() + t.slice(1)); // «ДТП» — как есть
+      if (b.description.length < 20) out.push(['edit', `Расскажите в описании: ${descTips(b.category, b.subcategory).slice(0, 3).map(lc).join(', ')}`, 's-what', 'desc']);
+      const opt = x ? x.fields.filter((f) => !f.req && b.attrs[f.key] === undefined) : [];
+      if (opt.length >= 2) out.push(['filter', `Заполните ${opt.slice(0, 3).map((f) => f.label.toLowerCase()).join(', ')} — по характеристикам ищут в фильтрах`, 's-what', 'more']);
+      if (hasMetro(b.city) && !b.metro) out.push(['pin', 'Укажите метро — по нему ищут в фильтрах и на карте', 's-what', 'metro']);
+      return out.slice(0, 3);
+    };
+    const renderAdvice = (b) => {
+      const list = adviceOf(b);
+      for (const id of ['advice', 'advice-side']) {
+        const box = $(`#${id}`); if (!box) continue;
+        box.classList.toggle('hidden', !list.length);
+        box.innerHTML = list.length ? String(html`<div class="adv-h">${ic('sparkle', 16, 2)}<b>Советы</b><span>что ещё добавить</span></div>
+          <ul>${list.map(([icon, t, sid, what]) => html`<li><span class="adv-ic">${ic(icon, 16, 2)}</span><span class="adv-t">${t}</span><button type="button" class="adv-go" data-adv="${sid}|${what}" aria-label="Перейти">${ic('right', 16, 2.2)}</button></li>`)}</ul>`) : '';
+      }
+    };
+    $('.ed').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-adv]'); if (!b) return;
+      const [sid, what] = b.dataset.adv.split('|');
+      goStep(ED_STEPS.findIndex(([x]) => x === sid));
+      const more = $('#ed-more');
+      if (['vin', 'more', 'metro'].includes(what) && more) more.open = true;
+      const el = what === 'vin' ? $('#vin') : what === 'price' ? form.price : what === 'desc' ? form.description : what === 'metro' ? form.metro : what === 'more' ? $('#attrs-more') : what === 'photos' ? $('[data-pick]') : null;
+      if (el) setTimeout(() => { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); if (el.focus) el.focus({ preventScroll: true }); }, 80);
+    });
     const setSub = (id) => {
       if (st.sub !== id) {
         // Общие поля (например, «Год выпуска») сохраняем, лишние — убираем.
@@ -2339,7 +2601,7 @@
     let hintTimer = null;
     const fetchHintSoon = () => { clearTimeout(hintTimer); hintTimer = setTimeout(fetchHint, 600); };
     async function fetchHint() {
-      const t = form.title.value.trim();
+      const t = body().title;
       if (!st.category || t.length < 3) { $('#price-hint').classList.add('hidden'); return; }
       try {
         const r = await api('GET', `/api/price-hint?${new URLSearchParams({ category: st.category, title: t, unit: st.priceUnit })}`);
@@ -2348,27 +2610,26 @@
     }
 
     // ---------- описание ----------
-    $$('[data-tip]').forEach((b) => {
-      b.onclick = () => {
-        const ta = form.description;
-        const v = ta.value.replace(/\s+$/, '');
-        ta.value = `${v}${v ? '\n' : ''}${b.dataset.tip}: `;
-        ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
-        changed();
-      };
+    $('#desc-tips').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tip]'); if (!b) return;
+      const ta = form.description;
+      const v = ta.value.replace(/\s+$/, '');
+      ta.value = `${v}${v ? '\n' : ''}${b.dataset.tip}: `;
+      ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+      changed();
     });
 
     // ---------- готовность, превью, черновик ----------
     // Не form.when: у элементов в браузерах появился свой метод when() (Observable API).
     const laterOn = () => canSchedule && !!$('input[name="pub-when"][value="later"]:checked');
     const body = () => ({
-      title: form.title.value.trim(), category: st.category, condition: CONDITION_CATS.has(st.category) ? st.condition : '',
+      title: isAuto() ? autoTitle(st.sub, st.attrs) : form.title.value.trim(), category: st.category, condition: CONDITION_CATS.has(st.category) ? st.condition : '',
       price: st.negotiable ? '' : priceDigits(), priceUnit: st.priceUnit, city: form.city.value.trim(),
       delivery: form.delivery.checked, description: form.description.value.trim(),
       photos: st.photos.filter((p) => p.file).map((p) => p.file),
       subcategory: st.sub, attrs: st.attrs, metro: $('#metro-field').classList.contains('hidden') ? '' : form.metro.value,
       district: form.district.value.trim(), video: st.video && st.video.file ? st.video.file : '',
-      bargain: form.bargain.checked, exchange: form.exchange.checked,
+      bargain: form.bargain.checked, exchange: form.exchange.checked, vin: st.sub === 'cars' ? st.vin : '',
       publishAt: laterOn() ? mskTs($('#w-day').value, $('#w-time').value) : null
     });
     // Заполнены ли главные характеристики (те, что видны в карточке).
@@ -2387,7 +2648,7 @@
       ['s-what', 'Описание', (b) => b.description.length >= 20, false]
     ];
     const ERR = {
-      's-what': (b) => (b.title.length < 3 ? 'Напишите название — хотя бы пару слов.' : !b.category ? 'Выберите категорию.' : !b.subcategory && subsOf(b.category).length ? 'Выберите раздел — так объявление попадёт в нужные фильтры.'
+      's-what': (b) => (b.title.length < 3 && !isAuto() ? 'Напишите название — хотя бы пару слов.' : b.vin && !vinOk(b.vin) ? 'Проверьте VIN: 17 латинских букв и цифр без I, O, Q или номер кузова — либо оставьте поле пустым.' : !b.category ? 'Выберите категорию.' : !b.subcategory && subsOf(b.category).length ? 'Выберите раздел — так объявление попадёт в нужные фильтры.'
         : attrsMissing(b).length ? `Укажите: ${attrsMissing(b).map((f) => f.label.toLowerCase()).join(', ')}.` : b.city.length < 2 ? 'Укажите город.' : ''),
       's-publish': (b) => (b.publishAt !== null && b.publishAt < Date.now() + 5 * 60 * 1000 ? 'Выберите время позже — хотя бы через несколько минут.' : boostErr(st.boost))
     };
@@ -2395,6 +2656,8 @@
     function changed() {
       const b = body();
       $('#title-count').textContent = `${form.title.value.length}/80`;
+      renderAuto(); renderAdvice(b);
+      if (isAuto() && b.title !== st.autoT) { st.autoT = b.title; setTimeout(() => fetchHintSoon(), 0); } // цена похожих — по новому названию
       $('#desc-count').textContent = `${form.description.value.length}/4000`;
       const done = CHECK.filter((c) => c[2](b)).length;
       const pct = Math.round((done / CHECK.length) * 100);
@@ -2437,7 +2700,7 @@
       const box = $('#review'); if (!box) return;
       const ph = st.photos.filter((p) => p.url && !p.loading);
       const x = subOf(b.subcategory);
-      const kv = x ? x.fields.filter((f) => b.attrs[f.key] !== undefined).map((f) => [f.label, `${typeof b.attrs[f.key] === 'number' ? NF.format(b.attrs[f.key]) : b.attrs[f.key]}${f.unit ? ` ${f.unit}` : ''}`]) : [];
+      const kv = [...(x ? x.fields.filter((f) => b.attrs[f.key] !== undefined).map((f) => [f.label, `${typeof b.attrs[f.key] === 'number' ? NF.format(b.attrs[f.key]) : b.attrs[f.key]}${f.unit ? ` ${f.unit}` : ''}`]) : []), ...(b.vin ? [['VIN', b.vin]] : [])];
       const deal = [b.bargain && !st.negotiable && 'Торг', b.exchange && 'Обмен', b.delivery && 'Доставка'].filter(Boolean);
       const cat = S.config.categories.find((c) => c.id === b.category);
       box.innerHTML = String(html`<div class="rv-media">${ph.length ? html`<div class="rv-main"><img src="${ph[0].url}" alt=""></div>${ph.length > 1 ? html`<div class="rv-strip">${ph.slice(1, 5).map((p, k) => html`<span><img src="${p.url}" alt="">${k === 3 && ph.length > 5 ? html`<em>+${ph.length - 5}</em>` : ''}</span>`)}</div>` : ''}` : html`<button type="button" class="rv-nophoto" data-rv="0">${ic('camera', 26, 1.7)}<b>Без фото</b><span>Объявления с фото смотрят в разы чаще — добавить</span></button>`}${st.video ? html`<span class="rv-vid">${ic('play', 12, 0)}Видео</span>` : ''}</div>
@@ -2469,7 +2732,7 @@
     const focusErr = (sid) => {
       const b = body();
       const miss = sid === 's-what' && b.subcategory ? attrsMissing(b)[0] : null;
-      const f = sid === 's-what' && b.title.length < 3 ? form.title : sid === 's-what' && b.category && !b.subcategory ? $('[data-sub]')
+      const f = sid === 's-what' && b.title.length < 3 && !isAuto() ? form.title : sid === 's-what' && b.vin && !vinOk(b.vin) ? $('#vin') : sid === 's-what' && b.category && !b.subcategory ? $('[data-sub]')
         : miss ? $(`#at-${miss.key}`) || $(`[data-field="${miss.key}"] button`) : sid === 's-what' && b.city.length < 2 ? form.city : sid === 's-publish' ? $('#w-time + .pick-btn') : null;
       if (f) setTimeout(() => { f.focus({ preventScroll: true }); if (miss) f.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 60);
     };
@@ -2530,7 +2793,7 @@
     setCat(st.category); setCond(st.condition); setUnit(st.priceUnit); setNeg(st.negotiable);
     if (canBoost) bindBoostPicker($('#s-publish'), st.boost, changed);
     renderPhotos(); renderVideo(); loadMetro();
-    if (src.district || src.metro || st.video || (subOf(st.sub) || { fields: [] }).fields.some((f) => !f.req && st.attrs[f.key] !== undefined)) $('#ed-more').open = true;
+    if (src.district || src.metro || st.video || st.vin || (subOf(st.sub) || { fields: [] }).fields.some((f) => !f.req && st.attrs[f.key] !== undefined)) $('#ed-more').open = true;
     goStep(st.step);
     if (l) fetchHint();
   }
@@ -2797,7 +3060,23 @@
   }
 
   // ================= сообщения =================
-  const SCAM_RE = /(telegram|телеграм|телеграмм|\btg\b|whats\s?app|ватсап|вотсап|вацап|viber|вайбер|t\.me|wa\.me|номер карты|данные карты|код из смс|код из sms|cvv|cvc|предоплат|переведите|перевод на карту|ссылк[ауи] на оплату|оплат[аиу] по ссылке)/i;
+  // 1.48.0: предупреждения под сообщением собеседника — ссылка на другой сайт, номер карты, предоплата, мессенджер, коды.
+  const luhn = (d) => { let sum = 0; for (let i = 0; i < d.length; i++) { let n = Number(d[d.length - 1 - i]); if (i % 2) { n *= 2; if (n > 9) n -= 9; } sum += n; } return sum % 10 === 0; };
+  const hasCard = (t) => (String(t).match(/(?:\d[ \-]?){15,18}\d/g) || []).some((m) => { const d = m.replace(/\D/g, ''); return d.length >= 16 && d.length <= 19 && luhn(d); });
+  const LINK_RE = /(?:https?:\/\/|www\.)[^\s]+|(?:^|[\s(])([a-z0-9][a-z0-9-]*\.)+(?:ru|рф|com|net|org|su|info|site|online|store|shop|xyz|top|link|app|pro|me|io|cc|biz|club|live|website|space)(?:\/[^\s]*)?(?=$|[\s),.!?])/i;
+  const hasLink = (t) => { const m = String(t).match(new RegExp(LINK_RE.source, 'gi')) || []; return m.some((x) => !/(^|[\s(/.])torgana\.ru/i.test(x.trim())); };
+  const RISKS = [
+    ['code', /(код[а-я]* из (смс|sms)|смс[- ]?код|cvv|cvc|срок действия карты|код с обратной стороны)/i, 'Никому не называйте коды из СМС и данные карты — даже тем, кто представляется поддержкой или банком.'],
+    ['link', null, 'Ссылка ведёт на другой сайт. Не вводите там данные карты и коды из СМС — так крадут деньги. Оплата «по ссылке» от продавца — частая уловка.'],
+    ['card', null, 'В сообщении номер карты. Не переводите деньги, пока не увидели и не проверили товар: вернуть перевод почти невозможно.'],
+    ['prepay', /(предоплат|аванс|задат(ок|ка)|переве(ди|дите|сти)|скинь(те)?( мне)? (деньги|на карт)|перевод(ом)? на карт|оплат(ите|и) (заранее|доставку|сначала)|ссылк[ауи] на оплату|оплат[аиу] по ссылке)/i, 'Просят деньги заранее? Безопаснее платить при встрече, когда увидите и проверите товар.'],
+    ['messenger', /(telegram|телеграм|\btg\b|whats\s?app|ватсап|вотсап|вацап|viber|вайбер|t\.me|wa\.me|max\.ru|напиши(те)? (мне )?в (тг|телегу|вотс|ватс|макс))/i, 'Предлагают перейти в мессенджер? Оставайтесь в чате Торганы — переписка сохранится, и мы сможем помочь при споре.']
+  ];
+  const riskOf = (t) => {
+    if (!t) return null;
+    for (const [k, re, text] of RISKS) if (k === 'link' ? hasLink(t) : k === 'card' ? hasCard(t) : re.test(t)) return { k, text };
+    return null;
+  };
   // 1.47.2: аватарка Торганы — объёмный круг «небо → сирень» с бликом и знаком (та же, что на экране «Сделка состоялась»).
   let avaN = 0;
   const torganaAva = (size) => {
@@ -2825,7 +3104,6 @@
         ${head}
       </div>
       ${below}
-      ${scam ? html`<div class="banner warn chat-warn hidden" data-scam>${ic('warn', 18)} <strong>Осторожно.</strong> Похоже, собеседник предлагает уйти в мессенджер или заплатить вне Торганы. Так действуют мошенники — не переводите деньги и не называйте коды из СМС.</div>` : ''}
       <div class="chat-msgs" data-msgs></div>
       ${tools}
       <form class="chat-form" data-send>
@@ -2851,7 +3129,8 @@
         const d2 = decorate ? decorate(m) : null;
         out += d2 ? String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${d2.cls}">${d2.body}<span class="t">${hm(m.createdAt)}</span></div>`)
           : String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${m.photo ? 'has-photo' : ''}">${m.photo ? html`<a class="msg-photo" href="${m.photo}" target="_blank" rel="noopener" data-pv-src="${m.photo}" data-pv-group="chat"><img src="${m.photo}" alt="Фото" loading="lazy"></a>` : ''}${m.body}<span class="t">${hm(m.createdAt)}</span></div>`);
-        if (scam && !m.mine && m.body && SCAM_RE.test(m.body)) $('[data-scam]', box).classList.remove('hidden');
+        const risk = scam && !m.mine && !m.kind ? riskOf(m.body) : null;
+        if (risk) out += String(html`<div class="msg-risk r-${risk.k}" role="note">${ic(risk.k === 'messenger' ? 'chat' : risk.k === 'link' ? 'link' : risk.k === 'card' ? 'card' : 'shield', 16, 2.2)}<span>${risk.text}</span></div>`);
         lastId = Math.max(lastId, m.id);
       }
       msgs.insertAdjacentHTML('beforeend', out);
@@ -3093,7 +3372,8 @@
       head: html`<a href="/l/${l.id}" class="conv-img" aria-hidden="true" tabindex="-1">${l.photo ? html`<img src="${l.photo}" alt="">` : svg(P.image, 20, 1.4)}</a>
         <div style="flex:1;min-width:0"><a href="/l/${l.id}" style="display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.title}</a>
           <span class="muted" style="font-size:14px">${price(l.price, l.priceUnit)} · ${other.name}</span></div>
-        ${l.status === 'sold' ? html`<span class="tag dark">Продано</span>` : l.status === 'deleted' ? html`<span class="tag">Объявление удалено</span>` : ''}`,
+        ${l.status === 'sold' ? html`<span class="tag dark">Продано</span>` : l.status === 'deleted' ? html`<span class="tag">Объявление удалено</span>` : ''}
+        <button type="button" class="icon-btn chat-more" data-chat-more aria-label="Ещё" aria-haspopup="menu">${ic('more', 20)}</button>`,
       below: html`<div data-deal-slot></div>`,
       load: async (after) => {
         const r = await api('GET', `/api/conversations/${convId}?after=${after}`);
@@ -3120,6 +3400,37 @@
     });
     $('.inbox').insertAdjacentHTML('beforeend', String(chatSide(l, other, role)));
     const chatEl = $('#chat');
+    // 1.48.0: чёрный список — вместо поля ввода плашка: кто кого заблокировал и что делать.
+    let block = data.block || null;
+    const paintBlock = () => {
+      const f = $('[data-send]', chatEl); const tl = $('.chat-tools', chatEl); const old = $('.chat-blocked', chatEl);
+      if (old) old.remove();
+      if (f) f.classList.toggle('hidden', !!block);
+      if (tl) tl.classList.toggle('hidden', !!block);
+      if (!block) return;
+      f.insertAdjacentHTML('beforebegin', String(block === 'me'
+        ? html`<div class="chat-blocked"><span class="cb-ic">${ic('ban', 18, 2)}</span><div><b>Вы заблокировали ${other.name}</b><span>Он не может писать вам и предлагать цену.</span></div><button type="button" class="btn btn-soft btn-sm" data-unblock>Разблокировать</button></div>`
+        : html`<div class="chat-blocked"><span class="cb-ic">${ic('ban', 18, 2)}</span><div><b>Нельзя отправить сообщение</b><span>${other.name} ограничил сообщения от вас.</span></div></div>`));
+    };
+    paintBlock();
+    chatEl.addEventListener('click', async (e) => {
+      const mb = e.target.closest('[data-chat-more]');
+      if (mb) {
+        pickList({ anchor: mb, title: other.name, search: false, value: '', items: [
+          { value: 'profile', label: 'Профиль собеседника' },
+          ...(l.status !== 'deleted' ? [{ value: 'listing', label: 'Открыть объявление' }] : []),
+          { value: block === 'me' ? 'unblock' : 'block', label: block === 'me' ? 'Разблокировать' : 'Заблокировать' },
+          { value: 'report', label: 'Пожаловаться в поддержку' }
+        ], onPick: async (v) => {
+          if (v === 'profile') go(`/u/${other.id}`);
+          else if (v === 'listing') go(`/l/${l.id}`);
+          else if (v === 'report') go('/messages/support');
+          else if (v === 'block' || v === 'unblock') { const r = await blockFlow(other, block === 'me'); if (r !== undefined) { block = r ? 'me' : null; paintBlock(); } }
+        } });
+        return;
+      }
+      if (e.target.closest('[data-unblock]')) { const r = await blockFlow(other, true); if (r !== undefined) { block = r ? 'me' : null; paintBlock(); } }
+    });
     chatEl.addEventListener('click', async (e) => {
       const a = e.target.closest('[data-offer-act]');
       if (a) {
@@ -3904,7 +4215,7 @@
   // ================= настройки =================
   // Слева карточка и пять разделов, справа открыт один. Раздел — в #якоре, старые ссылки (#s-photo, #s-city) ведут в «Профиль».
   // На телефоне без якоря — карточка и список разделов; раздел открывается своим экраном со ссылкой «Настройки».
-  const SET_SECTIONS = [['sf', 'user', 'Профиль'], ['sn', 'bell', 'Уведомления'], ['sp', 'lock', 'Пароль и вход'], ['s-biz', 'shield', 'Для бизнеса'], ['s-acc', 'mail', 'Аккаунт']];
+  const SET_SECTIONS = [['sf', 'user', 'Профиль'], ['sn', 'bell', 'Уведомления'], ['sp', 'lock', 'Пароль и вход'], ['s-look', 'moon', 'Оформление'], ['s-block', 'ban', 'Чёрный список'], ['s-biz', 'shield', 'Для бизнеса'], ['s-acc', 'mail', 'Аккаунт']];
   const SET_ALIAS = { 's-photo': 'sf', 's-city': 'sf' };
   // Яндекс ID и VK ID: включённые на сайте и уже привязанные (отвязать можно, даже если вход выключили).
   const myOauth = (u) => OAUTH.filter(([k]) => (S.config.oauth && S.config.oauth[k]) || u.oauth.includes(k));
@@ -3922,6 +4233,8 @@
       sn: `Включено ${nOn} из ${nAll}`,
       sp: ['Пароль', ...myOauth(u).map(([, name]) => name)].join(', '),
       's-biz': b ? { verified: b.kind === 'ip' ? 'ИП проверен' : 'Компания проверена', pending: 'Заявка на проверке', rejected: 'Проверка не пройдена' }[b.status] : 'Значок «ИП проверен»',
+      's-look': { auto: 'Как на устройстве', light: 'Светлое', dark: 'Тёмное' }[themeGet()],
+      's-block': 'Кому нельзя вам писать',
       's-acc': u.email
     };
     app.innerHTML = String(html`<div class="wrap setx ${cur ? 'has-sec' : ''}">
@@ -4000,6 +4313,10 @@
           <div class="set-foot"><span>Минимум 8 символов. На других устройствах потребуется войти заново</span><button class="btn btn-accent" type="submit">Сменить пароль</button></div>
         </form>`,
       's-biz': () => html`${head('Для бизнеса', 'Бизнес-аккаунт открывает тарифы. Галочка у имени — правообладателям товарного знака')}${bizBlock(u.business, u.bizAccount, !!u.plan, u.trademark)}`,
+      's-look': () => html`${head('Оформление', 'Светлое, тёмное или как на устройстве. Сохраняется на этом устройстве')}
+        <div class="look" role="radiogroup" aria-label="Оформление">${THEMES.map(([v, icon, t, sub]) => html`<button type="button" role="radio" class="look-it${themeGet() === v ? ' on' : ''}" aria-checked="${themeGet() === v ? 'true' : 'false'}" data-theme-set="${v}">
+          <span class="look-pv lp-${v}" aria-hidden="true"><i></i><i></i><i></i></span><span class="look-t">${ic(icon, 18, 2)}<b>${t}</b></span><small>${sub}</small></button>`)}</div>`,
+      's-block': () => html`${head('Чёрный список', 'Заблокированные не могут писать вам и предлагать цену, их объявлений нет в вашей ленте и поиске')}<div id="blocks" class="set-list"><div class="loader"></div></div>`,
       's-acc': () => html`${head('Аккаунт', 'Почта для входа и писем от Торганы')}
         <div class="set-list">
           ${row('mail', 'Почта', u.email, S.config.mail ? (u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 14, 2.4)} Подтверждена</span>` : html`<button type="button" class="btn btn-soft btn-sm" id="verify-again">Подтвердить</button>`) : '')}
@@ -4019,6 +4336,19 @@
     const q = new URLSearchParams(location.search).get('oauth');
     if (q) { toast(q === 'linked' ? 'Готово — сервис привязан' : 'Этот аккаунт сервиса уже привязан к другому пользователю', q !== 'linked'); history.replaceState({}, '', location.pathname + location.hash); }
     if (sec === 's-acc') bindAccountDelete();
+    if (sec === 's-look') $$('[data-theme-set]').forEach((b) => { b.onclick = () => { themeSet(b.dataset.themeSet); renderSettings(sec, reload); const h = $('[data-sec="s-look"] small'); if (h) h.textContent = { auto: 'Как на устройстве', light: 'Светлое', dark: 'Тёмное' }[themeGet()]; }; });
+    if (sec === 's-block') {
+      const paint = async () => {
+        const box = $('#blocks'); if (!box) return;
+        try {
+          const { items } = await api('GET', '/api/blocks');
+          box.innerHTML = items.length ? String(html`${items.map((x) => html`<div class="set-row bl-row">${ava(x, 'sm')}<div><span class="set-v">${x.name}</span><span class="set-k">Заблокирован ${dateShort(x.at)}</span></div><button type="button" class="btn btn-soft btn-sm" data-unb="${x.id}">Разблокировать</button></div>`)}`)
+            : String(html`<div class="bl-empty">${ic('ban', 28, 1.8)}<b>Никого нет</b><span>Заблокировать можно в чате или в профиле человека — кнопка «…»</span></div>`);
+          $$('[data-unb]', box).forEach((b) => { b.onclick = async () => { const x = items.find((i) => String(i.id) === b.dataset.unb); const r = await blockFlow(x, true); if (r === false) paint(); }; });
+        } catch (e) { box.innerHTML = String(html`<p class="muted">${e.message}</p>`); }
+      };
+      paint();
+    }
     if (sec === 'sf') {
       $('[data-ava-set]').onclick = () => pickAvatar(reload);
       const del = $('[data-ava-del]'); if (del) del.onclick = () => removeAvatar(reload);
@@ -4087,9 +4417,10 @@
             <div class="pf-num"><b>${NF.format(u.soldCount)}</b><span>продано</span></div>
             <div class="pf-num"><b data-followers>${NF.format(followers)}</b><span>${plural(followers, 'подписчик', 'подписчика', 'подписчиков')}</span></div>
           </div>
-          <div class="pub-acts">${own ? html`<a class="btn btn-accent btn-block" href="/profile/settings">${ic('edit', 18)}Изменить профиль</a>` : followBtn(u.id, u.following, 'btn-accent')}<button type="button" class="icon-btn pub-share" data-share aria-label="Поделиться профилем">${ic('share', 19)}</button></div>
+          <div class="pub-acts">${own ? html`<a class="btn btn-accent btn-block" href="/profile/settings">${ic('edit', 18)}Изменить профиль</a>` : followBtn(u.id, u.following, 'btn-accent')}<button type="button" class="icon-btn pub-share" data-share aria-label="Поделиться профилем">${ic('share', 19)}</button>${own || !S.user ? '' : html`<button type="button" class="icon-btn pub-share" data-pub-more aria-label="Ещё" aria-haspopup="menu">${ic('more', 19)}</button>`}</div>
         </div>
       </section>
+      <div id="pub-block"></div>
       <div class="seg seg-lg" role="tablist">
         <a role="tab" aria-selected="${tab === 'ads' ? 'true' : 'false'}" class="${tab === 'ads' ? 'on' : ''}" href="/u/${u.id}">Объявления <span class="n">${u.activeCount}</span></a>
         <a role="tab" aria-selected="${tab === 'rep' ? 'true' : 'false'}" class="${tab === 'rep' ? 'on' : ''}" href="/u/${u.id}?tab=rep">${levelMedal(u.rep ? u.rep.level : 0, 16)}Репутация</a>
@@ -4097,6 +4428,21 @@
       <div id="box">${tab === 'ads' ? (items.length ? grid(items) : html`<div class="pf-empty sm"><h3>Активных объявлений нет</h3><p>Загляните позже.</p></div>`) : html`<div class="loader"></div>`}</div>
     </div>`);
     $('[data-share]').onclick = () => shareLink(`${location.origin}/u/${u.id}`, `${u.name} на Торгане`);
+    // 1.48.0: чёрный список — «…» в шапке профиля.
+    let block = u.block || null;
+    const paintPubBlock = () => {
+      $('#pub-block').innerHTML = block === 'me' ? String(html`<div class="chat-blocked pub-blocked"><span class="cb-ic">${ic('ban', 18, 2)}</span><div><b>Вы заблокировали ${u.name}</b><span>Он не может писать вам, его объявлений нет в вашей ленте и поиске.</span></div><button type="button" class="btn btn-soft btn-sm" data-unblock>Разблокировать</button></div>`) : '';
+      const ub = $('[data-unblock]'); if (ub) ub.onclick = async () => { const r = await blockFlow(u, true); if (r !== undefined) { block = r ? 'me' : null; paintPubBlock(); } };
+    };
+    paintPubBlock();
+    const pm = $('[data-pub-more]');
+    if (pm) pm.onclick = () => pickList({ anchor: pm, title: u.name, search: false, items: [
+      { value: block === 'me' ? 'unblock' : 'block', label: block === 'me' ? 'Разблокировать' : 'Заблокировать' },
+      { value: 'support', label: 'Пожаловаться в поддержку' }
+    ], onPick: async (v) => {
+      if (v === 'support') { go('/messages/support'); return; }
+      const r = await blockFlow(u, block === 'me'); if (r !== undefined) { block = r ? 'me' : null; paintPubBlock(); }
+    } });
     if (tab !== 'rep') return;
     $('#box').innerHTML = String(html`<div class="rep-page">${repCard(u.rep)}${repHow()}</div>`);
   }
