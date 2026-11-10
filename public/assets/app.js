@@ -3458,11 +3458,9 @@
   const dealsWord = (n) => `${NF.format(n)} ${plural(n, 'сделка', 'сделки', 'сделок')}`;
   // Строка под именем: «⬢ Опытный · 27 сделок». 1.49.0: shop — у магазина без уровня «Новый магазин» вместо «Новичок»;
   // deals: false — без числа сделок (в публичном профиле оно в счётчиках рядом).
-  // official — у официального аккаунта вместо уровня «Официальный аккаунт» (1.50.0).
-  const repLine = (r, href = '', { shop = false, deals = true, official = false } = {}) => {
+  const repLine = (r, href = '', { shop = false, deals = true } = {}) => {
     if (!r) return '';
-    const inner = official ? html`${verifiedSeal(18)}<b>Официальный аккаунт</b>`
-      : html`${levelMedal(r.level, 18)}<b>${shop && !r.level ? 'Новый магазин' : r.levelName}</b>${deals && r.deals ? html`<span>· ${dealsWord(r.deals)}</span>` : ''}`;
+    const inner = html`${levelMedal(r.level, 18)}<b>${shop && !r.level ? 'Новый магазин' : r.levelName}</b>${deals && r.deals ? html`<span>· ${dealsWord(r.deals)}</span>` : ''}`;
     return href ? html`<a class="rep-line l${r.level}" href="${href}">${inner}</a>` : html`<span class="rep-line l${r.level}">${inner}</span>`;
   };
   const REPLY_TXT = { hour: '~1 ч', hours: '1–3 ч', day: '< суток', days: '1–2 дня' };
@@ -3610,36 +3608,52 @@
   function idCard(u, stats = []) {
     const { todo, pct } = profileTodo(u);
     const sh = u.shop; // витрина — при тарифе или у официального аккаунта
-    const badges = html`${trustBadges(u.badges && { ...u.badges, shop: false, tm: null })}${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
+    // 1.50.1: на обложке плашек нет — тариф (или «Официальный аккаунт» вместо «Владелец») стоит первой плашкой; это не ссылка.
+    const badges = html`${planBadge(sh, u.plan, true)}${trustBadges(u.badges && { ...u.badges, shop: false, tm: null })}${u.isAdmin && !(sh && sh.official) ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
     return html`<div class="pf-card ${sh ? `shop ${sh.plan}` : ''}">
-      ${sh ? html`<a class="pf-cover ${sh.cover ? 'has' : ''}" href="/profile/business/shop"${sh.cover ? raw(` style="--cv:url('${esc(sh.cover)}')"`) : ''}>
-        ${sh.official ? html`<span class="pf-plan">${verifiedSeal(15)}Официальный аккаунт</span>` : html`<span class="pf-plan">${ic('store', 14, 2.2)}${u.plan.name}</span>${u.plan.trial ? html`<span class="pf-trial">${ic('gift', 13, 2.2)}Бесплатно</span>` : ''}
-        <span class="pf-until">${ic('clock', 13, 2.2)}до ${new Date(u.plan.until).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</span>`}</a>` : ''}
+      ${sh ? html`<a class="pf-cover ${sh.cover ? 'has' : ''}" href="/profile/business/shop" aria-label="Обложка витрины"${sh.cover ? raw(` style="--cv:url('${esc(sh.cover)}')"`) : ''}></a>` : ''}
       <div class="pf-who">
         <div class="pf-ava">${ava(u, 'lg')}<button class="pf-cam" type="button" data-ava-pick aria-label="${u.avatar ? 'Сменить фото профиля' : 'Добавить фото профиля'}">${ic('camera', 15, 2)}</button></div>
         <div class="pf-who-txt">
           <div class="pf-name">${nameSeal(u.name, u.badges)}</div>
           <div class="pf-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
-          ${u.rep ? repLine(u.rep, '/profile/reputation', { shop: !!sh, official: !!(sh && sh.official) }) : ''}
+          ${u.rep && !(sh && sh.official) ? repLine(u.rep, '/profile/reputation', { shop: !!sh }) : ''}
         </div>
         <a class="icon-btn pf-gear" href="/profile/settings" aria-label="Настройки">${ic('gear', 20)}</a>
       </div>
       ${String(badges).trim() ? html`<div class="pf-badges">${badges}</div>` : ''}
+      ${sh && sh.about ? html`<div class="pf-about"><p data-about>${sh.about}</p><div class="pf-about-acts"><button type="button" class="pf-about-more" data-about-more hidden>Ещё</button><a href="/profile/business/shop#sh-about">${ic('edit', 14, 2.2)}Изменить</a></div></div>` : ''}
       ${stats.length ? html`<div class="pf-nums">${stats.map(([n, k, href]) => html`<a class="pf-num" href="${href}"><b>${NF.format(n)}</b><span>${k}</span></a>`)}</div>` : ''}
       ${sh ? html`<div class="pf-tools">
         <a class="pft" href="/profile/business/stats"><span class="pft-ic">${ic('chart', 19, 2.2)}</span><b>Статистика</b><small>Показы и переходы</small><span class="pft-go">${ic('right', 16, 2.4)}</span></a>
         <a class="pft" href="/profile/business/shop"><span class="pft-ic">${ic('store', 19, 2.2)}</span><b>Настройка витрины</b><small>Обложка и описание</small><span class="pft-go">${ic('right', 16, 2.4)}</span></a>
       </div>` : ''}
-      ${pct < 100 ? html`<div class="pf-progress">
-        <div class="pf-progress-head"><span>Профиль заполнен</span><b>${pct}%</b></div>
+      ${pct < 100 ? html`<div class="pf-progress ${todoClosed() ? 'closed' : ''}">
+        <button type="button" class="pf-progress-head" data-todo-toggle aria-expanded="${todoClosed() ? 'false' : 'true'}" aria-label="${todoClosed() ? 'Показать, что ещё заполнить' : 'Скрыть список'}"><span>Профиль заполнен</span><b>${pct}%</b>${ic('down', 16, 2.4)}</button>
         <div class="pf-bar"><i style="width:${pct}%"></i></div>
         <div class="pf-todo">${todo.map((t) => html`<button type="button" class="pf-todo-row" data-todo="${t[3]}"><i aria-hidden="true"></i><span>${t[1]}</span><b>${t[2]}</b></button>`)}</div>
       </div>` : ''}
     </div>`;
   }
+  // 1.50.3: список «Что ещё заполнить» можно свернуть — нажатием на «Профиль заполнен»; запоминается на устройстве.
+  const TODO_KEY = 'tg-todo-closed';
+  const todoClosed = () => { try { return localStorage.getItem(TODO_KEY) === '1'; } catch { return false; } };
   // «Что ещё заполнить»: фото — сразу выбор файла, город — настройки, почта — письмо с кодом, витрина — нужное поле.
   function bindIdCard(again) {
     $('[data-ava-pick]').onclick = () => pickAvatar(again);
+    // 1.50.4: своё описание магазина — первые строки и «Ещё», если текст длиннее.
+    const ab = $('[data-about]'); const more = $('[data-about-more]');
+    if (ab && more) {
+      more.hidden = ab.scrollHeight <= ab.clientHeight + 1;
+      more.onclick = () => { const open = ab.classList.toggle('open'); more.textContent = open ? 'Свернуть' : 'Ещё'; };
+    }
+    const tg = $('[data-todo-toggle]');
+    if (tg) tg.onclick = () => {
+      const closed = tg.parentElement.classList.toggle('closed');
+      tg.setAttribute('aria-expanded', closed ? 'false' : 'true');
+      tg.setAttribute('aria-label', closed ? 'Показать, что ещё заполнить' : 'Скрыть список');
+      try { localStorage.setItem(TODO_KEY, closed ? '1' : '0'); } catch { /* без памяти — просто на этой странице */ }
+    };
     $$('[data-todo]').forEach((b) => {
       b.onclick = () => {
         const t = b.dataset.todo;
@@ -3649,6 +3663,16 @@
         else go(`/profile/business/shop#sh-${t}`);
       };
     });
+  }
+
+  // 1.50.1: плашка тарифа (или «Официальный аккаунт») в строке плашек — вместо меток на обложке. Не ссылка.
+  // mine — в своём профиле ещё и срок: «Магазин Про · до 10 декабря», у бесплатного — «бесплатно до …».
+  function planBadge(sh, plan = null, mine = false) {
+    if (!sh) return '';
+    if (sh.official) return html`<span class="pf-badge pf-tariff">Официальный аккаунт</span>`;
+    const name = sh.plan === 'pro' ? 'Магазин Про' : 'Магазин';
+    const until = mine && plan ? ` · ${plan.trial ? 'бесплатно\u00a0' : ''}до\u00a0${new Date(plan.until).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }).replace(' ', '\u00a0')}` : ''; // срок не разрывается
+    return html`<span class="pf-badge pf-tariff">${ic('store', 13, 2.2)} ${name}${until}</span>`;
   }
 
   // Значки доверия продавца: «Телефон подтверждён», «ИП проверен» / «Компания проверена».
@@ -4413,18 +4437,18 @@
     const deals = u.rep ? u.rep.total || 0 : 0;
     const sh = u.shop; // 1.46.1: у магазина — одна шапка: обложка, тариф, название, описание
     // 1.49.0: одна отметка проверки (галочка бренда — у имени); три числа всегда, даже 0: объявления, сделки, подписчики.
-    const badges = String(trustBadges(u.badges && { ...u.badges, shop: false, tm: null })).trim();
+    const badges = String(html`${planBadge(sh)}${trustBadges(u.badges && { ...u.badges, shop: false, tm: null })}`).trim();
     const num = (n, one, few, many, attr = '') => html`<div class="pf-num"><b${raw(attr)}>${NF.format(n)}</b><span>${plural(n, one, few, many)}</span></div>`;
     // Сверху — широкая карточка продавца, ниже вкладки и объявления (у магазина — с колонкой «О магазине»).
     app.innerHTML = String(html`<div class="wrap pub">
       ${own ? html`<div class="pub-own">${ic('eye', 18)}<span>Так ваш профиль видят покупатели</span><a href="/profile/settings">Изменить профиль</a><a href="/profile">Мой профиль</a></div>` : ''}
       <section class="pub-hero ${sh ? `is-shop ${sh.plan}` : ''}" aria-label="${sh ? 'Магазин' : 'Продавец'}">
-        ${sh ? html`<div class="psh-cover">${sh.cover ? html`<img src="${sh.cover}" alt="">` : ''}<span class="pf-plan">${sh.official ? html`${verifiedSeal(15)}Официальный аккаунт` : html`${ic('store', 14, 2.2)}${sh.plan === 'pro' ? 'Магазин Про' : 'Магазин'}`}</span></div>` : ''}
+        ${sh ? html`<div class="psh-cover">${sh.cover ? html`<img src="${sh.cover}" alt="">` : ''}</div>` : ''}
         <div class="pub-ava">${ava(u, 'xl')}</div>
         <div class="pub-who">
           <h1>${nameSeal(sh ? sh.name : u.name, u.badges)}</h1>
           <div class="pub-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
-          ${repLine(u.rep, `/u/${u.id}?tab=rep`, { shop: !!sh, deals: false, official: !!(sh && sh.official) })}
+          ${sh && sh.official ? '' : repLine(u.rep, `/u/${u.id}?tab=rep`, { shop: !!sh, deals: false })}
           ${sh && sh.about ? html`<p class="shop-about">${sh.about}</p>` : ''}
           ${badges ? html`<div class="pf-badges">${raw(badges)}</div>` : ''}
         </div>
@@ -4910,17 +4934,24 @@
     </div>`);
   }
 
-  // 1.49.0: «О магазине» — часы, адрес (с картой в Яндекс Картах), доставка, сайт. Пусто — блока нет.
+  // «О магазине» — часы, адрес (ссылка на Яндекс Карты), доставка, сайт. Пусто — блока нет.
+  // 1.50.2: шапка в градиенте (у официального аккаунта — знак Торганы), значки в цветных плитках, ссылки со стрелкой;
+  // «Открыто» — только когда в часах написано «круглосуточно» (24/7): тогда это правда в любой момент.
   function shopAbout(sh) {
     const site = sh.site ? (() => { try { return new URL(sh.site).hostname.replace(/^www\./, ''); } catch { return ''; } })() : '';
+    const go = (href, text, rel) => html`<a class="si-link" href="${href}" target="_blank" rel="${rel}">${text}${ic('right', 15, 2.4)}</a>`;
+    const allDay = /круглосуточ|24\s*\/\s*7|24\s*час/i.test(sh.hours || '');
     const rows = [
-      sh.hours && ['clock', 'Часы работы', sh.hours],
-      sh.address && ['pin', 'Адрес', html`${sh.address}<a class="sa-map" href="https://yandex.ru/maps/?text=${encodeURIComponent(sh.address)}" target="_blank" rel="noopener">Открыть в Яндекс Картах</a>`],
-      sh.delivery && ['truck', 'Доставка', sh.delivery],
-      site && ['link', 'Сайт', html`<a href="${sh.site}" target="_blank" rel="nofollow noopener ugc">${site}</a>`]
+      sh.hours && ['clock', 'Часы работы', html`<span class="si-v">${sh.hours}${allDay ? html`<span class="si-open">Открыто</span>` : ''}</span>`],
+      sh.address && ['pin', 'Адрес', html`<span class="si-v">${sh.address}</span>${go(`https://yandex.ru/maps/?text=${encodeURIComponent(sh.address)}`, 'Открыть в Яндекс Картах', 'noopener')}`],
+      sh.delivery && ['truck', 'Доставка', html`<span class="si-v">${sh.delivery}</span>`],
+      site && ['link', 'Сайт', go(sh.site, site, 'nofollow noopener ugc')]
     ].filter(Boolean);
     const t = sh.official ? 'О Торгане' : 'О магазине';
-    return rows.length ? html`<aside class="shop-info" aria-label="${t}"><h2>${t}</h2>${rows.map(([icn, k, v]) => html`<div class="si-row"><span class="si-ic">${ic(icn, 18, 2)}</span><div><small>${k}</small><span>${v}</span></div></div>`)}</aside>` : '';
+    return rows.length ? html`<aside class="shop-info" aria-label="${t}">
+      <div class="si-head"><span class="si-mark">${sh.official ? torganaAva(40) : ic('store', 20, 2.2)}</span><h2>${t}</h2></div>
+      <div class="si-list">${rows.map(([icn, k, v]) => html`<div class="si-row"><span class="si-ic">${ic(icn, 18, 2.2)}</span><div><small>${k}</small>${v}</div></div>`)}</div>
+    </aside>` : '';
   }
 
   // ================= модерация =================

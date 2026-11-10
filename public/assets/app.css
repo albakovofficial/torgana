@@ -323,8 +323,21 @@ button { cursor: pointer; }
 .pf-badge.ok { background: var(--accent-soft); color: var(--accent); }
 .pf-badge.warn { background: var(--warn-soft); color: var(--c-8a5a00); }
 .pf-progress { display: flex; flex-direction: column; gap: 10px; }
-.pf-progress-head { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 16px; font-size: 13px; font-weight: 600; }
+.pf-progress-head { display: flex; align-items: center; gap: 4px 8px; width: 100%; padding: 0; border: 0; background: none; font: inherit; font-size: 13px; font-weight: 600; color: var(--text); text-align: left; cursor: pointer; }
+.pf-progress-head span { flex: 1; }
 .pf-progress-head b { color: var(--accent); font-weight: 800; }
+/* 1.50.4: своё описание магазина в карточке профиля — 3 строки, «Ещё» раскрывает целиком */
+.pf-about { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 18px; background: var(--surface); }
+.pf-about p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-2); white-space: pre-line; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.pf-about p.open { display: block; }
+.pf-about-acts { display: flex; align-items: center; gap: 16px; }
+.pf-about-acts a, .pf-about-more { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: none; font: inherit; font-size: 13.5px; font-weight: 700; color: var(--accent); cursor: pointer; }
+.pf-about-acts a { margin-left: auto; }
+.pf-about-more[hidden] { display: none; }
+/* 1.50.3: свернуть «Что ещё заполнить» — стрелка поворачивается, остаются заголовок и полоса */
+.pf-progress-head svg { flex: none; color: var(--muted); transition: transform .2s; }
+.pf-progress.closed .pf-progress-head svg { transform: rotate(-90deg); }
+.pf-progress.closed .pf-todo { display: none; }
 .pf-bar { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
 .pf-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent-fill); }
 .pf-todo { display: flex; flex-direction: column; margin: -2px 0 -6px; }
@@ -2957,16 +2970,10 @@ body.pv-open { overflow: hidden; }
 
 /* 1.46.0: карточка профиля с тарифом — обложка витрины, тариф, быстрые ссылки (и на телефоне) */
 .pf-card.shop { padding-top: 0; overflow: hidden; background: var(--card); border: 1px solid var(--line); }
-.pf-cover { position: relative; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; height: 116px; margin: 0 -20px; padding: 14px 16px; color: #fff; }
-.pf-plan { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px; background: rgba(255, 255, 255, .92); color: var(--accent); font-size: 13px; font-weight: 750; }
-/* 1.49.1: метки на обложке — каждая в одну строку: тариф слева, «Бесплатно» справа, срок — стеклом в правом нижнем углу */
-.pf-plan, .pf-trial, .pf-until { flex: none; white-space: nowrap; }
-.pf-plan { color: #2F53B5; } /* фон метки всегда белый — цвет текста одинаковый в обеих темах */
-.pf-cover .pf-plan { box-shadow: 0 6px 16px rgba(20, 30, 90, .18); }
-.pf-trial, .pf-until { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px 0 9px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .38); background: rgba(255, 255, 255, .18); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: #fff; font-size: 12.5px; font-weight: 700; letter-spacing: .01em; }
-.pf-trial { margin: 1px 0 0 auto; }
-.pf-until { position: absolute; right: 14px; bottom: 12px; font-weight: 650; }
-.pf-cover.has .pf-trial, .pf-cover.has .pf-until { background: rgba(14, 18, 48, .36); border-color: rgba(255, 255, 255, .22); }
+.pf-cover { position: relative; display: block; height: 116px; margin: 0 -20px; }
+/* 1.50.1: плашка тарифа или «Официальный аккаунт» — в строке плашек (на обложке меток нет) */
+.pf-card .pf-badges .pf-tariff:not(.dark), .pub-hero .pf-badges .pf-tariff:not(.dark) { background: var(--accent-soft); color: var(--accent); }
+.pf-tariff { height: auto; min-height: 28px; padding: 5px 11px; line-height: 1.3; white-space: normal; } /* длинная строка со сроком не раздвигает колонку */
 /* обложка без фото — мягкие блики */
 .pf-cover { overflow: hidden; isolation: isolate; }
 .pf-cover:not(.has)::before, .pf-cover:not(.has)::after { content: ''; position: absolute; z-index: -1; border-radius: 50%; pointer-events: none; }
@@ -2991,7 +2998,6 @@ body.pv-open { overflow: hidden; }
 .pub-hero.is-shop { position: relative; padding-top: 0; overflow: hidden; background: var(--card); border: 1px solid var(--line); }
 .psh-cover { position: relative; flex: 1 1 100%; height: 220px; margin: 0 -32px; }
 .psh-cover img { width: 100%; height: 100%; object-fit: cover; }
-.psh-cover .pf-plan { position: absolute; left: 20px; top: 18px; }
 .pub-hero.is-shop .pub-ava { position: relative; z-index: 1; align-self: flex-start; margin-top: -76px; }
 .pub-hero.is-shop .pub-ava .avatar { box-shadow: 0 0 0 5px var(--card); }
 .pub-hero.is-shop .shop-about { max-width: 620px; }
@@ -3000,7 +3006,6 @@ body.pv-open { overflow: hidden; }
 @media (max-width: 760px) {
   .pub-hero.is-shop { gap: 14px; }
   .psh-cover { height: 150px; margin: 0 -18px; }
-  .psh-cover .pf-plan { left: 14px; top: 14px; }
   .pub-hero.is-shop .pub-ava { margin-top: -58px; }
   .pub-hero.is-shop .pub-who { flex: 1 1 100%; margin-top: -4px; }
 }
@@ -3358,18 +3363,29 @@ html.dw-open { overflow: hidden; }
 .shop-secs .chip { flex: none; height: 38px; padding: 0 14px; cursor: pointer; font: inherit; font-size: 14px; font-weight: 600; }
 .shop-secs .chip span { color: var(--muted); font-weight: 700; font-size: 12.5px; }
 .shop-secs .chip.active span { color: inherit; opacity: .8; }
-.shop-info { position: sticky; top: 96px; display: flex; flex-direction: column; gap: 14px; padding: 22px; border-radius: 28px; border: 1px solid var(--line); background: var(--card); }
-.shop-info h2 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.02em; }
-.si-row { display: flex; gap: 12px; font-size: 14.5px; line-height: 1.45; }
-.si-row > div { min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow-wrap: anywhere; }
-.si-row small { font-size: 12.5px; color: var(--muted); }
-.si-row a { color: var(--accent); font-weight: 600; }
-.si-ic { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
-.sa-map { display: block; margin-top: 2px; font-size: 13.5px; }
+/* 1.50.2: «О магазине» / «О Торгане» — шапка в градиенте, значки в цветных плитках, строки через линию */
+.shop-info { position: sticky; top: 96px; overflow: hidden; border-radius: 28px; border: 1px solid var(--line); background: var(--card); box-shadow: 0 14px 34px rgba(46, 60, 140, .08); }
+.si-head { display: flex; align-items: center; gap: 12px; padding: 18px 20px; background: var(--grad-soft); }
+.si-head h2 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.02em; }
+.si-mark { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--grad); color: #fff; box-shadow: 0 6px 16px rgba(61, 103, 208, .3); }
+.si-list { display: flex; flex-direction: column; padding: 4px 20px 8px; }
+.si-row { display: flex; gap: 14px; padding: 14px 0; font-size: 15px; line-height: 1.45; }
+.si-row + .si-row { border-top: 1px solid var(--line); }
+.si-row > div { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; overflow-wrap: anywhere; }
+.si-row small { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.si-v { font-weight: 600; color: var(--text); }
+.si-ic { flex: none; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; background: var(--grad); color: #fff; box-shadow: 0 6px 14px rgba(61, 103, 208, .24); }
+.si-open { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; padding: 2px 9px 2px 8px; border-radius: 999px; background: #E5F3EA; color: #1F6B3A; font-size: 12px; font-weight: 700; vertical-align: 1px; }
+.si-open::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #2E9A5B; }
+.si-link { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; color: var(--accent); font-size: 14.5px; font-weight: 700; }
+.si-link svg { transition: transform .15s; }
+.si-link:hover svg { transform: translateX(2px); }
 @media (max-width: 1100px) { .shop-body { grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; } }
 @media (max-width: 900px) {
   .shop-body { grid-template-columns: minmax(0, 1fr); }
-  .shop-info { position: static; padding: 18px; border-radius: 24px; }
+  .shop-info { position: static; border-radius: 24px; }
+  .si-head { padding: 16px 18px; }
+  .si-list { padding: 2px 18px 6px; }
 }
 @media (max-width: 600px) {
   .shop-find { flex-basis: 100%; height: 46px; }
