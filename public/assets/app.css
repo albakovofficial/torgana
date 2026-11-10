@@ -323,8 +323,13 @@ button { cursor: pointer; }
 .pf-badge.ok { background: var(--accent-soft); color: var(--accent); }
 .pf-badge.warn { background: var(--warn-soft); color: var(--c-8a5a00); }
 .pf-progress { display: flex; flex-direction: column; gap: 10px; }
-.pf-progress-head { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 16px; font-size: 13px; font-weight: 600; }
+.pf-progress-head { display: flex; align-items: center; gap: 4px 8px; width: 100%; padding: 0; border: 0; background: none; font: inherit; font-size: 13px; font-weight: 600; color: var(--text); text-align: left; cursor: pointer; }
+.pf-progress-head span { flex: 1; }
 .pf-progress-head b { color: var(--accent); font-weight: 800; }
+/* 1.50.3: свернуть «Что ещё заполнить» — стрелка поворачивается, остаются заголовок и полоса */
+.pf-progress-head svg { flex: none; color: var(--muted); transition: transform .2s; }
+.pf-progress.closed .pf-progress-head svg { transform: rotate(-90deg); }
+.pf-progress.closed .pf-todo { display: none; }
 .pf-bar { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
 .pf-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent-fill); }
 .pf-todo { display: flex; flex-direction: column; margin: -2px 0 -6px; }

@@ -3627,16 +3627,26 @@
         <a class="pft" href="/profile/business/stats"><span class="pft-ic">${ic('chart', 19, 2.2)}</span><b>Статистика</b><small>Показы и переходы</small><span class="pft-go">${ic('right', 16, 2.4)}</span></a>
         <a class="pft" href="/profile/business/shop"><span class="pft-ic">${ic('store', 19, 2.2)}</span><b>Настройка витрины</b><small>Обложка и описание</small><span class="pft-go">${ic('right', 16, 2.4)}</span></a>
       </div>` : ''}
-      ${pct < 100 ? html`<div class="pf-progress">
-        <div class="pf-progress-head"><span>Профиль заполнен</span><b>${pct}%</b></div>
+      ${pct < 100 ? html`<div class="pf-progress ${todoClosed() ? 'closed' : ''}">
+        <button type="button" class="pf-progress-head" data-todo-toggle aria-expanded="${todoClosed() ? 'false' : 'true'}" aria-label="${todoClosed() ? 'Показать, что ещё заполнить' : 'Скрыть список'}"><span>Профиль заполнен</span><b>${pct}%</b>${ic('down', 16, 2.4)}</button>
         <div class="pf-bar"><i style="width:${pct}%"></i></div>
         <div class="pf-todo">${todo.map((t) => html`<button type="button" class="pf-todo-row" data-todo="${t[3]}"><i aria-hidden="true"></i><span>${t[1]}</span><b>${t[2]}</b></button>`)}</div>
       </div>` : ''}
     </div>`;
   }
+  // 1.50.3: список «Что ещё заполнить» можно свернуть — нажатием на «Профиль заполнен»; запоминается на устройстве.
+  const TODO_KEY = 'tg-todo-closed';
+  const todoClosed = () => { try { return localStorage.getItem(TODO_KEY) === '1'; } catch { return false; } };
   // «Что ещё заполнить»: фото — сразу выбор файла, город — настройки, почта — письмо с кодом, витрина — нужное поле.
   function bindIdCard(again) {
     $('[data-ava-pick]').onclick = () => pickAvatar(again);
+    const tg = $('[data-todo-toggle]');
+    if (tg) tg.onclick = () => {
+      const closed = tg.parentElement.classList.toggle('closed');
+      tg.setAttribute('aria-expanded', closed ? 'false' : 'true');
+      tg.setAttribute('aria-label', closed ? 'Показать, что ещё заполнить' : 'Скрыть список');
+      try { localStorage.setItem(TODO_KEY, closed ? '1' : '0'); } catch { /* без памяти — просто на этой странице */ }
+    };
     $$('[data-todo]').forEach((b) => {
       b.onclick = () => {
         const t = b.dataset.todo;
