@@ -757,6 +757,17 @@ a.pf-num:hover { color: var(--text); box-shadow: 0 6px 18px rgba(16, 16, 16, .07
   .pub-side .pf-num b { font-size: 18px; }
   .pub .seg-lg { align-self: stretch; width: auto; }
   .pub .seg-lg a { flex: 1; justify-content: center; }
+  /* 1.51.1: на 320–360 px карточка профиля и плитки разделов не шире экрана */
+  .pf-side, .pf-main { min-width: 0; }
+  .pf2.is-hub .pf-side .pf-nav a { min-width: 0; }
+  .pf2.is-hub .pf-side .pf-nav .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pub-acts { min-width: 0; }
+  .pub-acts .btn { min-width: 0; padding-inline: 14px; }
+  .pf-empty .btn { max-width: 100%; }
+}
+@media (max-width: 360px) {
+  .pf2.is-hub .pf-side .pf-nav a { padding: 0 10px; gap: 8px; font-size: 14px; }
+  .pf-empty .btn { padding-inline: 16px; font-size: 14px; }
 }
 /* Настройки на телефоне: без якоря — карточка и список разделов, с якорем — открытый раздел и «‹ Настройки». */
 @media (max-width: 760px) {
@@ -3475,3 +3486,6 @@ html.dw-open { overflow: hidden; }
   .fa-act .btn { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .fa-tabs button, .footer .f-app-link { transition: none; } }
+
+/* 1.51.1: поле с ошибкой в формах входа и регистрации */
+.input[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(220, 53, 69, .12); }

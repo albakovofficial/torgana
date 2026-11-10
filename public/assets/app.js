@@ -994,7 +994,17 @@
   let cleanup = null;
   // 1.47.2: фильтры поиска закрыты и на компьютере; открытые остаются открытыми при смене фильтра (страница перерисовывается).
   let filtersOpen = false;
+  // 1.51.1: «Назад» и «Вперёд» возвращают туда же, где читали: у записи истории — прокрутка и сколько карточек ленты
+  // было загружено. Браузер сам прокрутку не восстанавливает — страница рисуется заново, позже его попытки.
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  let restoreTo = null; // { y, n } — запись истории, на которую вернулись «Назад»/«Вперёд»
+  let backTo = null; // то же на время отрисовки страницы (читает лента)
+  let feedN = 0; // сколько карточек загрузила лента на текущей странице
+  function rememberPlace() {
+    try { history.replaceState({ ...(history.state || {}), y: Math.round(window.scrollY), n: feedN }, ''); } catch { /* слишком часто — не важно */ }
+  }
   function go(url, replace = false) {
+    if (!replace) rememberPlace();
     history[replace ? 'replaceState' : 'pushState']({}, '', url);
     render();
   }
@@ -1036,7 +1046,8 @@
     e.preventDefault();
     go(href);
   });
-  window.addEventListener('popstate', render);
+  window.addEventListener('popstate', (e) => { restoreTo = e.state && e.state.y != null ? e.state : null; render(); });
+  window.addEventListener('pagehide', rememberPlace); // ушли на другой сайт или обновили — вернёмся на то же место
   window.addEventListener('scroll', () => $('#header').classList.toggle('scrolled', window.scrollY > 4), { passive: true });
 
   const ROUTES = [
@@ -1077,6 +1088,9 @@
     const q = new URLSearchParams(location.search);
     const r = ROUTES.find(([re]) => re.test(path));
     const keep = S.keep; S.keep = null;
+    backTo = restoreTo || (!S.from && history.state && history.state.y != null ? history.state : null); // «Назад» или возврат на страницу
+    const back = backTo;
+    restoreTo = null; feedN = 0;
     window.scrollTo(0, 0);
     // Профиль временно удалён — после входа открыт только экран восстановления (и правила).
     if (S.user && S.user.deactivatedAt && !path.startsWith('/page/')) { viewDeactivated(); return; }
@@ -1090,6 +1104,8 @@
         const el = keep.focus && document.getElementById(keep.focus); if (el) el.focus({ preventScroll: true });
       }
       await done;
+      backTo = null;
+      if (back && back.y && !keep) window.scrollTo(0, back.y);
       watchImpressions();
       metrikaHit();
     } catch (err) {
@@ -1164,11 +1180,12 @@
   function listingFeed(box, params, { limit = 24, empty, onFirst, auto = false, map = null }) {
     const more = box.nextElementSibling;
     let offset = 0; let total = Infinity; let busy = false; let io = null; let dead = false;
+    const want = backTo && backTo.n > limit ? Math.min(backTo.n, 60) : limit; // «Назад»: сразу столько, сколько видели (сервер отдаёт до 60 за раз)
     const load = async () => {
       if (busy || dead || offset >= total) return;
       busy = true;
       try {
-        const data = await api('GET', `/api/listings?${new URLSearchParams({ ...params, limit, offset })}`);
+        const data = await api('GET', `/api/listings?${new URLSearchParams({ ...params, limit: offset ? limit : want, offset })}`);
         if (!box.isConnected || dead) return; // ленту уже сменили (другая категория на главной)
         if (map) data.items = data.items.map(map);
         if (offset === 0) {
@@ -1177,7 +1194,7 @@
         } else {
           $('.grid', box).insertAdjacentHTML('beforeend', data.items.map((i) => String(card(i))).join(''));
         }
-        offset += data.items.length;
+        offset += data.items.length; feedN = offset;
         total = data.items.length ? data.total : offset;
         more.classList.toggle('hidden', offset >= total);
         if (io && offset < total) { io.unobserve(more); io.observe(more); } // экран ещё не заполнен — грузим дальше
@@ -1248,8 +1265,8 @@
         empty: cat ? html`<div class="empty"><h3>В разделе «${name}» пока пусто${S.city ? ` · ${S.city}` : ''}</h3><p>Станьте первым — разместить объявление бесплатно.</p><a class="btn btn-dark" href="/new">Разместить объявление</a></div>`
           : html`<div class="empty"><h3>${S.city ? `В городе ${S.city} пока нет объявлений` : 'Здесь появятся первые объявления'}</h3><p>Разместите своё — это бесплатно и займёт пару минут.</p><a class="btn btn-dark" href="/new">Разместить объявление</a></div>`
       });
-      feed.first.then(() => adRow(box, params, 'feed', S.city ? `в городе ${S.city}` : '')).catch(() => {});
-      return feed.first;
+      // ряд «Реклама» встаёт над лентой — ждём его, чтобы «Назад» вернул на то же место
+      return feed.first.then(() => adRow(box, params, 'feed', S.city ? `в городе ${S.city}` : '').catch(() => {}));
     };
     $('.cat-pills').addEventListener('click', (e) => {
       const a = e.target.closest('[data-cat]');
@@ -2957,6 +2974,24 @@
   }
   function bindOauth(root, next) { $$('[data-oauth]', root).forEach((b) => { b.onclick = () => oauthGo(b.dataset.oauth, { next: next || '/profile' }); }); }
 
+  // 1.51.1: пустые и неверные поля ловим до запроса — подсвечиваем и говорим, что исправить.
+  function fieldProblem(f) {
+    const label = (i) => (($(`label[for="${i.id}"]`, f) || {}).textContent || '').trim();
+    const why = (i) => {
+      const v = i.value.trim();
+      if (i.required && !v) return 'empty';
+      if (i.type === 'email' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'Проверьте email — например, name@mail.ru';
+      if (i.minLength > 0 && v && i.value.length < i.minLength) return `${label(i)} — минимум ${i.minLength} символов`;
+      return '';
+    };
+    const list = $$('input.input', f).map((i) => [i, why(i)]);
+    list.forEach(([i, w]) => { if (w) i.setAttribute('aria-invalid', 'true'); else i.removeAttribute('aria-invalid'); i.oninput = () => i.removeAttribute('aria-invalid'); });
+    const bad = list.filter(([, w]) => w);
+    if (!bad.length) return '';
+    bad[0][0].focus();
+    const empty = bad.filter(([, w]) => w === 'empty').map(([i]) => `«${label(i)}»`);
+    return empty.length ? `Заполните ${empty.length > 1 ? 'поля' : 'поле'} ${empty.join(' и ')}` : bad[0][1];
+  }
   function bindAuthForm(url, next, { extra = {}, check, done } = {}) {
     const f = $('#f');
     f.onsubmit = async (e) => {
@@ -2964,7 +2999,7 @@
       const err = $('#err');
       err.classList.add('hidden');
       const body = { ...Object.fromEntries(new FormData(f).entries()), ...(typeof extra === 'function' ? extra() : extra) };
-      const problem = check && check(body);
+      const problem = fieldProblem(f) || (check && check(body));
       if (problem) { err.textContent = problem; err.classList.remove('hidden'); return; }
       const btn = $('button[type=submit]', f);
       btn.disabled = true;
@@ -2994,7 +3029,6 @@
         <button class="btn btn-dark btn-lg btn-block" type="submit">Отправить ссылку</button>
       </form>`, html`<p class="alt">Вспомнили? <a href="/login">Войти</a></p>`);
     bindAuthForm('/api/auth/forgot', null, {
-      check: (b) => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email || '') ? '' : 'Проверьте email'),
       done: () => authPage('Проверьте почту', 'Если такой аккаунт есть, мы отправили письмо со ссылкой. Она действует 1 час. Письма нет — загляните в «Спам».',
         html`<a class="btn btn-soft btn-lg btn-block" href="/login">Вернуться ко входу</a>`)
     });
@@ -3017,7 +3051,7 @@
       </form>`);
     bindAuthForm('/api/auth/reset', '/profile', {
       extra: { token },
-      check: (b) => (b.password.length < 8 ? 'Пароль — минимум 8 символов' : b.password !== b.password2 ? 'Пароли не совпадают' : '')
+      check: (b) => (b.password !== b.password2 ? 'Пароли не совпадают' : '')
     });
   }
 
