@@ -1078,7 +1078,7 @@
           <label class="sr" for="q">Что вы ищете</label>
           <input id="q" name="q" type="search" placeholder="Поиск" autocomplete="off" enterkeyhint="search">
           <button type="button" class="hs-city" data-city-btn aria-label="Город: ${S.city || 'Вся Россия'}">${ic('pin', 15, 2)}<span>${S.city || 'Вся Россия'}</span></button>
-          <button class="hs-go" type="submit" aria-label="Найти">${ic('search', 19, 2.2)}</button>
+          <button class="hs-go" type="submit" aria-label="Найти">${ic('search', 16, 2.2)}</button>
         </form>
         <div class="cat-rail"><button type="button" class="cat-arrow prev" data-cat-scroll="-1" aria-label="Назад">${ic('left', 18, 2.2)}</button>
           <nav class="cat-pills" aria-label="Категории"><a class="cat-pill ${cat ? '' : 'on'}" data-cat="" href="/search${S.city ? `?city=${encodeURIComponent(S.city)}` : ''}" ${cat ? '' : raw('aria-current="true"')}>${ic('list', 17, 2)}Все</a>${S.config.categories.map((c) => html`<a class="cat-pill ${c.id === cat ? 'on' : ''}" data-cat="${c.id}" href="${cpath(c.id, S.city)}" ${c.id === cat ? raw('aria-current="true"') : ''}>${catIc(c.id, 18)}${c.name}</a>`)}</nav>
@@ -1193,18 +1193,20 @@
         <form id="filter-form" class="filters-body">
           <div class="f-head"><h3>Фильтры</h3><button type="button" class="icon-btn f-close" data-f-close aria-label="Скрыть фильтры">${ic('close', 20, 2)}</button></div>
           <input type="hidden" name="q" value="${params.q || ''}">
-          <div class="field"><label for="f-cat">Категория</label>
-            <select id="f-cat" name="category" class="select"><option value="">Все категории</option>
-              ${S.config.categories.map((c) => html`<option value="${c.id}" ${c.id === category ? raw('selected') : ''}>${c.name}</option>`)}
-            </select></div>
-          <div id="f-extra" class="f-extra"></div>
-          <div class="field"><label for="f-city">Город</label>
-            <input id="f-city" name="city" class="input" data-cities data-any="Вся Россия" autocomplete="off" placeholder="Вся Россия" value="${params.city || ''}"></div>
+          <div class="f-row2">
+            <div class="field"><label for="f-cat">Категория</label>
+              <select id="f-cat" name="category" class="select"><option value="">Все категории</option>
+                ${S.config.categories.map((c) => html`<option value="${c.id}" ${c.id === category ? raw('selected') : ''}>${c.name}</option>`)}
+              </select></div>
+            <div class="field"><label for="f-city">Город</label>
+              <input id="f-city" name="city" class="input" data-cities data-any="Вся Россия" autocomplete="off" placeholder="Вся Россия" value="${params.city || ''}"></div>
+          </div>
           <div id="f-metro"></div>
+          <div id="f-extra" class="f-extra"></div>
           <div class="field"><span class="label">Цена, ₽</span>
             <div class="row"><label class="sr" for="f-min">Цена от</label><input id="f-min" name="min" class="input" inputmode="numeric" placeholder="от" value="${params.min || ''}">
             <label class="sr" for="f-max">Цена до</label><input id="f-max" name="max" class="input" inputmode="numeric" placeholder="до" value="${params.max || ''}"></div></div>
-          ${[['delivery', 'С доставкой'], ['bargain', 'Торг уместен'], ['exchange', 'Возможен обмен'], ['trusted', 'Надёжные продавцы']].map(([k, t]) => html`<label class="switch"><span>${t}</span><input type="checkbox" name="${k}" value="1" ${params[k] === '1' ? raw('checked') : ''}><span class="track"></span></label>`)}
+          <div class="f-switches">${[['delivery', 'С доставкой'], ['bargain', 'Торг уместен'], ['exchange', 'Возможен обмен'], ['trusted', 'Надёжные продавцы']].map(([k, t]) => html`<label class="switch"><span>${t}</span><input type="checkbox" name="${k}" value="1" ${params[k] === '1' ? raw('checked') : ''}><span class="track"></span></label>`)}</div>
           <div class="f-go"><button class="btn btn-dark btn-block" type="submit" id="f-show">Показать</button>
           <a href="/search${params.q ? `?q=${encodeURIComponent(params.q)}` : ''}" class="btn btn-soft btn-block">Сбросить</a></div>
         </form>

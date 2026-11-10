@@ -3090,3 +3090,29 @@ html.dw-open { overflow: hidden; }
   .adm .my-actions { grid-column: 1 / -1; flex-wrap: nowrap; gap: 6px; }
   .adm .my-actions .btn { flex: 1 1 0; min-width: 0; padding: 0 8px; font-size: 14px; }
 }
+
+/* 1.47.3: строка поиска на телефоне — тот же вид (город плашкой, круглая кнопка со значком), только меньше. */
+@media (max-width: 900px) {
+  .home-search { height: 48px; padding: 0 7px 0 14px; gap: 8px; }
+  .home-search .hs-city { height: 34px; max-width: 120px; padding: 0 10px; gap: 4px; font-size: 13px; }
+  .home-search .hs-city svg { width: 14px; height: 14px; }
+  .home-search .hs-go { width: 34px; height: 34px; }
+}
+
+/* 1.47.3: фильтры на телефоне компактнее — категория и город в один ряд, поля ниже, переключатели — плашками в строку. */
+@media (max-width: 900px) {
+  .filters:not(.collapsed) { padding: 16px; border-radius: 24px; }
+  .filters-body { gap: 12px; }
+  .filters-body .f-head h3 { font-size: 18px; }
+  .filters-body .f-close { width: 36px; height: 36px; }
+  .f-row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .filters-body .field { gap: 5px; margin: 0; }
+  .filters-body .field > label, .filters-body .field > .label { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .filters-body .input, .filters-body .select, .filters-body .pick-btn { height: 44px; min-height: 44px; padding-left: 14px; font-size: 15px; border-radius: 14px; }
+  .filters-body .row { gap: 8px; }
+  .f-switches { display: flex; flex-wrap: wrap; gap: 6px; }
+  .f-switches .switch { flex: none; min-height: 0; height: 38px; padding: 0 14px; border-radius: 999px; background: var(--surface); font-size: 14px; font-weight: 600; color: var(--text-2); cursor: pointer; }
+  .f-switches .switch .track { display: none; }
+  .f-switches .switch:has(input:checked) { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .f-switches .switch:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+}
