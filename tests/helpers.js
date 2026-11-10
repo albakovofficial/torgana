@@ -25,9 +25,9 @@ function freePort() {
 }
 
 // Запускает отдельный экземпляр сайта с пустой базой во временной папке.
-async function startServer(extraEnv = {}) {
+async function startServer(extraEnv = {}, keepTmp = null) {
   const port = await freePort();
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'torgana-test-'));
+  const tmp = keepTmp || fs.mkdtempSync(path.join(os.tmpdir(), 'torgana-test-'));
   const env = {
     PATH: process.env.PATH,
     HOME: tmp,
@@ -64,6 +64,12 @@ async function startServer(extraEnv = {}) {
       child.kill();
       await new Promise((r) => (child.exitCode !== null ? r() : child.once('exit', r)));
       fs.rmSync(tmp, { recursive: true, force: true });
+    },
+    // Перезапуск на той же базе — проверить, что делается при запуске (1.48.0).
+    async restart() {
+      child.kill();
+      await new Promise((r) => (child.exitCode !== null ? r() : child.once('exit', r)));
+      return startServer(extraEnv, tmp);
     }
   };
 }
