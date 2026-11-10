@@ -199,8 +199,8 @@ function marketEstimate({ id = 0, category, title, priceUnit }) {
   return { median: median(rows.map((r) => r.price)), count: rows.length };
 }
 
-// strict — форма объявления (1.22): главные характеристики раздела обязательны; автозагрузка из фида — без strict.
-function validateListing(body, { strict = false } = {}) {
+// Главные характеристики раздела обязательны (1.22).
+function validateListing(body) {
   let title = str(body.title, 80);
   const description = str(body.description, 4000);
   const category = str(body.category, 40);
@@ -219,9 +219,8 @@ function validateListing(body, { strict = false } = {}) {
   // Подкатегория — из списка своей категории; характеристики — только её поля.
   const subcategory = taxonomy.SUB[body.subcategory] && taxonomy.SUB[body.subcategory].category === category ? body.subcategory : '';
   let attrs = {};
-  try { attrs = taxonomy.cleanAttrs(subcategory, body.attrs, { strict }); } catch (e) { throw new HttpError(400, e.message); }
-  // 1.48.0: в форме у машин, квартир, телефонов… название собираем из характеристик (как на Авито); фид — со своим названием.
-  // В фиде модели может не быть — берём её из названия фида; не вышло — остаётся название фида.
+  try { attrs = taxonomy.cleanAttrs(subcategory, body.attrs, { strict: true }); } catch (e) { throw new HttpError(400, e.message); }
+  // 1.48.0: у машин, квартир, телефонов… название собираем из характеристик.
   if (taxonomy.TITLE_SUBS.has(subcategory)) { const r = taxonomy.retitle(subcategory, attrs, title); if (r) { title = r.title; attrs = r.attrs; } }
   if (title.length < 3) throw new HttpError(400, 'Название слишком короткое');
   // 1.48.0: VIN или номер кузова — только у машин; на странице объявления виден частично, целиком — по нажатию.
@@ -239,9 +238,9 @@ function validateListing(body, { strict = false } = {}) {
   if (station && metro.has(city) && !metro.isStation(city, station)) throw new HttpError(400, 'Выберите станцию метро из списка');
   if (station && !metro.has(city) && metro.cities().length) station = '';
   const district = str(body.district, 60);
-  // video: undefined — не менять (автозагрузка), '' — убрать, имя файла — новое видео.
+  // video: undefined — не менять, '' — убрать, имя файла — новое видео.
   const video = body.video === undefined ? undefined : str(body.video, 60);
-  // Торг и обмен: undefined — не менять (автозагрузка из фида).
+  // Торг и обмен: undefined — не менять.
   const bargain = body.bargain === undefined ? undefined : body.bargain ? 1 : 0;
   const exchange = body.exchange === undefined ? undefined : body.exchange ? 1 : 0;
   // Публикация в выбранное время — не дальше чем через 30 дней; время в прошлом или «сразу» — null.
@@ -252,7 +251,7 @@ function validateListing(body, { strict = false } = {}) {
     if (publishAt <= now()) publishAt = null;
     else if (publishAt > now() + 31 * DAY) throw new HttpError(400, 'Отложить публикацию можно не больше чем на 30 дней');
   }
-  // 1.48.2: алкоголь, табак и никотин, эротические товары — сразу нельзя (и в форме, и в фиде).
+  // 1.48.2: алкоголь, табак и никотин, эротические товары — сразу нельзя.
   const banned = blockedOf(title, description);
   if (banned) throw new HttpError(400, `На Торгане нельзя продавать: ${banned.title.toLowerCase()} (в объявлении — «${banned.words[0]}»). Если мы ошиблись — напишите в поддержку, модератор проверит`);
   // Похоже на запрещённое — публикуем после проверки модератором.
@@ -334,7 +333,7 @@ const trust = require('./lib/trust')({ route, db, h: helpers, mailer, dataDir: D
 require('./lib/admin')({ route, db, h: helpers, trust }); // сводка, пользователи, журнал, письма модератору
 helpers.sources = require('./lib/sources')({ route, db, h: helpers }); // откуда пришли люди (1.38)
 const oauth = require('./lib/oauth')({ route, db, h: helpers, auth, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, secureCookies: SECURE_COOKIES, adminEmails: ADMIN_EMAILS, testBase: process.env.OAUTH_TEST_BASE || '' });
-// Платные услуги для бизнеса: оплата через ЮKassa, тарифы «Магазин» и «Магазин Про», продвижение, автозагрузка из фида.
+// Платные услуги для бизнеса: оплата через ЮKassa, тарифы «Магазин» и «Магазин Про», продвижение.
 helpers.logEvent = logEvent;
 helpers.categoryIds = CATEGORY_IDS;
 const billing = require('./lib/billing')({ route, db, h: helpers, mailer, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, testBase: process.env.YOOKASSA_TEST_BASE || '' });
@@ -343,7 +342,6 @@ const promo = require('./lib/promo')({ route, db, h: helpers, billing, business,
 // Продвижение в ленте и поиске для всех продавцов: XL-карточка, рамка, метки на фото (1.21.0).
 const boost = require('./lib/boost')({ route, db, h: helpers, billing });
 boostApi = boost;
-const feed = require('./lib/feed')({ route, db, h: helpers, business });
 const blocks = require('./lib/blocks')({ route, db, h: helpers }); // 1.48.0: чёрный список
 helpers.blocks = blocks;
 const deals = require('./lib/deals')({ route, db, h: helpers, alerts }); // предложение цены, быстрые ответы, подписки
@@ -396,13 +394,14 @@ route('PUT', '/api/admin/seo', async (ctx) => {
   return { seo: next };
 }); // тариф и витрина — в карточке пользователя в модерации
 
-// Раздел «Для бизнеса» в профиле: тариф, цены, витрина, автозагрузка, продвижения, платежи.
+// Раздел «Для бизнеса» в профиле: тариф, цены, витрина, продвижения, платежи.
 route('GET', '/api/my/business', (ctx) => {
   const u = requireUser(ctx);
   return {
     plan: business.planOf(u), prices: billing.prices(), ready: billing.ready(), biz: trust.bizOf(u), bizAccount: !!u.biz_account, trial: business.trialBlock(u) === '', trialWhy: business.trialBlock(u),
-    shop: { cover: photoUrl(u.shop_cover), about: u.shop_about, hours: u.shop_hours, address: u.shop_address, site: u.shop_site },
-    feed: feed.publicFeed(u), promotions: promo.listFor(u.id), payments: billing.listFor(u.id)
+    shop: business.shopOf(u) || { cover: photoUrl(u.shop_cover), about: u.shop_about, hours: u.shop_hours, address: u.shop_address, site: u.shop_site, delivery: u.shop_delivery, pins: [] },
+    pinned: (business.shopOf(u) || { pins: [] }).pins.map((id) => db.prepare('SELECT id, title FROM listings WHERE id = ? AND user_id = ? AND status = \'active\'').get(id, u.id)).filter(Boolean),
+    promotions: promo.listFor(u.id), payments: billing.listFor(u.id)
   };
 });
 
@@ -756,8 +755,7 @@ route('GET', '/api/listings/:id/vin', (ctx) => {
   return { vin: l.vin };
 });
 
-// Новое объявление и правка — одни функции для формы и для автозагрузки из фида (lib/feed.js).
-// Все объявления публикуются после проверки модератором; любая правка — снова на проверку.
+// Новое объявление и правка. Все объявления публикуются после проверки модератором; любая правка — снова на проверку.
 function createListing(u, v) {
   const t = now();
   const info = db.prepare(`INSERT INTO listings (user_id, title, description, category, price, price_unit, city, condition, delivery, bargain, exchange, publish_at, search_text, city_lc, status, flags,
@@ -769,7 +767,7 @@ function createListing(u, v) {
   attachPhotos(u.id, id, v.photos);
   if (v.video) video.attach(u.id, id, v.video);
   if (!u.city) db.prepare('UPDATE users SET city = ? WHERE id = ?').run(v.city, u.id);
-  logEvent(id, u.id, 'created', { flags: v.flags, ...(v.via ? { via: v.via } : {}) });
+  logEvent(id, u.id, 'created', { flags: v.flags });
   autoChecks.run(id);
   alerts.notifyAdmins('pending', { title: 'Новое объявление на проверку', body: `«${v.title}» — ${u.name}. В очереди: ${alerts.pendingCount()}`, url: `/admin/l/${id}` }, u.id);
   return id;
@@ -796,7 +794,7 @@ function updateListing(u, l, v) {
   if (v.video !== undefined && v.video !== l.video) { video.attach(u.id, l.id, v.video); changes.video = [l.video ? 'было' : 'не было', v.video ? 'новое' : 'убрано']; }
   const newPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(l.id).map((r) => r.file);
   if (oldPhotos.join() !== newPhotos.join()) changes.photos = [oldPhotos.length, newPhotos.length];
-  logEvent(l.id, u.id, 'edited', { changes, flags: v.flags, from: l.status, ...(v.via ? { via: v.via } : {}) });
+  logEvent(l.id, u.id, 'edited', { changes, flags: v.flags, from: l.status });
   autoChecks.run(l.id);
   alerts.notifyAdmins('pending', { title: 'Объявление изменено — на проверку', body: `«${v.title}» — ${u.name}. В очереди: ${alerts.pendingCount()}`, url: `/admin/l/${l.id}` }, u.id);
 }
@@ -818,7 +816,7 @@ function publishListing(id, fresh = false) {
 helpers.publishListing = publishListing;
 
 // Раз в минуту: публикуем запланированные и снимаем те, у кого прошло 30 дней.
-// Не снимаем объявления из фида (их ведёт автозагрузка) и с идущей рекламой — она оплачена на свой срок.
+// Не снимаем объявления с идущей рекламой — она оплачена на свой срок.
 function listingTick() {
   const t = now();
   for (const { id } of db.prepare('SELECT id FROM listings WHERE status = \'scheduled\' AND publish_at <= ?').all(t)) {
@@ -829,7 +827,6 @@ function listingTick() {
   // 1.47.2: за 3 дня до снятия — push и колокольчик «объявление скоро снимется» (один раз на срок).
   const soon = db.prepare(`SELECT id, user_id, title, expires_at FROM listings WHERE status = 'active' AND expires_at > ? AND expires_at <= ?
     AND (expire_warned_for IS NULL OR expire_warned_for != expires_at)
-    AND id NOT IN (SELECT listing_id FROM feed_items WHERE gone = 0 AND listing_id IS NOT NULL)
     AND id NOT IN (SELECT listing_id FROM promotions WHERE status = 'active' AND listing_id IS NOT NULL)
     AND id NOT IN (SELECT listing_id FROM boosts WHERE status = 'active' AND listing_id IS NOT NULL) LIMIT 500`).all(t, t + 3 * 24 * 3600 * 1000);
   for (const l of soon) {
@@ -838,7 +835,6 @@ function listingTick() {
     alerts.notify(l.user_id, 'moderation', { title: 'Объявление скоро снимется', body: `«${l.title}» — ${day}. Потом его можно опубликовать снова, бесплатно`, url: `/l/${l.id}`, icon: 'clock', tone: 'wait', tag: `soon-${l.id}` });
   }
   const expired = db.prepare(`SELECT id FROM listings WHERE status = 'active' AND expires_at <= ?
-    AND id NOT IN (SELECT listing_id FROM feed_items WHERE gone = 0 AND listing_id IS NOT NULL)
     AND id NOT IN (SELECT listing_id FROM promotions WHERE status = 'active' AND listing_id IS NOT NULL)
     AND id NOT IN (SELECT listing_id FROM boosts WHERE status = 'active' AND listing_id IS NOT NULL)`).all(t);
   for (const { id } of expired) {
@@ -852,7 +848,7 @@ helpers.validateListing = validateListing;
 route('POST', '/api/listings', async (ctx) => {
   const u = requireUser(ctx);
   rateLimit(`create:${u.id}`, 30, 60 * 60 * 1000);
-  const v = validateListing(await readJson(ctx.req), { strict: true });
+  const v = validateListing(await readJson(ctx.req));
   video.check(u.id, v.video);
   const id = createListing(u, v);
   return { id, status: 'pending' };
@@ -875,7 +871,7 @@ route('PATCH', '/api/listings/:id', async (ctx) => {
     const r = db.prepare('SELECT status, expires_at FROM listings WHERE id = ?').get(id);
     return { ok: true, status: r.status, expiresAt: r.expires_at };
   }
-  const v = validateListing(body, { strict: true });
+  const v = validateListing(body);
   if (v.video && v.video !== l.video) video.check(u.id, v.video);
   updateListing(u, l, v);
   return { ok: true, status: 'pending' };
@@ -1191,12 +1187,23 @@ route('GET', '/api/users/:id', (ctx) => {
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   if (!u || u.is_blocked || u.deactivated_at || u.deleted_at) throw new HttpError(404, 'Пользователь не найден');
   const uid = ctx.user ? ctx.user.id : 0;
-  const items = db.prepare(`${CARD_SELECT} WHERE l.user_id = ? AND l.status = 'active' ORDER BY l.created_at DESC LIMIT 60`).all(uid, id)
-    .map((r) => ({ ...cardFromRow(r), seller: null })); // в профиле продавца все объявления его — строка продавца не нужна
-  const sold = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ? AND status = \'sold\'').get(id).n;
-  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rep: reputation.repOf(u.id), badges: badgesOf(u), shop: business.shopOf(u),
-    followers: deals.followers(u.id), following: deals.isFollowing(uid, u.id), block: uid && uid !== u.id ? blocks.between(uid, u.id) : null }, items };
+  // 1.49.0: объявления продавца страница грузит через /api/listings?user=… (поиск, разделы и сортировка витрины);
+  // здесь — счётчики, разделы с числом объявлений и закреплённые магазином (тариф «Магазин Про»).
+  const activeCount = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ? AND status = \'active\'').get(id).n;
+  const shop = business.shopOf(u);
+  const pinned = shop && shop.pins.length ? db.prepare(`${CARD_SELECT} WHERE l.id IN (${shop.pins.map(Number).join(',')}) AND l.user_id = ? AND l.status = 'active'`).all(uid, id)
+    .map((r) => ({ ...cardFromRow(r), seller: null })).sort((a, b) => shop.pins.indexOf(a.id) - shop.pins.indexOf(b.id)) : [];
+  return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, activeCount, emailVerified: !!u.email_verified, rep: reputation.repOf(u.id), badges: badgesOf(u), shop,
+    followers: deals.followers(u.id), following: deals.isFollowing(uid, u.id), block: uid && uid !== u.id ? blocks.between(uid, u.id) : null },
+  sections: shop ? sectionsOf(id) : [], pinned };
 });
+
+// 1.49.0: разделы витрины — из опубликованных объявлений магазина: подкатегория (или категория, если её нет) и число.
+function sectionsOf(userId) {
+  return db.prepare(`SELECT category, subcategory, COUNT(*) AS n FROM listings WHERE user_id = ? AND status = 'active' GROUP BY category, subcategory ORDER BY n DESC LIMIT 30`).all(userId)
+    .map((r) => (taxonomy.SUB[r.subcategory] ? { sub: r.subcategory, name: taxonomy.SUB[r.subcategory].name, n: r.n }
+      : { category: r.category, name: (CATEGORIES.find((c) => c.id === r.category) || { name: r.category }).name, n: r.n }));
+}
 
 // Юридические документы (реквизиты и раздел «Запрещено» подставляются на сервере).
 route('GET', '/api/pages/:slug', (ctx) => {

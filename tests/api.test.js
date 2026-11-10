@@ -402,7 +402,7 @@ describe('публичный профиль', () => {
     assert.equal(r.status, 200);
     assert.equal(r.data.user.name, 'Анна');
     assert.equal(r.data.user.email, undefined);
-    assert.ok(r.data.items.length >= 1);
+    assert.ok(r.data.user.activeCount >= 1);
   });
 });
 

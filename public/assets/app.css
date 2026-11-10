@@ -327,8 +327,14 @@ button { cursor: pointer; }
 .pf-progress-head b { color: var(--accent); font-weight: 800; }
 .pf-bar { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
 .pf-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent-fill); }
-.pf-todo { display: flex; gap: 6px; flex-wrap: wrap; }
-.pf-todo .chip { height: 36px; padding: 0 12px; border-color: transparent; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; }
+.pf-todo { display: flex; flex-direction: column; margin: -2px 0 -6px; }
+/* 1.49.0: «что ещё заполнить» — строки: пунктирный кружок, что, действие */
+.pf-todo-row { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0; border: 0; background: none; font: inherit; font-size: 14px; color: var(--text); text-align: left; cursor: pointer; }
+.pf-todo-row i { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 2px dashed var(--faint); }
+.pf-todo-row span { flex: 1; min-width: 0; }
+.pf-todo-row b { flex: none; color: var(--accent); font-size: 13.5px; font-weight: 700; }
+.pf-todo-row:hover b { text-decoration: underline; }
+.pf-todo-row + .pf-todo-row { border-top: 1px solid var(--line); }
 .pf-status { display: flex; gap: 8px; margin: 0 0 18px; overflow-x: auto; scrollbar-width: none; }
 .pf-status::-webkit-scrollbar { display: none; }
 .pf-status .chip { flex: none; }
@@ -1244,7 +1250,6 @@ a.rep-line:hover { color: var(--text); text-decoration: underline; }
 .ml-promo { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; max-width: 100%; min-height: 24px; padding: 0 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ml-promo svg { flex: none; }
 .ml-promo + .ml-promo { margin-top: 2px; }
-.nav-plan { margin-left: auto; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 11.5px; font-weight: 700; }
 @media (max-width: 600px) { .promo-pick { grid-template-columns: 1fr; } .promo-pick-opt span { flex-direction: row; justify-content: space-between; align-items: center; } }
 
 /* Профиль → «Для бизнеса» */
@@ -1297,10 +1302,6 @@ a.rep-line:hover { color: var(--text); text-decoration: underline; }
 .shop-cover-edit img { width: 100%; height: 100%; object-fit: cover; }
 .sce-hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 999px; background: rgba(255, 255, 255, .92); font-size: 14px; font-weight: 600; white-space: nowrap; }
 .shop-about { margin: 0; font-size: 15px; line-height: 1.6; color: var(--text-2); white-space: pre-line; }
-.shop-facts { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 14px; color: var(--text-2); }
-.shop-facts > * { display: inline-flex; align-items: center; gap: 7px; }
-.shop-facts svg { flex: none; color: var(--accent); }
-.shop-facts a { color: var(--accent); font-weight: 600; }
 
 /* Статистика магазина: список объявлений */
 .sst { display: flex; flex-direction: column; }
@@ -1312,13 +1313,6 @@ a.rep-line:hover { color: var(--text); text-decoration: underline; }
 .sst-n { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 13px; }
 .sst-n b { color: var(--text); font-size: 14px; }
 
-/* Автозагрузка */
-.feed-nums { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; border-radius: 20px; overflow: hidden; }
-.feed-nums > div { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; background: var(--surface); }
-.feed-nums b { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
-.feed-nums span { font-size: 12.5px; color: var(--muted); }
-.feed-errs { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; color: var(--text-2); }
-@media (max-width: 760px) { .feed-nums { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
 /* Модерация: платежи, реклама, цены */
 .adm-pay { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-card); overflow: hidden; }
@@ -2961,9 +2955,7 @@ body.pv-open { overflow: hidden; }
 
 /* 1.46.0: карточка профиля с тарифом — обложка витрины, тариф, быстрые ссылки (и на телефоне) */
 .pf-card.shop { padding-top: 0; overflow: hidden; background: var(--card); border: 1px solid var(--line); }
-.pf-cover { position: relative; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; height: 116px; margin: 0 -20px; padding: 14px 16px; background: radial-gradient(80% 120% at 100% 0%, rgba(91, 95, 214, .55), transparent 70%), linear-gradient(135deg, #3D67D0, var(--c-1e2a6b)); color: #fff; }
-.pf-card.pro .pf-cover { background: radial-gradient(80% 120% at 100% 0%, rgba(185, 200, 255, .45), transparent 70%), linear-gradient(135deg, var(--c-2f53b5), #0E1230); }
-.pf-cover.has { background: linear-gradient(180deg, rgba(0, 0, 0, .35), rgba(0, 0, 0, 0) 60%), var(--cv) center / cover no-repeat; }
+.pf-cover { position: relative; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; height: 116px; margin: 0 -20px; padding: 14px 16px; color: #fff; }
 .pf-plan { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px; background: rgba(255, 255, 255, .92); color: var(--accent); font-size: 13px; font-weight: 750; }
 .pf-until { height: 30px; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; background: rgba(0, 0, 0, .28); font-size: 12.5px; font-weight: 600; }
 .pf-card.shop .pf-who { align-items: flex-start; }
@@ -2971,15 +2963,19 @@ body.pv-open { overflow: hidden; }
 .pf-card.shop .pf-ava .avatar { box-shadow: 0 0 0 4px var(--card); }
 .pf-card.shop .pf-who-txt { flex: 1; padding-top: 4px; }
 .pf-card.shop .pf-badge:not(.dark):not(.seal), .pf-card.shop .pf-num { background: var(--surface); }
-.pf-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.pf-tools a { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; border-radius: 18px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 650; text-align: center; }
-.pf-tools a:hover { background: var(--accent-soft-2); }
+/* 1.49.0: две плитки магазина — «Статистика» и «Настройка витрины» */
+.pf-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.pft { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 14px 14px 15px; border-radius: 20px; background: var(--grad-soft); color: var(--text); box-shadow: inset 0 0 0 1px rgba(61, 103, 208, .12); transition: transform .15s, box-shadow .15s; }
+.pft:hover { color: var(--text); transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(61, 103, 208, .22), 0 10px 22px rgba(46, 60, 140, .12); }
+.pft-ic { width: 38px; height: 38px; margin-bottom: 9px; display: grid; place-items: center; border-radius: 12px; background: var(--grad); color: #fff; box-shadow: 0 6px 14px rgba(61, 103, 208, .3); }
+.pft b { font-size: 14.5px; font-weight: 750; line-height: 1.25; letter-spacing: -0.01em; }
+.pft small { font-size: 12px; line-height: 1.35; color: var(--text-2); }
+.pft-go { position: absolute; top: 14px; right: 12px; color: var(--accent); }
 @media (max-width: 760px) { .pf-cover { height: 104px; } }
 
 /* 1.46.1: шапка магазина в публичном профиле — одна карточка: обложка, тариф, фото поверх обложки, название, описание */
 .pub-hero.is-shop { position: relative; padding-top: 0; overflow: hidden; background: var(--card); border: 1px solid var(--line); }
-.psh-cover { position: relative; flex: 1 1 100%; height: 220px; margin: 0 -32px; background: radial-gradient(60% 120% at 100% 0%, rgba(91, 95, 214, .45), transparent 70%), linear-gradient(135deg, #161B3D, #3D67D0); }
-.pub-hero.pro .psh-cover { background: radial-gradient(60% 120% at 100% 0%, rgba(185, 200, 255, .4), transparent 70%), linear-gradient(135deg, #0E1230, var(--c-2f53b5)); }
+.psh-cover { position: relative; flex: 1 1 100%; height: 220px; margin: 0 -32px; }
 .psh-cover img { width: 100%; height: 100%; object-fit: cover; }
 .psh-cover .pf-plan { position: absolute; left: 20px; top: 18px; }
 .pub-hero.is-shop .pub-ava { position: relative; z-index: 1; align-self: flex-start; margin-top: -76px; }
@@ -3002,6 +2998,8 @@ body { background: linear-gradient(180deg, var(--c-edf2ff) 0px, var(--bg) 340px)
 .bottom-nav a.plus { color: #fff; box-shadow: 0 8px 20px rgba(91, 95, 214, .35); }
 .bz-free { background: var(--grad-soft); color: var(--c-3a3fa8); }
 .pf-cover, .psh-cover, .pub-hero.pro .psh-cover, .pf-card.pro .pf-cover { background: radial-gradient(70% 120% at 100% 0%, rgba(160, 150, 255, .55), transparent 70%), linear-gradient(135deg, #2E6FCC, #5B5FD6); }
+/* 1.49.0: своя обложка магазина — и в карточке профиля (раньше её перекрывал градиент палитры) */
+.pf-card .pf-cover.has { background: linear-gradient(180deg, rgba(0, 0, 0, .35), rgba(0, 0, 0, 0) 60%), var(--cv) center / cover no-repeat; }
 .chip.on, .chip.active { background: var(--grad); color: #fff; border-color: transparent; }
 .hd-new { background: var(--grad); color: #fff; }
 .hd-new:hover { background: var(--grad); filter: brightness(1.06); color: #fff; }
@@ -3322,3 +3320,58 @@ html.dw-open { overflow: hidden; }
 .look-t b { font-size: 15px; }
 .look-it small { padding: 0 4px; font-size: 12.5px; line-height: 1.35; color: var(--muted); }
 @media (max-width: 600px) { .look { grid-template-columns: 1fr; } .look-it { flex-direction: row; align-items: center; flex-wrap: wrap; padding: 10px; } .look-pv { width: 96px; flex: none; } .look-t { flex: 1; } .look-it small { flex-basis: 100%; padding-left: 108px; margin-top: -10px; } }
+
+/* ---------- 1.49.0: имя с галочкой, закреплённые, витрина магазина ---------- */
+.ns-tail { white-space: nowrap; }
+.ml-promo.pinned { background: var(--surface); color: var(--text-2); }
+.pin-list { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.pin-row { min-width: 0; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; border-radius: 16px; background: var(--surface); font-size: 14.5px; }
+.pin-row a { flex: 1 1 0; width: 0; min-width: 0; color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pin-ic { flex: none; color: var(--accent); display: grid; }
+.shop-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start; }
+.shop-main { min-width: 0; display: flex; flex-direction: column; gap: 22px; }
+.shop-pins { display: flex; flex-direction: column; gap: 14px; }
+.shop-pins h2 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+.shop-pins h2 svg { color: var(--accent); }
+.shop-tools { display: flex; flex-wrap: wrap; gap: 10px; }
+.shop-find { flex: 1 1 260px; display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 16px; border-radius: 999px; background: var(--surface); color: var(--muted); }
+.shop-find input { flex: 1; min-width: 0; height: 100%; border: 0; background: transparent; font: inherit; font-size: 15px; color: var(--text); outline: none; }
+.shop-find:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
+/* сортировка: select показывается кнопкой .pick-btn (enhanceSelect) */
+.shop-tools .pick-btn { flex: 0 0 210px; width: 210px; height: 48px; border-radius: 999px; font-size: 15px; font-weight: 600; }
+.shop-secs { flex: 1 1 100%; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px; margin: -2px; }
+.shop-secs::-webkit-scrollbar { display: none; }
+.shop-secs .chip { flex: none; height: 38px; padding: 0 14px; cursor: pointer; font: inherit; font-size: 14px; font-weight: 600; }
+.shop-secs .chip span { color: var(--muted); font-weight: 700; font-size: 12.5px; }
+.shop-secs .chip.active span { color: inherit; opacity: .8; }
+.shop-info { position: sticky; top: 96px; display: flex; flex-direction: column; gap: 14px; padding: 22px; border-radius: 28px; border: 1px solid var(--line); background: var(--card); }
+.shop-info h2 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.02em; }
+.si-row { display: flex; gap: 12px; font-size: 14.5px; line-height: 1.45; }
+.si-row > div { min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow-wrap: anywhere; }
+.si-row small { font-size: 12.5px; color: var(--muted); }
+.si-row a { color: var(--accent); font-weight: 600; }
+.si-ic { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
+.sa-map { display: block; margin-top: 2px; font-size: 13.5px; }
+@media (max-width: 1100px) { .shop-body { grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; } }
+@media (max-width: 900px) {
+  .shop-body { grid-template-columns: minmax(0, 1fr); }
+  .shop-info { position: static; padding: 18px; border-radius: 24px; }
+}
+@media (max-width: 600px) {
+  .shop-find { flex-basis: 100%; height: 46px; }
+  .shop-tools .pick-btn { flex: 1 1 100%; width: 100%; height: 44px; }
+  .shop-secs { margin: -2px -16px; padding: 2px 16px; }
+  .shop-pins h2 { font-size: 18px; }
+  /* 1.49.0: на телефоне тексты в карточке «Моих объявлений» переносятся, а не обрезаются; кнопки — в углу,
+     чтобы цене, меткам и сроку хватало ширины */
+  .ml-card { position: relative; grid-template-columns: auto minmax(0, 1fr); }
+  .ml-side { position: absolute; top: 10px; right: 10px; gap: 6px; }
+  .ml-info > .ml-tag, .ml-info > .ml-title { margin-right: 84px; }
+  .ml-promo { white-space: normal; height: auto; padding: 3px 9px; line-height: 1.3; }
+  .ml-boost { flex-wrap: wrap; row-gap: 2px; }
+  .ml-boost > svg { order: 2; margin-left: auto; }
+  .ml-boost small { order: 3; flex-basis: calc(100% - 42px); margin-left: 42px; white-space: normal; }
+  .pft { padding: 12px 12px 13px; }
+  .pft-ic { width: 34px; height: 34px; margin-bottom: 7px; border-radius: 11px; }
+  .pft b { font-size: 14px; }
+}
