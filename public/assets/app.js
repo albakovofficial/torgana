@@ -835,7 +835,7 @@
     footer.innerHTML = String(html`<div class="wrap">
       <div class="f-main">
         <div class="f-grid">
-          <div class="f-brand">${logo()}<p class="f-tag"><b>Сторгуемся!</b>Объявления по всей России — бесплатно и с проверкой модератора</p></div>
+          <div class="f-brand">${logo()}<p class="f-tag"><b>Сторгуемся!</b>Объявления по всей России — бесплатно и с проверкой модератора</p>${STANDALONE ? '' : html`<a class="f-app-link" href="/app"><span class="ab-ic">${ic('phone', 16, 2.2)}</span>Приложение${ic('right', 16, 2.2)}</a>`}</div>
           ${cols.map(([t, ls]) => html`<details class="fcol" open><summary><h4>${t}</h4>${ic('down', 18, 2)}</summary><ul>${ls.map(([href, label]) => html`<li><a href="${href}">${label}</a></li>`)}</ul></details>`)}
         </div>
         <div class="f-help">
@@ -899,7 +899,8 @@
           ${xl ? '' : html`<span class="card-price">${price(it.price, it.priceUnit)}</span>`}
           <span class="card-title">${it.title}</span>
           ${xl && (bo.desc || it.summary) ? html`<span class="card-desc">${[it.summary, bo.desc].filter(Boolean).join('. ')}</span>` : it.summary ? html`<span class="card-sum">${it.summary}</span>` : ''}
-          <span class="card-meta">${meta}${it.delivery ? html` · <span class="ok">Доставка</span>` : ''}${it.exchange ? html` · <span class="ok">Обмен</span>` : ''}</span>
+          <span class="card-meta">${meta}</span>
+          ${it.delivery || it.exchange ? html`<span class="card-perks">${ic(it.delivery ? 'truck' : 'refresh', 13, 2.2)}${[it.delivery && 'Доставка', it.exchange && 'Обмен'].filter(Boolean).join(' · ')}</span>` : ''}
           ${it.seller ? cardSeller(it.seller) : ''}
         </div>
       </a>
@@ -994,7 +995,17 @@
   let cleanup = null;
   // 1.47.2: фильтры поиска закрыты и на компьютере; открытые остаются открытыми при смене фильтра (страница перерисовывается).
   let filtersOpen = false;
+  // 1.51.1: «Назад» и «Вперёд» возвращают туда же, где читали: у записи истории — прокрутка и сколько карточек ленты
+  // было загружено. Браузер сам прокрутку не восстанавливает — страница рисуется заново, позже его попытки.
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  let restoreTo = null; // { y, n } — запись истории, на которую вернулись «Назад»/«Вперёд»
+  let backTo = null; // то же на время отрисовки страницы (читает лента)
+  let feedN = 0; // сколько карточек загрузила лента на текущей странице
+  function rememberPlace() {
+    try { history.replaceState({ ...(history.state || {}), y: Math.round(window.scrollY), n: feedN }, ''); } catch { /* слишком часто — не важно */ }
+  }
   function go(url, replace = false) {
+    if (!replace) rememberPlace();
     history[replace ? 'replaceState' : 'pushState']({}, '', url);
     render();
   }
@@ -1036,7 +1047,8 @@
     e.preventDefault();
     go(href);
   });
-  window.addEventListener('popstate', render);
+  window.addEventListener('popstate', (e) => { restoreTo = e.state && e.state.y != null ? e.state : null; render(); });
+  window.addEventListener('pagehide', rememberPlace); // ушли на другой сайт или обновили — вернёмся на то же место
   window.addEventListener('scroll', () => $('#header').classList.toggle('scrolled', window.scrollY > 4), { passive: true });
 
   const ROUTES = [
@@ -1056,6 +1068,7 @@
     [/^\/messages(?:\/(\d+|support))?$/, viewMessages],
     [/^\/profile(?:\/(listings|settings|reputation|reviews|searches|following|stats\/\d+|business(?:\/(?:shop|stats))?))?$/, viewProfile],
     [/^\/business$/, viewBusiness],
+    [/^\/app$/, viewApp],
     [/^\/pay\/([\w-]+)$/, viewPay],
     [/^\/u\/(\d+)$/, viewUser],
     [/^\/admin$/, viewAdmin],
@@ -1072,9 +1085,13 @@
     const path = location.pathname.replace(/\/+$/, '') || '/';
     renderHeader();
     renderBottomNav();
+    appBar();
     const q = new URLSearchParams(location.search);
     const r = ROUTES.find(([re]) => re.test(path));
     const keep = S.keep; S.keep = null;
+    backTo = restoreTo || (!S.from && history.state && history.state.y != null ? history.state : null); // «Назад» или возврат на страницу
+    const back = backTo;
+    restoreTo = null; feedN = 0;
     window.scrollTo(0, 0);
     // Профиль временно удалён — после входа открыт только экран восстановления (и правила).
     if (S.user && S.user.deactivatedAt && !path.startsWith('/page/')) { viewDeactivated(); return; }
@@ -1088,6 +1105,8 @@
         const el = keep.focus && document.getElementById(keep.focus); if (el) el.focus({ preventScroll: true });
       }
       await done;
+      backTo = null;
+      if (back && back.y && !keep) window.scrollTo(0, back.y);
       watchImpressions();
       metrikaHit();
     } catch (err) {
@@ -1162,11 +1181,12 @@
   function listingFeed(box, params, { limit = 24, empty, onFirst, auto = false, map = null }) {
     const more = box.nextElementSibling;
     let offset = 0; let total = Infinity; let busy = false; let io = null; let dead = false;
+    const want = backTo && backTo.n > limit ? Math.min(backTo.n, 60) : limit; // «Назад»: сразу столько, сколько видели (сервер отдаёт до 60 за раз)
     const load = async () => {
       if (busy || dead || offset >= total) return;
       busy = true;
       try {
-        const data = await api('GET', `/api/listings?${new URLSearchParams({ ...params, limit, offset })}`);
+        const data = await api('GET', `/api/listings?${new URLSearchParams({ ...params, limit: offset ? limit : want, offset })}`);
         if (!box.isConnected || dead) return; // ленту уже сменили (другая категория на главной)
         if (map) data.items = data.items.map(map);
         if (offset === 0) {
@@ -1175,7 +1195,7 @@
         } else {
           $('.grid', box).insertAdjacentHTML('beforeend', data.items.map((i) => String(card(i))).join(''));
         }
-        offset += data.items.length;
+        offset += data.items.length; feedN = offset;
         total = data.items.length ? data.total : offset;
         more.classList.toggle('hidden', offset >= total);
         if (io && offset < total) { io.unobserve(more); io.observe(more); } // экран ещё не заполнен — грузим дальше
@@ -1246,8 +1266,8 @@
         empty: cat ? html`<div class="empty"><h3>В разделе «${name}» пока пусто${S.city ? ` · ${S.city}` : ''}</h3><p>Станьте первым — разместить объявление бесплатно.</p><a class="btn btn-dark" href="/new">Разместить объявление</a></div>`
           : html`<div class="empty"><h3>${S.city ? `В городе ${S.city} пока нет объявлений` : 'Здесь появятся первые объявления'}</h3><p>Разместите своё — это бесплатно и займёт пару минут.</p><a class="btn btn-dark" href="/new">Разместить объявление</a></div>`
       });
-      feed.first.then(() => adRow(box, params, 'feed', S.city ? `в городе ${S.city}` : '')).catch(() => {});
-      return feed.first;
+      // ряд «Реклама» встаёт над лентой — ждём его, чтобы «Назад» вернул на то же место
+      return feed.first.then(() => adRow(box, params, 'feed', S.city ? `в городе ${S.city}` : '').catch(() => {}));
     };
     $('.cat-pills').addEventListener('click', (e) => {
       const a = e.target.closest('[data-cat]');
@@ -2955,6 +2975,24 @@
   }
   function bindOauth(root, next) { $$('[data-oauth]', root).forEach((b) => { b.onclick = () => oauthGo(b.dataset.oauth, { next: next || '/profile' }); }); }
 
+  // 1.51.1: пустые и неверные поля ловим до запроса — подсвечиваем и говорим, что исправить.
+  function fieldProblem(f) {
+    const label = (i) => (($(`label[for="${i.id}"]`, f) || {}).textContent || '').trim();
+    const why = (i) => {
+      const v = i.value.trim();
+      if (i.required && !v) return 'empty';
+      if (i.type === 'email' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'Проверьте email — например, name@mail.ru';
+      if (i.minLength > 0 && v && i.value.length < i.minLength) return `${label(i)} — минимум ${i.minLength} символов`;
+      return '';
+    };
+    const list = $$('input.input', f).map((i) => [i, why(i)]);
+    list.forEach(([i, w]) => { if (w) i.setAttribute('aria-invalid', 'true'); else i.removeAttribute('aria-invalid'); i.oninput = () => i.removeAttribute('aria-invalid'); });
+    const bad = list.filter(([, w]) => w);
+    if (!bad.length) return '';
+    bad[0][0].focus();
+    const empty = bad.filter(([, w]) => w === 'empty').map(([i]) => `«${label(i)}»`);
+    return empty.length ? `Заполните ${empty.length > 1 ? 'поля' : 'поле'} ${empty.join(' и ')}` : bad[0][1];
+  }
   function bindAuthForm(url, next, { extra = {}, check, done } = {}) {
     const f = $('#f');
     f.onsubmit = async (e) => {
@@ -2962,7 +3000,7 @@
       const err = $('#err');
       err.classList.add('hidden');
       const body = { ...Object.fromEntries(new FormData(f).entries()), ...(typeof extra === 'function' ? extra() : extra) };
-      const problem = check && check(body);
+      const problem = fieldProblem(f) || (check && check(body));
       if (problem) { err.textContent = problem; err.classList.remove('hidden'); return; }
       const btn = $('button[type=submit]', f);
       btn.disabled = true;
@@ -2992,7 +3030,6 @@
         <button class="btn btn-dark btn-lg btn-block" type="submit">Отправить ссылку</button>
       </form>`, html`<p class="alt">Вспомнили? <a href="/login">Войти</a></p>`);
     bindAuthForm('/api/auth/forgot', null, {
-      check: (b) => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email || '') ? '' : 'Проверьте email'),
       done: () => authPage('Проверьте почту', 'Если такой аккаунт есть, мы отправили письмо со ссылкой. Она действует 1 час. Письма нет — загляните в «Спам».',
         html`<a class="btn btn-soft btn-lg btn-block" href="/login">Вернуться ко входу</a>`)
     });
@@ -3015,7 +3052,7 @@
       </form>`);
     bindAuthForm('/api/auth/reset', '/profile', {
       extra: { token },
-      check: (b) => (b.password.length < 8 ? 'Пароль — минимум 8 символов' : b.password !== b.password2 ? 'Пароли не совпадают' : '')
+      check: (b) => (b.password !== b.password2 ? 'Пароли не совпадают' : '')
     });
   }
 
@@ -3455,12 +3492,12 @@
     const k = `md${++medalN}`; const [a, b] = MEDAL[level] || MEDAL[0];
     return raw(`<svg class="medal" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="${k}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><path d="M12 2l8.5 5v10L12 22 3.5 17V7z" fill="url(#${k})"/><path d="M12 2l8.5 5L12 12 3.5 7z" fill="#fff" opacity=".3"/>${MEDAL_MARK[level] || MEDAL_MARK[0]}</svg>`);
   }
-  const dealsWord = (n) => `${NF.format(n)} ${plural(n, 'сделка', 'сделки', 'сделок')}`;
+  const dealsWord = (n) => `${NF.format(n)}\u00a0${plural(n, 'сделка', 'сделки', 'сделок')}`; // «5 сделок» не разрывается
   // Строка под именем: «⬢ Опытный · 27 сделок». 1.49.0: shop — у магазина без уровня «Новый магазин» вместо «Новичок»;
   // deals: false — без числа сделок (в публичном профиле оно в счётчиках рядом).
   const repLine = (r, href = '', { shop = false, deals = true } = {}) => {
     if (!r) return '';
-    const inner = html`${levelMedal(r.level, 18)}<b>${shop && !r.level ? 'Новый магазин' : r.levelName}</b>${deals && r.deals ? html`<span>· ${dealsWord(r.deals)}</span>` : ''}`;
+    const inner = html`${levelMedal(r.level, 18)}<b>${shop && !r.level ? 'Новый магазин' : r.levelName}</b>${deals && r.deals ? html`<span>·\u00a0${dealsWord(r.deals)}</span>` : ''}`;
     return href ? html`<a class="rep-line l${r.level}" href="${href}">${inner}</a>` : html`<span class="rep-line l${r.level}">${inner}</span>`;
   };
   const REPLY_TXT = { hour: '~1 ч', hours: '1–3 ч', day: '< суток', days: '1–2 дня' };
@@ -4152,7 +4189,7 @@
             <label class="btn btn-soft tm-file">${ic('plus', 16, 2)}Загрузить файл<input type="file" id="doc-file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden></label></div>
             <p class="muted" style="margin:0;font-size:13px">PDF, JPG, PNG или WebP до 8 МБ. Скан или чёткое фото, весь документ целиком.</p>`}
         </div>
-        <p class="muted" style="margin:0;font-size:13px">Правообладателем в реестре должна быть ${b.name}. Лицензиатов и знаки, которые ещё не зарегистрированы, не подтверждаем. Галочку выдаёт только модератор после проверки.</p>
+        <p class="muted" style="margin:0;font-size:13px">Правообладателем в реестре должна быть ${b.name}${/\.$/.test(b.name) ? '' : '.'} Лицензиатов и знаки, которые ещё не зарегистрированы, не подтверждаем. Галочку выдаёт только модератор после проверки.</p>
         ${lock ? '' : html`<div class="set-btns"><button class="btn btn-dark" type="submit">Отправить на проверку</button></div>`}
       </form>`}`);
     const tf = $('#tmf', box);
@@ -4544,7 +4581,7 @@
   // ================= для бизнеса: тарифы, оплата, продвижение =================
   const PLAN_NAME = { shop: 'Магазин', pro: 'Магазин Про' };
   const rub = (n) => `${NF.format(n)} ₽`;
-  const dateLong = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  const dateLong = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).replace(/\s?г\.$/, ''); // «9 ноября 2031» — без «г.», иначе «г..» в конце фразы
   const dateShort = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   const daysLeft = (ts) => Math.max(0, Math.ceil((ts - Date.now()) / 86400000));
   // Что даёт каждый тариф — ровно то, что работает в коде (lib/business.js, lib/deals.js, lib/support.js, lib/promo.js).
@@ -6300,8 +6337,7 @@
   }
 
   function setupPullToRefresh() {
-    const installed = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
-    if (!installed || !('ontouchstart' in window)) return;
+    if (!STANDALONE || !('ontouchstart' in window)) return;
     const START = 16; const TRIGGER = 96; const MAX = 120;
     const FIELD = 'input, textarea, select, [contenteditable], label';
     let typed = [];
@@ -6375,10 +6411,128 @@
     document.addEventListener('touchcancel', () => { if (state === 'pull' || state === 'maybe') { state = 'idle'; hide(); } }, { passive: true });
   }
 
+  // ================= приложение на экране (1.51) =================
+  // Полоса «Установить приложение» над шапкой (закрывается крестиком) и страница /app с инструкцией
+  // для iPhone, Android и компьютера. На Android и компьютере (Chrome, Edge, Яндекс) — системное окно установки,
+  // на iPhone — шторка «Поделиться» → «На экран «Домой»». В подвале — ссылка «Приложение» на /app. В установленной Торгане полосы и ссылки нет.
+  const STANDALONE = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const ANDROID = /Android/i.test(navigator.userAgent);
+  const APP_BAR_KEY = 'app_bar_off';
+  const APP_BAR_PAUSE = 30 * 864e5; // закрыли — не показываем 30 дней
+  const APP_BAR_SKIP = /^\/(messages|new|edit|pay|admin|app)(\/|$)/;
+  let installEvt = null;
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; appBar(); appHowButton(); });
+  window.addEventListener('appinstalled', () => { installEvt = null; appBarHide(); appHowButton(); toast('Торгана установлена — открывайте её как приложение'); });
+  const canInstall = () => !STANDALONE && (!!installEvt || IOS);
+  const appBarOff = () => { try { return Date.now() - Number(localStorage.getItem(APP_BAR_KEY) || 0) < APP_BAR_PAUSE; } catch { return false; } };
+
+  async function installApp() {
+    if (installEvt) {
+      const e = installEvt;
+      e.prompt();
+      const r = await e.userChoice.catch(() => null);
+      if (r && r.outcome === 'accepted') { installEvt = null; appBarHide(); appHowButton(); }
+      return;
+    }
+    openInstallHelp();
+  }
+
+  function appBar() {
+    let bar = $('#app-bar');
+    const show = canInstall() && !appBarOff() && !APP_BAR_SKIP.test(location.pathname);
+    if (!show) { if (bar) bar.remove(); return; }
+    if (bar) return;
+    bar = document.createElement('div');
+    bar.id = 'app-bar'; bar.className = 'app-bar';
+    bar.setAttribute('role', 'region'); bar.setAttribute('aria-label', 'Приложение Торгана');
+    bar.innerHTML = String(html`<div class="wrap ab-in">
+      <span class="ab-ic"><svg width="26" height="26" viewBox="0 0 48 48" aria-hidden="true">${raw(MARK)}</svg></span>
+      <span class="ab-t"><b>Приложение Торгана</b><span>${IOS || ANDROID ? 'В одно касание с экрана телефона и с уведомлениями' : 'В своём окне, как программа, и с уведомлениями'}</span></span>
+      <button type="button" class="btn btn-accent btn-sm ab-go" data-install>${IOS ? 'Добавить' : 'Установить'}</button>
+      <button type="button" class="icon-btn ab-x" data-x aria-label="Скрыть">${ic('close', 18, 2.2)}</button>
+    </div>`);
+    $('#header').before(bar);
+    $('[data-install]', bar).onclick = installApp;
+    $('[data-x]', bar).onclick = () => { try { localStorage.setItem(APP_BAR_KEY, String(Date.now())); } catch { /* закрытое хранилище */ } appBarHide(); };
+  }
+  function appBarHide() { const bar = $('#app-bar'); if (bar) bar.remove(); }
+
+  // Шаги для каждой платформы: значок, что нажать, пояснение.
+  const APP_STEPS = {
+    ios: ['iPhone', [
+      ['share', 'Нажмите «Поделиться»', 'Кнопка внизу экрана Safari, на iPad — вверху'],
+      ['plus', 'Выберите «На экран «Домой»»', 'Пункт чуть ниже в списке — пролистайте его'],
+      ['mark', 'Нажмите «Добавить»', 'Торгана появится рядом с другими приложениями']]],
+    android: ['Android', [
+      ['more', 'Откройте меню браузера', 'Три точки справа вверху в Chrome или Яндекс Браузере'],
+      ['download', 'Выберите «Установить приложение»', 'В некоторых браузерах — «Добавить на главный экран»'],
+      ['mark', 'Подтвердите установку', 'Значок Торганы появится на главном экране']]],
+    pc: ['Компьютер', [
+      ['link', 'Откройте torgana.ru в Chrome или Edge', 'Подойдёт и Яндекс Браузер'],
+      ['download', 'Нажмите значок установки', 'Он справа в адресной строке, или меню → «Установить Торгану»'],
+      ['mark', 'Готово', 'Торгана откроется в своём окне, ярлык — на рабочем столе']]]
+  };
+  const appPlatform = () => (IOS ? 'ios' : ANDROID ? 'android' : 'pc');
+  const stepIc = (k, n) => html`<span class="as-ic${k === 'mark' ? ' brand' : ''}">${k === 'mark' ? html`<svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">${raw(MARK)}</svg>` : ic(k, 19, 2)}<i class="as-n">${n}</i></span>`;
+  const stepList = (k) => html`<ol class="as-list">${APP_STEPS[k][1].map(([icn, t, s], i) => html`<li>${stepIc(icn, i + 1)}<span class="as-t"><b>${t}</b><small>${s}</small></span></li>`)}</ol>`;
+
+  function openInstallHelp() {
+    openModal(String(html`<div class="ah-top"><span class="ab-ic lg"><svg width="34" height="34" viewBox="0 0 48 48" aria-hidden="true">${raw(MARK)}</svg></span><button type="button" class="icon-btn" data-x aria-label="Закрыть">${ic('close', 20, 2)}</button></div>
+      <h2 class="ah-h">Торгана на экране «Домой»</h2>
+      <p class="ah-p">Три касания — и Торгана откроется как приложение: без адресной строки и с уведомлениями о сообщениях.</p>
+      ${stepList(appPlatform())}
+      ${IOS ? html`<p class="ah-note">${ic('info', 16, 2)}Нет пункта «На экран «Домой»»? Откройте torgana.ru в Safari.</p>` : ''}
+      <button type="button" class="btn btn-dark btn-lg btn-block" data-ok>Понятно</button>`), (m, close) => {
+      if (window.matchMedia('(max-width: 600px)').matches) { m.classList.add('sheet'); m.parentElement.classList.add('sheet-back'); }
+      m.setAttribute('aria-label', 'Как установить Торгану');
+      $('[data-x]', m).onclick = close; $('[data-ok]', m).onclick = close;
+    });
+  }
+
+  // Страница /app (ссылка «Приложение» в подвале): зачем, вкладки iPhone / Android / Компьютер — открыта своя платформа.
+  function viewApp() {
+    setTitle('Приложение');
+    const cur = appPlatform();
+    const perk = (icn, t, sub) => html`<li><span class="as-ic">${ic(icn, 19, 2)}</span><span class="as-t"><b>${t}</b><small>${sub}</small></span></li>`;
+    app.innerHTML = String(html`<div class="wrap app-page">
+      <section class="f-app" aria-labelledby="f-app-h">
+        <div class="fa-lead">
+          <div class="fa-badge"><span class="ab-ic"><svg width="26" height="26" viewBox="0 0 48 48" aria-hidden="true">${raw(MARK)}</svg></span>Приложение</div>
+          <h1 id="f-app-h">${STANDALONE ? 'Торгана уже установлена' : 'Торгана как приложение'}</h1>
+          <p>${STANDALONE ? 'Вы открыли её с экрана — всё работает как в приложении. Включите уведомления в настройках, чтобы не пропустить сообщения.' : 'Открывается в одно касание, без адресной строки, с уведомлениями о сообщениях и снижении цен. Из магазина приложений ничего скачивать не нужно.'}</p>
+          <div class="fa-act" data-app-act>${STANDALONE ? html`<a class="btn btn-accent" href="/profile/settings">${ic('bell', 18, 2.2)}Уведомления</a>` : ''}</div>
+          <ul class="fa-perks">${perk('bolt', 'В одно касание', 'Значок на экране, как у других приложений')}${perk('bell', 'Уведомления', 'Сообщения, модерация, снижение цен')}${perk('download', 'Почти не занимает места', 'Обновляется само, без магазина приложений')}</ul>
+        </div>
+        <div class="fa-how">
+          <h2 class="fa-how-h">Как установить</h2>
+          <div class="fa-tabs" role="tablist" aria-label="Устройство">${Object.entries(APP_STEPS).map(([k, [label]]) => html`<button type="button" role="tab" data-app-tab="${k}" aria-selected="${k === cur ? 'true' : 'false'}" class="${k === cur ? 'on' : ''}">${label}</button>`)}</div>
+          <div data-app-steps>${stepList(cur)}</div>
+        </div>
+      </section>
+    </div>`);
+    bindAppHow(app);
+  }
+  function bindAppHow(root) {
+    const sec = $('.f-app', root);
+    if (!sec) return;
+    $$('[data-app-tab]', sec).forEach((b) => { b.onclick = () => {
+      $$('[data-app-tab]', sec).forEach((x) => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-selected', on ? 'true' : 'false'); });
+      $('[data-app-steps]', sec).innerHTML = String(stepList(b.dataset.appTab));
+    }; });
+    appHowButton();
+  }
+  function appHowButton() {
+    const box = $('[data-app-act]');
+    if (!box || STANDALONE) return;
+    box.innerHTML = String(canInstall() ? html`<button type="button" class="btn btn-accent" data-install>${ic('download', 18, 2.2)}${IOS ? 'Как добавить' : 'Установить'}</button>` : '');
+    const b = $('[data-install]', box); if (b) b.onclick = installApp;
+  }
+
   // ================= push-уведомления =================
   const PUSH_OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   // На iPhone push работает только у Торганы, добавленной на экран «Домой».
-  const IOS_TAB = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
+  const IOS_TAB = IOS && !STANDALONE;
   let swReg = null;
   function swReady() {
     if (!PUSH_OK) return Promise.resolve(null);
