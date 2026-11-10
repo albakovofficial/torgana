@@ -3458,11 +3458,9 @@
   const dealsWord = (n) => `${NF.format(n)} ${plural(n, 'сделка', 'сделки', 'сделок')}`;
   // Строка под именем: «⬢ Опытный · 27 сделок». 1.49.0: shop — у магазина без уровня «Новый магазин» вместо «Новичок»;
   // deals: false — без числа сделок (в публичном профиле оно в счётчиках рядом).
-  // official — у официального аккаунта вместо уровня «Официальный аккаунт» (1.50.0).
-  const repLine = (r, href = '', { shop = false, deals = true, official = false } = {}) => {
+  const repLine = (r, href = '', { shop = false, deals = true } = {}) => {
     if (!r) return '';
-    const inner = official ? html`${verifiedSeal(18)}<b>Официальный аккаунт</b>`
-      : html`${levelMedal(r.level, 18)}<b>${shop && !r.level ? 'Новый магазин' : r.levelName}</b>${deals && r.deals ? html`<span>· ${dealsWord(r.deals)}</span>` : ''}`;
+    const inner = html`${levelMedal(r.level, 18)}<b>${shop && !r.level ? 'Новый магазин' : r.levelName}</b>${deals && r.deals ? html`<span>· ${dealsWord(r.deals)}</span>` : ''}`;
     return href ? html`<a class="rep-line l${r.level}" href="${href}">${inner}</a>` : html`<span class="rep-line l${r.level}">${inner}</span>`;
   };
   const REPLY_TXT = { hour: '~1 ч', hours: '1–3 ч', day: '< суток', days: '1–2 дня' };
@@ -3610,17 +3608,16 @@
   function idCard(u, stats = []) {
     const { todo, pct } = profileTodo(u);
     const sh = u.shop; // витрина — при тарифе или у официального аккаунта
-    const badges = html`${trustBadges(u.badges && { ...u.badges, shop: false, tm: null })}${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
+    // 1.50.1: на обложке плашек нет — тариф (или «Официальный аккаунт» вместо «Владелец») стоит первой плашкой; это не ссылка.
+    const badges = html`${planBadge(sh, u.plan, true)}${trustBadges(u.badges && { ...u.badges, shop: false, tm: null })}${u.isAdmin && !(sh && sh.official) ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
     return html`<div class="pf-card ${sh ? `shop ${sh.plan}` : ''}">
-      ${sh ? html`<a class="pf-cover ${sh.cover ? 'has' : ''}" href="/profile/business/shop"${sh.cover ? raw(` style="--cv:url('${esc(sh.cover)}')"`) : ''}>
-        ${sh.official ? html`<span class="pf-plan">${verifiedSeal(15)}Официальный аккаунт</span>` : html`<span class="pf-plan">${ic('store', 14, 2.2)}${u.plan.name}</span>${u.plan.trial ? html`<span class="pf-trial">${ic('gift', 13, 2.2)}Бесплатно</span>` : ''}
-        <span class="pf-until">${ic('clock', 13, 2.2)}до ${new Date(u.plan.until).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</span>`}</a>` : ''}
+      ${sh ? html`<a class="pf-cover ${sh.cover ? 'has' : ''}" href="/profile/business/shop" aria-label="Обложка витрины"${sh.cover ? raw(` style="--cv:url('${esc(sh.cover)}')"`) : ''}></a>` : ''}
       <div class="pf-who">
         <div class="pf-ava">${ava(u, 'lg')}<button class="pf-cam" type="button" data-ava-pick aria-label="${u.avatar ? 'Сменить фото профиля' : 'Добавить фото профиля'}">${ic('camera', 15, 2)}</button></div>
         <div class="pf-who-txt">
           <div class="pf-name">${nameSeal(u.name, u.badges)}</div>
           <div class="pf-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
-          ${u.rep ? repLine(u.rep, '/profile/reputation', { shop: !!sh, official: !!(sh && sh.official) }) : ''}
+          ${u.rep && !(sh && sh.official) ? repLine(u.rep, '/profile/reputation', { shop: !!sh }) : ''}
         </div>
         <a class="icon-btn pf-gear" href="/profile/settings" aria-label="Настройки">${ic('gear', 20)}</a>
       </div>
@@ -3649,6 +3646,16 @@
         else go(`/profile/business/shop#sh-${t}`);
       };
     });
+  }
+
+  // 1.50.1: плашка тарифа (или «Официальный аккаунт») в строке плашек — вместо меток на обложке. Не ссылка.
+  // mine — в своём профиле ещё и срок: «Магазин Про · до 10 декабря», у бесплатного — «бесплатно до …».
+  function planBadge(sh, plan = null, mine = false) {
+    if (!sh) return '';
+    if (sh.official) return html`<span class="pf-badge pf-tariff">Официальный аккаунт</span>`;
+    const name = sh.plan === 'pro' ? 'Магазин Про' : 'Магазин';
+    const until = mine && plan ? ` · ${plan.trial ? 'бесплатно\u00a0' : ''}до\u00a0${new Date(plan.until).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }).replace(' ', '\u00a0')}` : ''; // срок не разрывается
+    return html`<span class="pf-badge pf-tariff">${ic('store', 13, 2.2)} ${name}${until}</span>`;
   }
 
   // Значки доверия продавца: «Телефон подтверждён», «ИП проверен» / «Компания проверена».
@@ -4413,18 +4420,18 @@
     const deals = u.rep ? u.rep.total || 0 : 0;
     const sh = u.shop; // 1.46.1: у магазина — одна шапка: обложка, тариф, название, описание
     // 1.49.0: одна отметка проверки (галочка бренда — у имени); три числа всегда, даже 0: объявления, сделки, подписчики.
-    const badges = String(trustBadges(u.badges && { ...u.badges, shop: false, tm: null })).trim();
+    const badges = String(html`${planBadge(sh)}${trustBadges(u.badges && { ...u.badges, shop: false, tm: null })}`).trim();
     const num = (n, one, few, many, attr = '') => html`<div class="pf-num"><b${raw(attr)}>${NF.format(n)}</b><span>${plural(n, one, few, many)}</span></div>`;
     // Сверху — широкая карточка продавца, ниже вкладки и объявления (у магазина — с колонкой «О магазине»).
     app.innerHTML = String(html`<div class="wrap pub">
       ${own ? html`<div class="pub-own">${ic('eye', 18)}<span>Так ваш профиль видят покупатели</span><a href="/profile/settings">Изменить профиль</a><a href="/profile">Мой профиль</a></div>` : ''}
       <section class="pub-hero ${sh ? `is-shop ${sh.plan}` : ''}" aria-label="${sh ? 'Магазин' : 'Продавец'}">
-        ${sh ? html`<div class="psh-cover">${sh.cover ? html`<img src="${sh.cover}" alt="">` : ''}<span class="pf-plan">${sh.official ? html`${verifiedSeal(15)}Официальный аккаунт` : html`${ic('store', 14, 2.2)}${sh.plan === 'pro' ? 'Магазин Про' : 'Магазин'}`}</span></div>` : ''}
+        ${sh ? html`<div class="psh-cover">${sh.cover ? html`<img src="${sh.cover}" alt="">` : ''}</div>` : ''}
         <div class="pub-ava">${ava(u, 'xl')}</div>
         <div class="pub-who">
           <h1>${nameSeal(sh ? sh.name : u.name, u.badges)}</h1>
           <div class="pub-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
-          ${repLine(u.rep, `/u/${u.id}?tab=rep`, { shop: !!sh, deals: false, official: !!(sh && sh.official) })}
+          ${sh && sh.official ? '' : repLine(u.rep, `/u/${u.id}?tab=rep`, { shop: !!sh, deals: false })}
           ${sh && sh.about ? html`<p class="shop-about">${sh.about}</p>` : ''}
           ${badges ? html`<div class="pf-badges">${raw(badges)}</div>` : ''}
         </div>
