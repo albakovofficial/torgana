@@ -24,7 +24,7 @@ jobs:
           node-version: 22
 
       - name: Синтаксис
-        run: node --check server.js && node --check public/assets/app.js
+        run: node --check server.js && node --check public/assets/app.js && node --check public/assets/admin.js
 
       - name: Сценарии API
         run: npm test

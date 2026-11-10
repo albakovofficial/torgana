@@ -109,7 +109,7 @@ check_new() {
   local dir; dir="$(mktemp -d /tmp/torgana-check.XXXXXX)" || return 1
   git archive "$NEW" | tar -x -C "$dir" || { rm -rf "$dir"; return 1; }
   local rc=0
-  ( cd "$dir" && node --check server.js && node --check public/assets/app.js ) >"$STATE/check.err" 2>&1 || rc=2
+  ( cd "$dir" && node --check server.js && node --check public/assets/app.js && node --check public/assets/admin.js ) >"$STATE/check.err" 2>&1 || rc=2
   if [ "$rc" = 0 ] && [ -f "$dir/tests/api.test.js" ]; then
     ( cd "$dir" && timeout 180 node --test --test-reporter=dot tests/api.test.js ) >"$STATE/check.err" 2>&1 || rc=3
   fi
