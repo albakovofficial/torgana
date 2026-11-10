@@ -77,6 +77,7 @@
     chat: '<path d="M4 5h16v11H9l-5 4z"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
+    minus: '<path d="M5 12h14"/>',
     home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
     camera: '<rect x="3" y="6" width="18" height="14" rx="3"/><circle cx="12" cy="13" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/>',
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
@@ -170,6 +171,7 @@
     if (f.key === 'shoeSize') return `${v} размер`;
     if (f.key === 'size') return `размер ${v}`;
     if (f.key === 'year') return `${v} г.`;
+    if (f.key === 'owners') { if (String(v) === '4+') return '4 и более владельцев'; if (String(v) === '0') return 'нет владельцев, новая'; const n = Number(v); const a = n % 10; const b = n % 100; return `${n} ${a === 1 && b !== 11 ? 'владелец' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? 'владельца' : 'владельцев'}`; }
     if (f.type === 'number') return `${attrNum(v)}${f.unit ? ` ${f.unit}` : ''}`;
     return String(v);
   }
@@ -376,6 +378,25 @@
     if (f.color) {
       return html`<div class="field wide av" data-field="${f.key}">${head}<div class="av-sw-row" role="radiogroup" aria-label="${f.label}">${f.options.map((o) => html`<button type="button" role="radio" class="av-sw${o === v ? ' on' : ''}" data-av="${o}" title="${o}" aria-label="${o}" aria-checked="${o === v ? 'true' : 'false'}" style="--sw:${COLOR_HEX[o] || '#ccc'}"></button>`)}</div></div>`;
     }
+    // 1.47.3: «Владельцев по ПТС» — широкая капсула «− 2 владельца +» (вариант A): от 0 (новая) до 30.
+    // В фильтре — плашки «Без владельцев», «1», «2», «3», «4+».
+    if (f.custom) {
+      const plus = `${f.options.length + 1}+`;
+      if (filter) {
+        const list = [...(f.custom.min === 0 ? ['0'] : []), ...f.options, plus];
+        return html`<div class="field wide av" data-field="${f.key}">${head}<div class="av-chips" role="radiogroup" aria-label="${f.label}">
+          ${list.map((o) => html`<button type="button" role="radio" class="av-chip${o === String(v) ? ' on' : ''}" data-av="${o}" aria-checked="${o === String(v) ? 'true' : 'false'}">${o === '0' ? 'Без владельцев' : o}</button>`)}</div></div>`;
+      }
+      const sv = has ? String(v) : '';
+      const n = !has ? null : sv === plus ? f.options.length + 1 : Number(sv);
+      const word = has ? (n === 0 ? 'нет — новая машина' : attrText(f, sv).replace(/^\S+\s/, '')) : '';
+      return html`<div class="field wide own-a" data-field="${f.key}">${head}
+        <div class="own-cap" role="group" aria-label="${f.label}">
+          <button type="button" class="own-pm" data-own="-1" aria-label="Меньше" ${has ? '' : raw('disabled')}>${ic('minus', 20, 2.4)}</button>
+          <span class="own-val" aria-live="polite">${has ? html`<b>${sv === plus ? plus : n}</b><small>${word}</small>` : html`<em>Не указано</em>`}</span>
+          <button type="button" class="own-pm" data-own="1" aria-label="Больше" ${has && n >= f.custom.max ? raw('disabled') : ''}>${ic('plus', 20, 2.4)}</button>
+        </div></div>`;
+    }
     const long = f.popular && f.options.length > f.popular.length;
     const shown = long ? [...f.popular, ...(has && !f.popular.includes(v) ? [v] : [])] : f.options;
     return html`<div class="field wide av" data-field="${f.key}">${head}<div class="av-chips" role="radiogroup" aria-label="${f.label}">
@@ -395,6 +416,21 @@
       const key = fieldEl.dataset.field;
       const f = fields.find((x) => x.key === key);
       if (!f) return;
+      // Счётчик владельцев.
+      const st = e.target.closest('[data-own]');
+      if (st && f.custom) {
+        // «+»: «Не указано» → 0 (новая) → 1 → … → 30; «−»: обратно, с 0 — снова «Не указано».
+        const cur = get(key); const sv = cur === undefined || cur === null ? '' : String(cur);
+        const now = sv === '' ? null : sv === `${f.options.length + 1}+` ? f.options.length + 1 : Number(sv);
+        const d = Number(st.dataset.own);
+        const next = d > 0 ? (now === null ? f.custom.min : Math.min(f.custom.max, now + 1)) : (now === null || now <= f.custom.min ? undefined : now - 1);
+        set(key, next === undefined ? undefined : String(next));
+        paint(key);
+        const again = $(`[data-field="${key}"] [data-own="${st.dataset.own}"]`, box);
+        if (again && !again.disabled) again.focus();
+        if (navigator.vibrate) try { navigator.vibrate(8); } catch { /* нет вибрации */ }
+        return;
+      }
       const b = e.target.closest('[data-av]');
       if (b) { set(key, get(key) === b.dataset.av ? undefined : b.dataset.av); paint(key); return; }
       const m = e.target.closest('[data-av-more]');
@@ -1078,7 +1114,7 @@
           <label class="sr" for="q">Что вы ищете</label>
           <input id="q" name="q" type="search" placeholder="Поиск" autocomplete="off" enterkeyhint="search">
           <button type="button" class="hs-city" data-city-btn aria-label="Город: ${S.city || 'Вся Россия'}">${ic('pin', 15, 2)}<span>${S.city || 'Вся Россия'}</span></button>
-          <button class="hs-go" type="submit" aria-label="Найти">${ic('search', 19, 2.2)}</button>
+          <button class="hs-go" type="submit" aria-label="Найти">${ic('search', 16, 2.2)}</button>
         </form>
         <div class="cat-rail"><button type="button" class="cat-arrow prev" data-cat-scroll="-1" aria-label="Назад">${ic('left', 18, 2.2)}</button>
           <nav class="cat-pills" aria-label="Категории"><a class="cat-pill ${cat ? '' : 'on'}" data-cat="" href="/search${S.city ? `?city=${encodeURIComponent(S.city)}` : ''}" ${cat ? '' : raw('aria-current="true"')}>${ic('list', 17, 2)}Все</a>${S.config.categories.map((c) => html`<a class="cat-pill ${c.id === cat ? 'on' : ''}" data-cat="${c.id}" href="${cpath(c.id, S.city)}" ${c.id === cat ? raw('aria-current="true"') : ''}>${catIc(c.id, 18)}${c.name}</a>`)}</nav>
@@ -1193,18 +1229,20 @@
         <form id="filter-form" class="filters-body">
           <div class="f-head"><h3>Фильтры</h3><button type="button" class="icon-btn f-close" data-f-close aria-label="Скрыть фильтры">${ic('close', 20, 2)}</button></div>
           <input type="hidden" name="q" value="${params.q || ''}">
-          <div class="field"><label for="f-cat">Категория</label>
-            <select id="f-cat" name="category" class="select"><option value="">Все категории</option>
-              ${S.config.categories.map((c) => html`<option value="${c.id}" ${c.id === category ? raw('selected') : ''}>${c.name}</option>`)}
-            </select></div>
-          <div id="f-extra" class="f-extra"></div>
-          <div class="field"><label for="f-city">Город</label>
-            <input id="f-city" name="city" class="input" data-cities data-any="Вся Россия" autocomplete="off" placeholder="Вся Россия" value="${params.city || ''}"></div>
+          <div class="f-row2">
+            <div class="field"><label for="f-cat">Категория</label>
+              <select id="f-cat" name="category" class="select"><option value="">Все категории</option>
+                ${S.config.categories.map((c) => html`<option value="${c.id}" ${c.id === category ? raw('selected') : ''}>${c.name}</option>`)}
+              </select></div>
+            <div class="field"><label for="f-city">Город</label>
+              <input id="f-city" name="city" class="input" data-cities data-any="Вся Россия" autocomplete="off" placeholder="Вся Россия" value="${params.city || ''}"></div>
+          </div>
           <div id="f-metro"></div>
+          <div id="f-extra" class="f-extra"></div>
           <div class="field"><span class="label">Цена, ₽</span>
             <div class="row"><label class="sr" for="f-min">Цена от</label><input id="f-min" name="min" class="input" inputmode="numeric" placeholder="от" value="${params.min || ''}">
             <label class="sr" for="f-max">Цена до</label><input id="f-max" name="max" class="input" inputmode="numeric" placeholder="до" value="${params.max || ''}"></div></div>
-          ${[['delivery', 'С доставкой'], ['bargain', 'Торг уместен'], ['exchange', 'Возможен обмен'], ['trusted', 'Надёжные продавцы']].map(([k, t]) => html`<label class="switch"><span>${t}</span><input type="checkbox" name="${k}" value="1" ${params[k] === '1' ? raw('checked') : ''}><span class="track"></span></label>`)}
+          <div class="f-switches">${[['delivery', 'С доставкой'], ['bargain', 'Торг уместен'], ['exchange', 'Возможен обмен'], ['trusted', 'Надёжные продавцы']].map(([k, t]) => html`<label class="switch"><span>${t}</span><input type="checkbox" name="${k}" value="1" ${params[k] === '1' ? raw('checked') : ''}><span class="track"></span></label>`)}</div>
           <div class="f-go"><button class="btn btn-dark btn-block" type="submit" id="f-show">Показать</button>
           <a href="/search${params.q ? `?q=${encodeURIComponent(params.q)}` : ''}" class="btn btn-soft btn-block">Сбросить</a></div>
         </form>

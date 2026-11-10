@@ -3090,3 +3090,47 @@ html.dw-open { overflow: hidden; }
   .adm .my-actions { grid-column: 1 / -1; flex-wrap: nowrap; gap: 6px; }
   .adm .my-actions .btn { flex: 1 1 0; min-width: 0; padding: 0 8px; font-size: 14px; }
 }
+
+/* 1.47.3: строка поиска на телефоне — тот же вид (город плашкой, круглая кнопка со значком), только меньше. */
+@media (max-width: 900px) {
+  .home-search { flex: none; height: 50px; padding: 0 7px 0 16px; gap: 8px; } /* сама строка — прежних 50 px (flex: none — иначе высоту задают кнопки внутри) */
+  .home-search .hs-city { height: 36px; max-width: 128px; padding: 0 12px; gap: 4px; font-size: 13.5px; }
+  .home-search .hs-city svg { width: 14px; height: 14px; }
+  .home-search .hs-go { width: 36px; height: 36px; }
+  .home-search .hs-go svg { width: 17px; height: 17px; }
+}
+
+/* 1.47.3: фильтры на телефоне компактнее — категория и город в один ряд, поля ниже, переключатели — плашками в строку. */
+@media (max-width: 900px) {
+  .filters:not(.collapsed) { padding: 16px; border-radius: 24px; }
+  .filters-body { gap: 12px; }
+  .filters-body .f-head h3 { font-size: 18px; }
+  .filters-body .f-close { width: 36px; height: 36px; }
+  .f-row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .filters-body .field { gap: 5px; margin: 0; }
+  .filters-body .field > label, .filters-body .field > .label { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .filters-body .input, .filters-body .select, .filters-body .pick-btn { height: 44px; min-height: 44px; padding-left: 14px; font-size: 15px; border-radius: 14px; }
+  .filters-body .row { gap: 8px; }
+}
+/* 1.47.3: «Владельцев по ПТС» — широкая капсула: «−» и «+» по краям, число с подписью в центре */
+.own-cap { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 56px; padding: 6px; border-radius: 999px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
+.own-pm { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--accent-soft); color: var(--accent); cursor: pointer; transition: background .15s, transform .1s; }
+.own-pm:hover:not(:disabled) { background: #DCE2FA; }
+.own-pm:active:not(:disabled) { transform: scale(.92); }
+.own-pm:disabled { background: var(--surface); color: var(--faint); cursor: default; }
+.own-pm:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.own-val { min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 6px; white-space: nowrap; overflow: hidden; }
+.own-val b { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); }
+.own-val small { font-size: 14.5px; font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.own-val em { font-style: normal; font-size: 16px; font-weight: 600; color: var(--faint); }
+
+/* 1.47.3: «С доставкой», «Торг», «Обмен», «Надёжные продавцы» в фильтрах — галочками (вариант C), телефон и компьютер */
+.f-switches { display: flex; flex-direction: column; gap: 0; }
+.f-switches .switch { justify-content: flex-start; gap: 10px; min-height: 0; height: 38px; padding: 0; border-radius: 10px; background: none; box-shadow: none; font-size: 15px; font-weight: 500; color: var(--text); }
+.f-switches .switch > span:first-child { order: 2; }
+.f-switches .switch .track { order: 1; width: 22px; height: 22px; border-radius: 7px; background: #fff; box-shadow: inset 0 0 0 1.5px #C9CDDB; transition: background .15s, box-shadow .15s; }
+.f-switches .switch .track::after { top: 6px; left: 5px; width: 10px; height: 6px; border-radius: 0; background: none; box-shadow: none; border-left: 2.4px solid #fff; border-bottom: 2.4px solid #fff; transform: rotate(-45deg) scale(.4); opacity: 0; transition: opacity .15s, transform .15s; }
+.f-switches .switch:hover .track { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.f-switches .switch input:checked + .track { background: var(--grad); box-shadow: none; }
+.f-switches .switch input:checked + .track::after { transform: rotate(-45deg) scale(1); opacity: 1; }
+.f-switches .switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
