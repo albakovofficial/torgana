@@ -1702,6 +1702,8 @@ a.rep-line:hover { color: var(--text); text-decoration: underline; }
 .offer-st.wait { color: var(--text-2); }
 .offer-link { margin-left: auto; padding: 0; border: 0; background: none; font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
 .offer-link:hover { color: var(--danger); }
+.offer-link, a.rep-line { position: relative; }
+.offer-link::after, a.rep-line::after { content: ''; position: absolute; inset: -12px -6px; } /* 1.51.2: «Отозвать» и уровень репутации — попасть пальцем легче, вид тот же */
 .msg.offer-off .offer-card { border-color: var(--line); box-shadow: none; background: var(--card); }
 .msg.offer-off .offer-k { color: var(--muted); }
 .msg.offer-off .offer-sum b { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 2px; }
@@ -2517,7 +2519,7 @@ body.pv-open { overflow: hidden; }
 /* Плашка «Включите уведомления»: в узкой колонке текст не сжимается до слова в строке — кнопка уходит вниз. */
 /* Ответ на предложение цены в чате — белый текст на зелёном. */
 .msg.offer-reply.out { color: #fff; }
-.msg.offer-reply.out .t { color: rgba(255, 255, 255, .72); }
+.msg.offer-reply.out .t { color: rgba(255, 255, 255, .92); } /* 1.51.2: контраст 4.6:1 на синем */
 /* Контраст: подписи, которые надо прочитать (счётчики, «обязательно», время), — не светлее --muted. */
 .ed-req, .ed-count, .bs-n, .nt-t small { color: var(--muted); }
 .pf-status .chip.zero:not(.active), .pf-status .chip.zero:not(.active) .cnt { color: var(--c-6e6e6a); opacity: 1; } /* контраст 5:1 */
@@ -2824,8 +2826,9 @@ body.pv-open { overflow: hidden; }
 /* 1.39.0: модерация — платные услуги пользователя с кнопкой «Отключить» */
 .adm-svc { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 8px; padding: 16px; border-radius: 20px; background: var(--surface); }
 .adm-svc-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; background: var(--card); }
+.adm-svc-row > .btn { flex: none; }
 .adm-svc-ic { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
-.adm-svc-txt { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.adm-svc-txt { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; } /* 1.51.2: длинная строка не уезжает под «Отключить» */
 .adm-svc-txt b { font-size: 14.5px; }
 .adm-svc-txt span { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .adm-svc-txt a { color: inherit; text-decoration: underline; }

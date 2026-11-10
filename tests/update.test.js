@@ -35,6 +35,7 @@ const version = (n, { syntax = true, tests = true } = {}) => {
   write('package.json', `{ "name": "torgana", "version": "1.0.${n}" }\n`);
   write('server.js', syntax ? `// версия ${n}\n` : 'function (\n');
   write('public/assets/app.js', '\n');
+  write('public/assets/admin.js', '\n'); // 1.51.2: модерация — отдельный файл, его тоже проверяет update.sh
   write('tests/api.test.js', `require('node:test')('api', () => { if (!${tests}) throw new Error('сломано'); });\n`);
 };
 

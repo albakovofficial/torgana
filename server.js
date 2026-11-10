@@ -1327,12 +1327,13 @@ function serveVideo(req, res, filePath) {
   });
 }
 
-// Версия интерфейса: хеш app.js и app.css. Попадает в адреса файлов в index.html (?v=…),
+// Версия интерфейса: хеш app.js, app.css, theme.js и admin.js. Попадает в адреса файлов в index.html (?v=…),
 // поэтому после обновления браузер сразу берёт свежие файлы, а не держит старые из кеша.
 const ASSET_VERSION = crypto.createHash('sha1')
   .update(fs.readFileSync(path.join(PUBLIC_DIR, 'assets/app.js')))
   .update(fs.readFileSync(path.join(PUBLIC_DIR, 'assets/app.css')))
   .update(fs.readFileSync(path.join(PUBLIC_DIR, 'assets/theme.js')))
+  .update(fs.readFileSync(path.join(PUBLIC_DIR, 'assets/admin.js'))) // 1.51.2: модерация — отдельным файлом
   .digest('hex').slice(0, 10);
 const INDEX_HTML = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
   .replace(/(\/assets\/(?:app\.(?:css|js)|theme\.js))"/g, `$1?v=${ASSET_VERSION}"`);

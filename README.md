@@ -143,6 +143,6 @@ npm run check     # всё сразу
 server.js            — сервер и все API
 lib/                 — база, авторизация, поиск, ИИ, константы (категории, города)
 public/index.html    — оболочка сайта
-public/assets/       — app.js (интерфейс), app.css (дизайн), иконка
+public/assets/       — app.js (интерфейс), admin.js (модерация, грузится только в /admin), app.css (дизайн), иконка
 scripts/seed-demo.js — тестовые данные для локального просмотра
 ```
