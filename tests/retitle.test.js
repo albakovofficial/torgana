@@ -21,13 +21,14 @@ test('модель из старого названия и новое назва
   assert.equal(r('laptops', { brand: 'Apple' }, 'MacBook'), null);
 });
 
-test('при запуске: старые названия меняются один раз, модель сохраняется, проверка и дата правки — прежние', async () => {
+test('при запуске: старые названия меняются один раз, модель сохраняется, проверка и дата правки — прежние; алкоголь — на проверку', async () => {
   const srv = await startServer();
   const admin = await registerUser(srv.base, { email: 'admin@test.local', name: 'Админ' });
   const seller = await registerUser(srv.base, { email: 's@test.ru', name: 'Олег' });
   const car = await publish(seller, admin, { title: 'x', category: 'transport', subcategory: 'cars', city: 'Москва', price: 900000, attrs: { brand: 'Kia', model: 'Rio', year: 2015, mileage: 90000, gearbox: 'Автомат' } });
   const odd = await publish(seller, admin, { title: 'x', category: 'transport', subcategory: 'cars', city: 'Москва', price: 500000, attrs: { brand: 'Lada', model: 'Granta', year: 2019, mileage: 50000, gearbox: 'Механика' } });
   const flat = await publish(seller, admin, { title: 'x', category: 'realty', subcategory: 'flats', city: 'Москва', price: 9000000, attrs: { rooms: '1', area: 38, floor: 2 } });
+  const beer = await publish(seller, admin, { title: 'Кружка', category: 'home', city: 'Москва', price: 300 });
   // Как было до 1.48.0: своё название, модели нет; метки о пересчёте нет.
   const db = new DatabaseSync(path.join(srv.tmp, 'data', 'torgana.db'));
   const was = db.prepare('SELECT updated_at, status FROM listings WHERE id = ?').get(car);
@@ -35,6 +36,9 @@ test('при запуске: старые названия меняются од
   db.prepare("UPDATE listings SET title = 'Продам машину', attrs = json_remove(attrs, '$.model') WHERE id = ?").run(odd);
   db.prepare("UPDATE listings SET title = '1-комнатная квартира у метро' WHERE id = ?").run(flat);
   db.prepare("DELETE FROM settings WHERE key = 'titles_v148'").run();
+  // 1.48.2: опубликованное до запрета (алкоголь) — при запуске уходит на проверку.
+  db.prepare("UPDATE listings SET title = 'Пиво разливное' WHERE id = ?").run(beer);
+  db.prepare("DELETE FROM settings WHERE key = 'ban_v1482'").run();
   db.close();
   const again = await srv.restart();
   const c = client(again.base);
@@ -47,5 +51,10 @@ test('при запуске: старые названия меняются од
   assert.equal((await l(odd)).title, 'Продам машину', 'модель не угадать — прежнее название');
   assert.equal(sp((await l(flat)).title), 'Квартира · 1 комната · 38 м²');
   assert.ok((await c.get('/api/listings?q=rio')).data.items.some((x) => x.id === car), 'поиск по новому названию');
+  assert.equal((await c.get(`/api/listings/${beer}`)).status, 404, 'алкоголь снят с показа до решения модератора');
+  const ms = client(again.base); ms.cookie = seller.cookie;
+  const own = (await ms.get(`/api/listings/${beer}`)).data.listing;
+  assert.equal(own.status, 'pending');
+  assert.match(own.flags, /Алкоголь/);
   await again.stop();
 });
