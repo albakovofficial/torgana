@@ -170,11 +170,17 @@ async function seed(base, browser, srv) {
   });
   await pg.close();
   const cover = (await shop.post('/api/uploads', { data: coverData })).data.file;
-  await shop.put('/api/my/shop', { cover, about: 'Детские коляски, автокресла и игрушки. Проверяем каждый товар перед продажей, даём гарантию 14 дней.\nСамовывоз и доставка по Казани.', hours: 'Пн–Сб 10:00–20:00', address: 'Казань, ул. Баумана, 15', site: 'detstvo-shop.ru' });
+  await shop.put('/api/my/shop', { cover, about: 'Детские коляски, автокресла и игрушки. Проверяем каждый товар перед продажей, даём гарантию 14 дней.', hours: 'Пн–Сб 10:00–20:00', address: 'Казань, ул. Баумана, 15', site: 'detstvo-shop.ru', delivery: 'Самовывоз и доставка по Казани' });
   const s1 = (await shop.post('/api/listings', { title: 'Самокат детский трёхколёсный', category: 'personal', city: 'Казань', price: '3900', photos: [(await shop.post('/api/uploads', { data: photoData })).data.file] })).data.id;
   await admin.post(`/api/admin/listings/${s1}/restore`);
   const s2 = (await shop.post('/api/listings', { title: 'Автокресло Britax Römer', category: 'personal', city: 'Казань', price: '18900' })).data.id;
   await admin.post(`/api/admin/listings/${s2}/restore`);
+  // 1.49.0: разделы витрины и закреплённые («Магазин Про»).
+  const s4 = (await shop.post('/api/listings', { title: 'Коляска', category: 'personal', subcategory: 'kids', attrs: { kidsGoods: 'Коляска', kidsAge: '0–1 год' }, city: 'Казань', price: '34500', photos: [(await shop.post('/api/uploads', { data: photoData })).data.file] })).data.id;
+  await admin.post(`/api/admin/listings/${s4}/restore`);
+  const s5 = (await shop.post('/api/listings', { title: 'Велосипед горный', category: 'hobby', subcategory: 'bikes', attrs: { bikeType: 'Горный' }, city: 'Казань', price: '21000', photos: [(await shop.post('/api/uploads', { data: photoData })).data.file] })).data.id;
+  await admin.post(`/api/admin/listings/${s5}/restore`);
+  for (const id of [s4, s1]) await shop.put('/api/my/shop/pins', { id, pin: true });
   await pay(await shop.post(`/api/listings/${s1}/promote`, { days: 7 }));
   await pay(await shop.post(`/api/listings/${s2}/promote`, { days: 30 }));
   const pendingPay = (await shop.post('/api/my/plan/pay', { plan: 'pro', months: 12 })).data.id;
@@ -336,7 +342,6 @@ function pages(d) {
     ['biz-shop', '/profile/business/shop', d.shop],
     ['biz-shop-locked', '/profile/business/shop', d.buyer],
     ['biz-stats', '/profile/business/stats', d.shop],
-    ['biz-feed', '/profile/business/feed', d.shop],
     ['pay-ok', `/pay/${d.planPay}`, d.shop],
     ['pay-wait', `/pay/${d.pendingPay}`, d.shop],
     ['storefront', `/u/${d.shop.user.id}`, null],

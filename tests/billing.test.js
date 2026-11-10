@@ -1,18 +1,16 @@
 'use strict';
 
 // Платные услуги: оплата через ЮKassa (с поддельной ЮKassa), тарифы, витрина, статистика магазина,
-// продвижение и блок «Реклама» с маркировкой, возвраты, автозагрузка из фида.
+// продвижение и блок «Реклама» с маркировкой, возвраты.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { startServer, startSmtp, registerUser, client, publish, PNG_1PX } = require('./helpers');
-const feedLib = require('../lib/feed');
 
-let srv; let smtp; let yk; let files; let admin; let shop; let other;
+let srv; let smtp; let yk; let admin; let shop; let other;
 const ykSeen = []; // запросы к «ЮKassa»
 const ykPay = new Map(); // id → платёж; статус меняет тест
 let ykN = 0;
-let feedXml = '';
 
 before(async () => {
   yk = http.createServer((req, res) => {
@@ -34,22 +32,14 @@ before(async () => {
     });
   });
   await new Promise((r) => yk.listen(0, '127.0.0.1', r));
-  // Файлы фида и картинки для автозагрузки.
-  files = http.createServer((req, res) => {
-    if (req.url === '/feed.xml') { res.writeHead(200, { 'Content-Type': 'application/xml' }); res.end(feedXml); return; }
-    if (req.url.startsWith('/img/')) { res.writeHead(200, { 'Content-Type': 'image/png' }); res.end(Buffer.from(PNG_1PX, 'base64')); return; }
-    if (req.url === '/not-image.png') { res.writeHead(200); res.end('<html>'); return; }
-    res.writeHead(404); res.end();
-  });
-  await new Promise((r) => files.listen(0, '127.0.0.1', r));
   smtp = await startSmtp();
-  srv = await startServer({ PUBLIC_URL: 'http://torgana.test', YOOKASSA_TEST_BASE: `http://127.0.0.1:${yk.address().port}`, FEED_ALLOW_LOCAL: '1', MAIL_TICK_MS: '150' });
+  srv = await startServer({ PUBLIC_URL: 'http://torgana.test', YOOKASSA_TEST_BASE: `http://127.0.0.1:${yk.address().port}`, MAIL_TICK_MS: '150' });
   admin = await registerUser(srv.base, { name: 'Модератор', email: 'admin@test.local' });
   shop = await registerUser(srv.base, { name: 'Анна', email: 'anna@test.local' });
   other = await registerUser(srv.base, { name: 'Борис', email: 'boris@test.local' });
   await admin.put('/api/admin/mail', { host: '127.0.0.1', port: smtp.port, security: 'none', user: smtp.user, pass: smtp.pass, from: 'no-reply@torgana.test' });
 });
-after(async () => { await srv.stop(); await smtp.close(); yk.close(); files.close(); });
+after(async () => { await srv.stop(); await smtp.close(); yk.close(); });
 
 const ykId = (url) => url.split('/').pop();
 // Человек оплатил на странице ЮKassa → ЮKassa присылает уведомление.
@@ -254,64 +244,4 @@ test('реклама над поиском — для любого продав�
   assert.equal(hit.length, 1);
   assert.equal(hit[0].ad.advertiser, 'Вера');
   assert.equal(hit[0].ad.inn, '');
-});
-
-test('фид Авито: разбор, категории, города, защита от внутренних адресов', () => {
-  const ads = feedLib.parseFeed(`<?xml version="1.0"?><Ads formatVersion="3" target="Avito.ru"><Ad><Id>a1</Id><Title>Диван &amp; кресло</Title>
-    <Description><![CDATA[<p>Почти новый</p><ul><li>Ткань</li></ul>]]></Description><Category>Мебель и интерьер</Category><Price>12000</Price>
-    <Address>Республика Татарстан, г. Казань, ул. Баумана</Address><Images><Image url="https://x.ru/1.jpg"/><Image url="https://x.ru/2.jpg"/></Images></Ad></Ads>`);
-  assert.equal(ads.length, 1);
-  assert.equal(ads[0].title, 'Диван & кресло');
-  assert.equal(ads[0].description, 'Почти новый\n• Ткань');
-  assert.deepEqual(ads[0].images, ['https://x.ru/1.jpg', 'https://x.ru/2.jpg']);
-  assert.equal(feedLib.categoryOf('Мебель и интерьер'), 'home');
-  assert.equal(feedLib.categoryOf('Телефоны / Мобильные телефоны'), 'electronics');
-  assert.equal(feedLib.categoryOf('Квартиры'), 'realty');
-  assert.equal(feedLib.categoryOf('Предложение услуг / Ремонт и отделка'), 'services');
-  assert.equal(feedLib.cityOf('Республика Татарстан, г. Казань, ул. Баумана'), 'Казань');
-  assert.equal(feedLib.cityOf('Московская область, г. Химки'), 'Химки');
-  for (const ip of ['127.0.0.1', '10.0.0.5', '192.168.1.1', '172.20.0.1', '169.254.169.254', '::1', '::ffff:127.0.0.1', 'fd00::1']) assert.equal(feedLib.isPrivateIp(ip), true, ip);
-  assert.equal(feedLib.isPrivateIp('77.88.55.88'), false);
-});
-
-test('ссылка во внутреннюю сеть не скачивается', async () => {
-  await assert.rejects(feedLib.safeGet('http://127.0.0.1/feed.xml', { max: 1000 }), /внутреннюю сеть/);
-  await assert.rejects(feedLib.safeGet('http://169.254.169.254/latest', { max: 1000 }), /внутреннюю сеть/);
-  await assert.rejects(feedLib.safeGet('file:///etc/passwd', { max: 1000 }), /http/);
-});
-
-test('автозагрузка: создаёт на проверку, повтор без изменений не трогает, пропавшее снимает', async () => {
-  const base = `http://127.0.0.1:${files.address().port}`;
-  const ad = (id, title, cat, extra = '') => `<Ad><Id>${id}</Id><Title>${title}</Title><Description>Хорошее состояние</Description><Category>${cat}</Category><Price>5000</Price><Address>г. Казань</Address>${extra}</Ad>`;
-  feedXml = `<Ads formatVersion="3">${ad('f1', 'Кресло офисное', 'Мебель и интерьер', `<Images><Image url="${base}/img/1.png"/><Image url="${base}/not-image.png"/></Images>`)}${ad('f2', 'Наушники Sony', 'Аудио и видео')}${ad('f3', 'Что-то', 'Непонятное')}</Ads>`;
-  assert.equal((await other.put('/api/my/feed', { url: `${base}/feed.xml` })).status, 403, 'автозагрузка — в «Магазин Про»');
-  const before = (await shop.get('/api/my/listings')).data.items.length;
-  assert.equal((await shop.put('/api/my/feed', { url: `${base}/feed.xml`, category: '', city: '' })).status, 200);
-  const wait = async () => { for (let i = 0; i < 100; i++) { const f = (await shop.get('/api/my/business')).data.feed; if (f.state.at && !f.state.running) return f.state; await new Promise((r) => setTimeout(r, 100)); } throw new Error('фид не загрузился'); };
-  let st = await wait();
-  assert.equal(st.status, 'ok', st.message);
-  assert.equal(st.created, 2);
-  assert.equal(st.skipped, 1);
-  assert.match(st.errors[0].error, /категори/);
-  const mine = (await shop.get('/api/my/listings')).data.items;
-  assert.equal(mine.length, before + 2);
-  const chair = mine.find((i) => i.title === 'Кресло офисное');
-  assert.equal(chair.status, 'pending', 'из фида — тоже на проверку');
-  assert.equal(chair.category, 'home');
-  assert.ok(chair.photo, 'фото скачано; не-картинка пропущена');
-  const ev = (await admin.get(`/api/admin/listings/${chair.id}`)).data;
-  assert.ok(JSON.stringify(ev).includes('"via":"feed"'), 'в истории видно, что из фида');
-
-  await admin.post(`/api/admin/listings/${chair.id}/restore`);
-  await shop.post('/api/my/feed/run');
-  st = await (async () => { await new Promise((r) => setTimeout(r, 200)); return wait(); })();
-  assert.equal(st.unchanged, 2);
-  assert.equal((await client(srv.base).get(`/api/listings/${chair.id}`)).data.listing.status, 'active', 'без изменений — не отправляем на проверку заново');
-
-  feedXml = `<Ads>${ad('f2', 'Наушники Sony', 'Аудио и видео')}</Ads>`;
-  await shop.post('/api/my/feed/run');
-  await new Promise((r) => setTimeout(r, 200));
-  st = await wait();
-  assert.equal(st.archived, 1);
-  assert.equal((await shop.get(`/api/listings/${chair.id}`)).data.listing.status, 'archived');
 });

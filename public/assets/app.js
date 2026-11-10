@@ -128,7 +128,6 @@
     link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.6v.4"/>',
-    feed: '<path d="M5 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/>',
     play: '<path d="M8 5.5v13l10.5-6.5z"/>',
     video: '<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="M16 10.5l5-3v9l-5-3"/>',
     sliders: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
@@ -1055,7 +1054,7 @@
     [/^\/confirm$/, viewConfirm],
     [/^\/favorites$/, viewFavorites],
     [/^\/messages(?:\/(\d+|support))?$/, viewMessages],
-    [/^\/profile(?:\/(listings|settings|reputation|reviews|searches|following|stats\/\d+|business(?:\/(?:shop|stats|feed))?))?$/, viewProfile],
+    [/^\/profile(?:\/(listings|settings|reputation|reviews|searches|following|stats\/\d+|business(?:\/(?:shop|stats))?))?$/, viewProfile],
     [/^\/business$/, viewBusiness],
     [/^\/pay\/([\w-]+)$/, viewPay],
     [/^\/u\/(\d+)$/, viewUser],
@@ -1159,7 +1158,8 @@
   // ================= главная =================
   // Лента объявлений в box: первая страница, дальше — кнопка «Показать ещё» в .more после box
   // или (auto) сама при прокрутке. Возвращает функцию остановки для cleanup.
-  function listingFeed(box, params, { limit = 24, empty, onFirst, auto = false }) {
+  // map — как показать карточку (например, без строки продавца в его же профиле).
+  function listingFeed(box, params, { limit = 24, empty, onFirst, auto = false, map = null }) {
     const more = box.nextElementSibling;
     let offset = 0; let total = Infinity; let busy = false; let io = null; let dead = false;
     const load = async () => {
@@ -1168,6 +1168,7 @@
       try {
         const data = await api('GET', `/api/listings?${new URLSearchParams({ ...params, limit, offset })}`);
         if (!box.isConnected || dead) return; // ленту уже сменили (другая категория на главной)
+        if (map) data.items = data.items.map(map);
         if (offset === 0) {
           if (onFirst) onFirst(data);
           box.innerHTML = String(data.items.length ? grid(data.items) : empty);
@@ -3455,10 +3456,11 @@
     return raw(`<svg class="medal" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="${k}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><path d="M12 2l8.5 5v10L12 22 3.5 17V7z" fill="url(#${k})"/><path d="M12 2l8.5 5L12 12 3.5 7z" fill="#fff" opacity=".3"/>${MEDAL_MARK[level] || MEDAL_MARK[0]}</svg>`);
   }
   const dealsWord = (n) => `${NF.format(n)} ${plural(n, 'сделка', 'сделки', 'сделок')}`;
-  // Строка под именем: «⬢ Опытный · 27 сделок».
-  const repLine = (r, href = '') => {
+  // Строка под именем: «⬢ Опытный · 27 сделок». 1.49.0: shop — у магазина без уровня «Новый магазин» вместо «Новичок»;
+  // deals: false — без числа сделок (в публичном профиле оно в счётчиках рядом).
+  const repLine = (r, href = '', { shop = false, deals = true } = {}) => {
     if (!r) return '';
-    const inner = html`${levelMedal(r.level, 18)}<b>${r.levelName}</b>${r.deals ? html`<span>· ${dealsWord(r.deals)}</span>` : ''}`;
+    const inner = html`${levelMedal(r.level, 18)}<b>${shop && !r.level ? 'Новый магазин' : r.levelName}</b>${deals && r.deals ? html`<span>· ${dealsWord(r.deals)}</span>` : ''}`;
     return href ? html`<a class="rep-line l${r.level}" href="${href}">${inner}</a>` : html`<span class="rep-line l${r.level}">${inner}</span>`;
   };
   const REPLY_TXT = { hour: '~1 ч', hours: '1–3 ч', day: '< суток', days: '1–2 дня' };
@@ -3588,23 +3590,25 @@
   const atTime = (ts) => new Date(ts).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' });
 
   // Насколько заполнен профиль: имя есть всегда, дальше фото, город и (если есть почта) подтверждённый email.
+  // 1.49.0: с тарифом — и витрина. Каждый пункт — [готово, что, действие, ключ]; ключ ведёт туда, где это заполнить.
   function profileTodo(u) {
+    const sh = u.plan ? u.shop : null;
     const todo = [
-      [!!u.avatar, 'Добавить фото', 'avatar'],
-      [!!u.city, 'Указать город', 'city'],
-      ...(S.config.mail ? [[u.emailVerified, 'Подтвердить почту', 'verify']] : [])
+      [!!u.avatar, 'Фото профиля', 'Добавить', 'avatar'],
+      [!!u.city, 'Город', 'Указать', 'city'],
+      ...(S.config.mail ? [[u.emailVerified, 'Почта', 'Подтвердить', 'verify']] : []),
+      ...(sh ? [[!!sh.cover, 'Обложка витрины', 'Загрузить', 'cover'], [!!sh.about, 'Описание магазина', 'Написать', 'about'], [!!sh.hours, 'Часы работы', 'Указать', 'hours'],
+        [!!sh.address, 'Адрес', 'Указать', 'addr'], [!!sh.delivery, 'Доставка', 'Указать', 'delivery'], [!!sh.site, 'Сайт', 'Указать', 'site']] : [])
     ];
     return { todo: todo.filter((t) => !t[0]), pct: Math.round(((todo.filter((t) => t[0]).length + 1) / (todo.length + 1)) * 100) };
   }
-  // Своя карточка слева в профиле и настройках: фото с камерой, имя, значки, цифры, заполненность.
+  // Своя карточка слева в профиле и настройках: фото с камерой, имя, отметка проверки, цифры, что ещё заполнить.
+  // 1.49.0: имя и галочка бренда — в одну строку, из отметок — только проверка ИП/компании и телефона;
+  // у магазина — своя обложка и две плитки: «Статистика» и «Настройка витрины».
   function idCard(u, stats = []) {
     const { todo, pct } = profileTodo(u);
-    const badges = html`${trustBadges(u.badges)}${S.config.mail ? (u.emailVerified
-      ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>`
-      : html`<span class="pf-badge warn">${ic('warn', 13, 2)} Почта не подтверждена</span>`) : ''}
-      ${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
-    // 1.46.0: с тарифом карточка становится «магазинной»: обложка витрины, тариф и быстрые ссылки — и на телефоне.
     const sh = u.plan ? u.shop : null;
+    const badges = html`${trustBadges(u.badges && { ...u.badges, shop: false, tm: null })}${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
     return html`<div class="pf-card ${sh ? `shop ${u.plan.id}` : ''}">
       ${sh ? html`<a class="pf-cover ${sh.cover ? 'has' : ''}" href="/profile/business/shop"${sh.cover ? raw(` style="--cv:url('${esc(sh.cover)}')"`) : ''}>
         <span class="pf-plan">${ic('store', 14, 2.2)}${u.plan.name}${u.plan.trial ? ' · бесплатно' : ''}</span><span class="pf-until">до ${new Date(u.plan.until).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</span></a>` : ''}
@@ -3613,24 +3617,24 @@
         <div class="pf-who-txt">
           <div class="pf-name">${nameSeal(u.name, u.badges)}</div>
           <div class="pf-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
-          ${u.rep ? repLine(u.rep, '/profile/reputation') : ''}
+          ${u.rep ? repLine(u.rep, '/profile/reputation', { shop: !!sh }) : ''}
         </div>
         <a class="icon-btn pf-gear" href="/profile/settings" aria-label="Настройки">${ic('gear', 20)}</a>
       </div>
       ${String(badges).trim() ? html`<div class="pf-badges">${badges}</div>` : ''}
       ${stats.length ? html`<div class="pf-nums">${stats.map(([n, k, href]) => html`<a class="pf-num" href="${href}"><b>${NF.format(n)}</b><span>${k}</span></a>`)}</div>` : ''}
       ${sh ? html`<div class="pf-tools">
-        <a href="/profile/business/shop">${ic('store', 18, 2)}<span>Витрина</span></a>
-        <a href="/profile/business/stats">${ic('chart', 18, 2)}<span>Статистика</span></a>
-        ${u.plan.id === 'pro' ? html`<a href="/profile/business/feed">${ic('feed', 18, 2)}<span>Фид</span></a>` : html`<a href="/business">${ic('trend', 18, 2)}<span>Тариф</span></a>`}</div>` : ''}
+        <a class="pft" href="/profile/business/stats"><span class="pft-ic">${ic('chart', 19, 2.2)}</span><b>Статистика</b><small>Показы и переходы</small><span class="pft-go">${ic('right', 16, 2.4)}</span></a>
+        <a class="pft" href="/profile/business/shop"><span class="pft-ic">${ic('store', 19, 2.2)}</span><b>Настройка витрины</b><small>Обложка и описание</small><span class="pft-go">${ic('right', 16, 2.4)}</span></a>
+      </div>` : ''}
       ${pct < 100 ? html`<div class="pf-progress">
         <div class="pf-progress-head"><span>Профиль заполнен</span><b>${pct}%</b></div>
         <div class="pf-bar"><i style="width:${pct}%"></i></div>
-        <div class="pf-todo">${todo.map((t) => html`<button type="button" class="chip" data-todo="${t[2]}">${ic('plus', 15, 2)}${t[1]}</button>`)}</div>
+        <div class="pf-todo">${todo.map((t) => html`<button type="button" class="pf-todo-row" data-todo="${t[3]}"><i aria-hidden="true"></i><span>${t[1]}</span><b>${t[2]}</b></button>`)}</div>
       </div>` : ''}
     </div>`;
   }
-  // Камера на фото и подсказки «Добавить фото», «Указать город», «Подтвердить почту».
+  // «Что ещё заполнить»: фото — сразу выбор файла, город — настройки, почта — письмо с кодом, витрина — нужное поле.
   function bindIdCard(again) {
     $('[data-ava-pick]').onclick = () => pickAvatar(again);
     $$('[data-todo]').forEach((b) => {
@@ -3638,7 +3642,8 @@
         const t = b.dataset.todo;
         if (t === 'avatar') pickAvatar(again);
         else if (t === 'city') go('/profile/settings#s-city');
-        else verifyModal(again);
+        else if (t === 'verify') verifyModal(again);
+        else go(`/profile/business/shop#sh-${t}`);
       };
     });
   }
@@ -3660,7 +3665,12 @@
       <path d="M7.6 12.6l3 3 6-6.4" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`);
   }
   // Имя с галочкой — только у проверенного бренда (товарный знак из реестра Роспатента).
-  const nameSeal = (name, b) => (b && b.tm ? html`${name}<span class="name-seal" title="Проверенный бренд «${b.tm.name}» — товарный знак № ${b.tm.number} в реестре Роспатента">${verifiedSeal(22)}</span>` : name);
+  // 1.49.0: последнее слово и галочка не разрываются — галочка не уходит одна на новую строку.
+  const nameSeal = (name, b) => {
+    if (!(b && b.tm)) return name;
+    const n = String(name); const cut = n.lastIndexOf(' ') + 1;
+    return html`${n.slice(0, cut)}<span class="ns-tail">${n.slice(cut)}<span class="name-seal" title="Проверенный бренд «${b.tm.name}» — товарный знак № ${b.tm.number} в реестре Роспатента">${verifiedSeal(22)}</span></span>`;
+  };
   const trustBadges = (b) => (b ? html`${b.shop ? html`<span class="pf-badge dark">${ic('store', 13, 2)} Магазин</span>` : ''}${b.tm ? html`<span class="pf-badge seal" title="Товарный знак «${b.tm.name}», свидетельство Роспатента № ${b.tm.number}">${verifiedSeal(15)} Проверенный бренд</span>` : ''}${b.biz ? html`<span class="pf-badge ok" title="${b.biz.name}">${ic('shield', 13, 2)} ${b.biz.kind === 'ИП' ? 'ИП проверен' : 'Компания проверена'}</span>` : ''}${b.phone ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Телефон подтверждён</span>` : ''}` : '');
 
   // Разделы аккаунта и «Выйти» — одно меню для левой колонки профиля (на компьютере) и для панели ≡ (full).
@@ -3697,7 +3707,7 @@
       ${item('/favorites', 'heart', 'Избранное', 'fav')}
       ${item('/profile/following', 'users', 'Подписки', 'following', html`<span class="badge ${S.fresh && S.fresh.follow ? '' : 'hidden'}" data-fresh-follow>${S.fresh ? S.fresh.follow || 0 : 0}</span>`)}
       ${item('/profile/reputation', 'star', 'Репутация', 'rep', u.rep && u.rep.level ? html`<span class="nav-rating">${levelMedal(u.rep.level, 14)}</span>` : '')}
-      ${item('/profile/business', 'store', 'Для бизнеса', 'business', u.plan ? html`<span class="nav-plan">${u.plan.id === 'pro' ? 'Про' : 'Магазин'}</span>` : '')}
+      ${item('/profile/business', 'store', 'Для бизнеса', 'business')}
       ${full ? '' : html`<hr>${item('/profile/settings', 'gear', 'Настройки', 'settings')}`}
       ${item('/messages/support', 'headset', 'Поддержка', 'support')}
       ${u.isAdmin ? item('/admin', 'shield', 'Модерация', 'admin') : ''}
@@ -3791,7 +3801,7 @@
     const statId = section && section.startsWith('stats/') ? section.slice(6) : null;
     const bizSub = section && section.startsWith('business') ? section.split('/')[1] || '' : null;
     const sec = statId ? 'stats' : bizSub !== null ? 'business' : section || 'listings';
-    const BIZ_TITLE = { '': 'Для бизнеса', shop: 'Витрина магазина', stats: 'Статистика магазина', feed: 'Автозагрузка' };
+    const BIZ_TITLE = { '': 'Для бизнеса', shop: 'Настройка витрины', stats: 'Статистика магазина' };
     setTitle(sec === 'business' ? BIZ_TITLE[bizSub] : { stats: 'Статистика', reputation: 'Репутация', following: 'Подписки' }[sec] || 'Профиль');
     const u = S.user;
     const { items } = await api('GET', '/api/my/listings');
@@ -3836,6 +3846,7 @@
     return renderMyListings(items, q.get('status') || 'active', again);
   }
 
+  const pinnedIds = () => (S.user && S.user.plan && S.user.shop ? S.user.shop.pins || [] : []);
   function renderMyListings(items, status, reload) {
     const groups = { active: [], scheduled: [], pending: [], rejected: [], sold: [], archived: [] };
     items.forEach((i) => (groups[i.status] || groups.archived).push(i));
@@ -3853,6 +3864,7 @@
           <div class="ml-info">
             <span class="ml-tag ${tone}"><i></i>${label}</span>
             <a href="/l/${i.id}" class="ml-title">${i.title}</a>
+            ${i.status === 'active' && pinnedIds().includes(i.id) ? html`<span class="ml-promo pinned">${ic('pushpin', 13, 2)}Закреплено на витрине</span>` : ''}
             <div class="ml-price">${price(i.price, i.priceUnit)}</div>
             ${i.promo ? html`<span class="ml-promo ${i.promo.status}">${ic('megaphone', 13, 2)}${i.promo.status === 'active' ? `Реклама · ещё ${dayWord(Math.max(1, daysLeft(i.promo.endsAt)))}` : 'Реклама'}</span>` : ''}
             <div class="ml-meta"><span title="Просмотры">${svg(P.eye, 15, 1.8)} ${NF.format(i.views)}</span><span title="В избранном">${svg(P.heart, 15, 1.8)} ${i.favCount}</span><span>${i.city} · ${shortWhen(i.createdAt)}</span>${i.status === 'active' && i.expiresAt ? html`<span title="Объявление висит 30 дней, потом его можно бесплатно опубликовать снова">${ic('clock', 15, 1.8)} до ${dateShort(i.expiresAt)}</span>` : ''}</div>
@@ -3893,6 +3905,11 @@
         if (i.status === 'rejected' && !i.appealAt && !i.appealReply) acts.push({ icon: 'chat', label: 'Подать апелляцию', run: () => appealModal(i.id, reload) });
         if (['active', 'pending', 'scheduled'].includes(i.status) && (boostOn() || i.promo || (i.boost || []).length)) acts.splice(1, 0, { icon: 'trend', label: 'Продвинуть', run: () => boostModal(i.id, i.title, i.promo) });
         if (i.status === 'active') acts.push({ icon: 'share', label: 'Поделиться', run: () => shareLink(`${location.origin}${lpath(i)}`, i.title) });
+        // 1.49.0: «Магазин Про» — до 3 объявлений в начале витрины.
+        if (i.status === 'active' && S.user.plan && S.user.plan.id === 'pro') {
+          const on = pinnedIds().includes(i.id);
+          acts.push({ icon: 'pushpin', label: on ? 'Открепить с витрины' : 'Закрепить на витрине', run: async () => { if (await setPin(i.id, !on)) reload(); } });
+        }
         acts.push({ icon: 'trash', label: 'Удалить', danger: true, run: async () => { if (await deleteListing(i.id)) reload(); } });
         actionSheet(i.title, acts);
       };
@@ -4033,7 +4050,7 @@
   const TM_REGISTRY = 'https://fips.ru/registers-web/';
   const dateIn = (ts) => (ts ? new Date(ts).toISOString().slice(0, 10) : '');
   function bizBlock(b, on, hasPlan, tm) {
-    const acc = html`<label class="switch biz-switch"><span>Бизнес-аккаунт<small>${on ? 'Включён — тарифы для магазина доступны' : 'Бесплатно. Открывает тарифы: витрину, статистику, автозагрузку'}</small></span><input type="checkbox" data-biz-acc ${on ? raw('checked') : ''} ${on && hasPlan ? raw('disabled') : ''}><span class="track"></span></label>
+    const acc = html`<label class="switch biz-switch"><span>Бизнес-аккаунт<small>${on ? 'Включён — тарифы для магазина доступны' : 'Бесплатно. Открывает тарифы: витрину и статистику магазина'}</small></span><input type="checkbox" data-biz-acc ${on ? raw('checked') : ''} ${on && hasPlan ? raw('disabled') : ''}><span class="track"></span></label>
       ${on ? html`<div class="set-btns"><a class="btn btn-soft btn-sm" href="/business">${ic('store', 16, 2)}Тарифы</a><a class="btn btn-soft btn-sm" href="/profile/business">Мой магазин</a></div>` : ''}`;
     const bizDone = b && b.status === 'verified';
     const bizSent = b && ['pending', 'verified'].includes(b.status);
@@ -4383,12 +4400,16 @@
 
   async function viewUser(id, q) {
     const tab = q && ['rep', 'reviews'].includes(q.get('tab')) ? 'rep' : 'ads'; // reviews — старые ссылки
-    const { user: u, items } = await api('GET', `/api/users/${id}`);
+    const { user: u, sections, pinned } = await api('GET', `/api/users/${id}`);
     setTitle(u.name);
     const own = S.user && S.user.id === u.id;
     const followers = u.followers || 0;
-    const sh = u.shop; // 1.46.1: у магазина — одна шапка: обложка, тариф, название, описание, часы и адрес
-    // Сверху — широкая карточка продавца, ниже вкладки и объявления во всю ширину.
+    const deals = u.rep ? u.rep.total || 0 : 0;
+    const sh = u.shop; // 1.46.1: у магазина — одна шапка: обложка, тариф, название, описание
+    // 1.49.0: одна отметка проверки (галочка бренда — у имени); три числа всегда, даже 0: объявления, сделки, подписчики.
+    const badges = String(trustBadges(u.badges && { ...u.badges, shop: false, tm: null })).trim();
+    const num = (n, one, few, many, attr = '') => html`<div class="pf-num"><b${raw(attr)}>${NF.format(n)}</b><span>${plural(n, one, few, many)}</span></div>`;
+    // Сверху — широкая карточка продавца, ниже вкладки и объявления (у магазина — с колонкой «О магазине»).
     app.innerHTML = String(html`<div class="wrap pub">
       ${own ? html`<div class="pub-own">${ic('eye', 18)}<span>Так ваш профиль видят покупатели</span><a href="/profile/settings">Изменить профиль</a><a href="/profile">Мой профиль</a></div>` : ''}
       <section class="pub-hero ${sh ? `is-shop ${sh.plan}` : ''}" aria-label="${sh ? 'Магазин' : 'Продавец'}">
@@ -4397,16 +4418,15 @@
         <div class="pub-who">
           <h1>${nameSeal(sh ? sh.name : u.name, u.badges)}</h1>
           <div class="pub-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
-          ${repLine(u.rep, `/u/${u.id}?tab=rep`)}
+          ${repLine(u.rep, `/u/${u.id}?tab=rep`, { shop: !!sh, deals: false })}
           ${sh && sh.about ? html`<p class="shop-about">${sh.about}</p>` : ''}
-          ${sh ? shopFacts(sh) : ''}
-          <div class="pf-badges">${trustBadges(sh ? { ...u.badges, shop: false } : u.badges)}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}</div>
+          ${badges ? html`<div class="pf-badges">${raw(badges)}</div>` : ''}
         </div>
         <div class="pub-side">
           <div class="pf-nums">
-            <div class="pf-num"><b>${NF.format(u.activeCount)}</b><span>${plural(u.activeCount, 'объявление', 'объявления', 'объявлений')}</span></div>
-            <div class="pf-num"><b>${NF.format(u.soldCount)}</b><span>продано</span></div>
-            <div class="pf-num"><b data-followers>${NF.format(followers)}</b><span>${plural(followers, 'подписчик', 'подписчика', 'подписчиков')}</span></div>
+            ${num(u.activeCount, 'объявление', 'объявления', 'объявлений')}
+            ${num(deals, 'сделка', 'сделки', 'сделок')}
+            ${num(followers, 'подписчик', 'подписчика', 'подписчиков', ' data-followers')}
           </div>
           <div class="pub-acts">${own ? html`<a class="btn btn-accent btn-block" href="/profile/settings">${ic('edit', 18)}Изменить профиль</a>` : followBtn(u.id, u.following, 'btn-accent')}<button type="button" class="icon-btn pub-share" data-share aria-label="Поделиться профилем">${ic('share', 19)}</button>${own || !S.user ? '' : html`<button type="button" class="icon-btn pub-share" data-pub-more aria-label="Ещё" aria-haspopup="menu">${ic('more', 19)}</button>`}</div>
         </div>
@@ -4416,7 +4436,7 @@
         <a role="tab" aria-selected="${tab === 'ads' ? 'true' : 'false'}" class="${tab === 'ads' ? 'on' : ''}" href="/u/${u.id}">Объявления <span class="n">${u.activeCount}</span></a>
         <a role="tab" aria-selected="${tab === 'rep' ? 'true' : 'false'}" class="${tab === 'rep' ? 'on' : ''}" href="/u/${u.id}?tab=rep">${levelMedal(u.rep ? u.rep.level : 0, 16)}Репутация</a>
       </div>
-      <div id="box">${tab === 'ads' ? (items.length ? grid(items) : html`<div class="pf-empty sm"><h3>Активных объявлений нет</h3><p>Загляните позже.</p></div>`) : html`<div class="loader"></div>`}</div>
+      <div id="box"><div class="loader"></div></div>
     </div>`);
     $('[data-share]').onclick = () => shareLink(`${location.origin}/u/${u.id}`, `${u.name} на Торгане`);
     // 1.48.0: чёрный список — «…» в шапке профиля.
@@ -4434,8 +4454,61 @@
       if (v === 'support') { go('/messages/support'); return; }
       const r = await blockFlow(u, block === 'me'); if (r !== undefined) { block = r ? 'me' : null; paintPubBlock(); }
     } });
-    if (tab !== 'rep') return;
+    if (tab === 'ads') return renderPubAds(u, sections, pinned);
     $('#box').innerHTML = String(html`<div class="rep-page">${repCard(u.rep)}${repHow()}</div>`);
+  }
+
+  // 1.49.0: объявления продавца — лентой с «Показать ещё». У магазина: закреплённые («Магазин Про»), поиск,
+  // разделы с числом объявлений, сортировка и «О магазине» (на компьютере — колонкой справа, на телефоне — ниже).
+  async function renderPubAds(u, sections, pinned) {
+    const sh = u.shop;
+    const st = { q: '', sec: '', sort: '' };
+    $('#box').innerHTML = String(html`<div class="${sh ? 'shop-body' : ''}">
+      <div class="shop-main">
+        ${pinned.length ? html`<section class="shop-pins" aria-label="Главное в магазине"><h2>${ic('pushpin', 18, 2)}Главное в магазине</h2>${grid(pinned)}</section>` : ''}
+        ${sh && u.activeCount ? html`<div class="shop-tools">
+          <form class="shop-find" role="search" data-shop-find>
+            ${ic('search', 18)}<label class="sr" for="shop-q">Поиск в магазине</label>
+            <input id="shop-q" name="q" type="search" placeholder="Поиск в магазине" autocomplete="off" enterkeyhint="search" maxlength="100">
+          </form>
+          <label class="sr" for="shop-sort">Порядок</label>
+          <select id="shop-sort" class="select" data-shop-sort><option value="">Сначала новые</option><option value="cheap">Сначала дешевле</option><option value="expensive">Сначала дороже</option></select>
+          ${sections.length > 1 ? html`<div class="shop-secs" aria-label="Разделы магазина">
+            <button type="button" class="chip active" data-sec="" aria-pressed="true">Все <span>${NF.format(u.activeCount)}</span></button>${sections.map((x) => html`<button type="button" class="chip" data-sec="${x.sub ? `sub:${x.sub}` : `category:${x.category}`}" aria-pressed="false">${x.name} <span>${NF.format(x.n)}</span></button>`)}
+          </div>` : ''}
+        </div>` : ''}
+        <div id="pub-list"><div class="loader"></div></div><div class="more hidden"></div>
+      </div>
+      ${sh ? shopAbout(sh) : ''}
+    </div>`);
+    let feed = null;
+    const load = () => {
+      if (feed) feed.stop();
+      const [k, v] = st.sec ? st.sec.split(':') : [];
+      const params = { user: u.id, ...(st.q ? { q: st.q } : {}), ...(k ? { [k]: v } : {}), ...(st.sort ? { sort: st.sort } : {}) };
+      feed = listingFeed($('#pub-list'), params, {
+        map: (i) => ({ ...i, seller: null }), // все объявления этого продавца — строка продавца не нужна
+        empty: String(html`<div class="pf-empty sm">${st.q || st.sec ? html`<h3>Ничего не нашлось</h3><p>Попробуйте другие слова или раздел.</p>` : html`<h3>Активных объявлений нет</h3><p>Загляните позже.</p>`}</div>`)
+      });
+      return feed.first;
+    };
+    cleanup = () => { if (feed) feed.stop(); };
+    const find = $('[data-shop-find]');
+    if (find) {
+      let t = null;
+      const inp = $('#shop-q');
+      find.onsubmit = (e) => { e.preventDefault(); clearTimeout(t); st.q = inp.value.trim(); load().catch((ex) => toast(ex.message, true)); };
+      inp.oninput = () => { clearTimeout(t); t = setTimeout(() => { if (st.q !== inp.value.trim()) { st.q = inp.value.trim(); load().catch((ex) => toast(ex.message, true)); } }, 400); };
+      $('[data-shop-sort]').onchange = (e) => { st.sort = e.target.value; load().catch((ex) => toast(ex.message, true)); };
+      $$('[data-sec]').forEach((b) => {
+        b.onclick = () => {
+          st.sec = b.dataset.sec;
+          $$('[data-sec]').forEach((x) => { x.classList.toggle('active', x === b); x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+          load().catch((ex) => toast(ex.message, true));
+        };
+      });
+    }
+    await load();
   }
 
   // ================= для бизнеса: тарифы, оплата, продвижение =================
@@ -4444,11 +4517,11 @@
   const dateLong = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
   const dateShort = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   const daysLeft = (ts) => Math.max(0, Math.ceil((ts - Date.now()) / 86400000));
-  // Что даёт каждый тариф — ровно то, что работает в коде (lib/business.js, lib/deals.js, lib/support.js, lib/feed.js, lib/promo.js).
+  // Что даёт каждый тариф — ровно то, что работает в коде (lib/business.js, lib/deals.js, lib/support.js, lib/promo.js).
   // 1.45.0: коротко — по три-четыре строки на тариф.
   const planFeatures = (key, pr) => ({
-    shop: ['Витрина: обложка, описание, адрес и сайт', 'Значок «Магазин» у объявлений', 'Статистика всех объявлений и выгрузка в Excel'],
-    pro: ['Всё из «Магазина»', 'Автозагрузка из XML-фида Авито', pr.proDiscount ? `Скидка ${pr.proDiscount}% на рекламу над поиском` : 'Обращения в поддержку — первыми', ...(pr.proDiscount ? ['Обращения в поддержку — первыми'] : [])]
+    shop: ['Витрина: обложка, поиск и разделы, «О магазине»', 'Значок «Магазин» у объявлений', 'Статистика всех объявлений и выгрузка в Excel'],
+    pro: ['Всё из «Магазина»', 'До 3 закреплённых товаров в начале витрины', pr.proDiscount ? `Скидка ${pr.proDiscount}% на рекламу над поиском` : 'Обращения в поддержку — первыми', ...(pr.proDiscount ? ['Обращения в поддержку — первыми'] : [])]
   })[key];
   // Цена, зачёркнутая «от руки» (1.45.0): неровная линия рисуется при появлении.
   const handStrike = (text) => html`<span class="hand-strike">${text}<svg viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true"><path pathLength="100" d="M3 15.5c13-2.6 27-5.4 43-6.4 17-1.1 33 .3 47-1.6 9.6-1.3 16-3.1 24-5.2"/><path pathLength="100" class="hs2" d="M8 19.5c18-3.3 39-6.1 61-6.3 15-.2 29 .4 46-3.9"/></svg></span>`;
@@ -4504,7 +4577,7 @@
         <div class="bz-hero-txt">
           <span class="bz-kicker">${ic('store', 15, 2)}Торгана для бизнеса</span>
           <h1>Продавайте как магазин</h1>
-          <p>Объявления — бесплатно для всех. Тариф добавляет витрину, статистику и автозагрузку.</p>
+          <p>Объявления — бесплатно для всех. Тариф добавляет витрину с поиском и разделами и статистику магазина.</p>
           <ol class="bz-flow">${flow(1, 'Бизнес-аккаунт', bizOn)}${flow(2, 'Тариф', !!plan)}${flow(3, 'Витрина', false)}</ol>
           <div class="bz-cta">${heroCta}</div>
         </div>
@@ -4697,20 +4770,17 @@
     const gate = (need, text) => html`<div class="biz-gate">${ic('store', 26, 1.8)}<div><b>${text}</b><span>${lock(need) ? `Доступно ${lock(need)}.` : ''} ${biz ? '' : 'Сначала включите бизнес-аккаунт — это бесплатно.'}</span></div><a class="btn btn-dark" href="/business">${biz ? 'Выбрать тариф' : 'Включить бизнес-аккаунт'}</a></div>`;
     if (sub === 'shop') return lock('shop') ? (box.innerHTML = String(gate('shop', 'Витрина магазина'))) : renderShopEditor(box, d, reload);
     if (sub === 'stats') return lock('shop') ? (box.innerHTML = String(gate('shop', 'Статистика магазина'))) : renderShopStats(box, days);
-    if (sub === 'feed') return lock('pro') ? (box.innerHTML = String(gate('pro', 'Автозагрузка из фида'))) : renderFeed(box, d, reload);
     const tool = (href, icon, t, sub2, need) => html`<a class="biz-tool ${lock(need) ? 'locked' : ''}" href="${href}"><span class="bt-ic">${ic(icon, 22)}</span><b>${t}</b><small>${lock(need) ? html`${ic('lock', 13, 2)} ${lock(need)}` : sub2}</small></a>`;
-    const fs = d.feed.state || {};
     box.innerHTML = String(html`<div class="bizhub">
       ${!biz ? html`<div class="biz-gate">${ic('store', 26, 1.8)}<div><b>Включите бизнес-аккаунт</b><span>Бесплатно. После этого можно подключить тариф — первым бизнес-аккаунтам он бесплатный.</span></div><button type="button" class="btn btn-dark" data-biz-on>Включить</button></div>` : ''}
       <div class="plan-now ${d.plan ? d.plan.id : 'none'}">
         <div class="pn-txt"><span class="pn-k">${d.plan && d.plan.trial ? 'Бесплатный тариф' : 'Тариф'}</span><b>${d.plan ? `«${d.plan.name}»` : 'Не подключён'}</b>
-          <span>${d.plan ? `до ${dateLong(d.plan.until)} · осталось ${daysLeft(d.plan.until)} ${plural(daysLeft(d.plan.until), 'день', 'дня', 'дней')}` : `Витрина, статистика магазина и автозагрузка — от ${rub(d.prices.shop[1])} в месяц. Размещение объявлений бесплатно всегда.`}</span></div>
+          <span>${d.plan ? `до ${dateLong(d.plan.until)} · осталось ${daysLeft(d.plan.until)} ${plural(daysLeft(d.plan.until), 'день', 'дня', 'дней')}` : `Витрина и статистика магазина — от ${rub(d.prices.shop[1])} в месяц. Размещение объявлений бесплатно всегда.`}</span></div>
         <a class="btn ${d.plan ? 'btn-light' : 'btn-dark'}" href="/business">${d.plan ? 'Продлить или сменить' : 'Выбрать тариф'}</a>
       </div>
       <div class="biz-tools">
         ${tool('/profile/business/shop', 'store', 'Витрина', d.shop.about || d.shop.cover ? 'заполнена · как видят покупатели' : 'обложка, описание, адрес, сайт', 'shop')}
         ${tool('/profile/business/stats', 'chart', 'Статистика магазина', 'все объявления · выгрузка в Excel', 'shop')}
-        ${tool('/profile/business/feed', 'feed', 'Автозагрузка', d.feed.url ? (fs.status === 'error' ? 'ошибка — откройте' : fs.at ? `загружено ${when(fs.at)}` : 'загружается…') : 'фид Авито по ссылке', 'pro')}
       </div>
       <section class="st-card"><div class="st-card-head"><h2>Продвижение</h2><a class="btn btn-soft btn-sm" href="/profile?status=active">${ic('trend', 16, 2)}Выбрать объявление</a></div>
         ${d.promotions.length ? html`<div class="promo-list">${d.promotions.map((p) => html`<a class="promo-row" href="${p.listingId ? `/l/${p.listingId}` : '#'}">
@@ -4729,13 +4799,22 @@
     if (on) on.onclick = async () => { on.disabled = true; try { await bizAccountOn(); go('/business#plans'); } catch (ex) { toast(ex.message, true); on.disabled = false; } };
   }
 
+  // 1.49.0: закрепить на витрине («Магазин Про») или открепить; true — получилось.
+  async function setPin(id, pin) {
+    try {
+      const r = await api('PUT', '/api/my/shop/pins', { id, pin });
+      S.user.shop = r.shop;
+      toast(pin ? 'Закреплено — покупатели увидят его первым на витрине' : 'Откреплено');
+      return true;
+    } catch (e) { toast(e.message, true); return false; }
+  }
   function renderShopEditor(box, d, reload) {
     const s = d.shop;
     let cover = null; // undefined — не трогать, '' — убрать, имя файла — новая
     box.innerHTML = String(html`<form class="set" id="shop-form">
       <section class="set-group set-wide">
         <h2>Обложка</h2>
-        <button type="button" class="shop-cover-edit ${s.cover ? 'has' : ''}" data-cover>${s.cover ? html`<img src="${s.cover}" alt="">` : ''}<span class="sce-hint">${ic('camera', 20, 2)}${s.cover ? 'Заменить обложку' : 'Загрузить обложку · 1600×530'}</span></button>
+        <button type="button" id="sh-cover" class="shop-cover-edit ${s.cover ? 'has' : ''}" data-cover>${s.cover ? html`<img src="${s.cover}" alt="">` : ''}<span class="sce-hint">${ic('camera', 20, 2)}${s.cover ? 'Заменить обложку' : 'Загрузить обложку · 1600×530'}</span></button>
         ${s.cover ? html`<div><button type="button" class="btn btn-line btn-sm" data-cover-del>Убрать обложку</button></div>` : ''}
         <p class="muted" style="margin:0;font-size:14px">Широкое фото магазина или товаров — сверху страницы продавца. JPG, PNG или WebP.</p>
       </section>
@@ -4747,10 +4826,21 @@
           <div class="field" style="flex:1"><label for="sh-site">Сайт</label><input id="sh-site" name="site" class="input" maxlength="200" value="${s.site}" placeholder="example.ru" inputmode="url"></div>
         </div>
         <div class="field"><label for="sh-addr">Адрес магазина или пункта выдачи</label><input id="sh-addr" name="address" class="input" maxlength="200" value="${s.address}" placeholder="Казань, ул. Баумана, 1"></div>
+        <div class="field"><label for="sh-delivery">Доставка</label><input id="sh-delivery" name="delivery" class="input" maxlength="200" value="${s.delivery}" placeholder="Самовывоз, курьер по городу, СДЭК по России"></div>
         <p class="muted" style="margin:0;font-size:13px">Витрину видят все на странице продавца. Пишите по правилам площадки: без телефонов и мессенджеров в описании — для связи есть чат. Модератор может очистить витрину, если она нарушает правила.</p>
         <div class="set-btns"><button class="btn btn-dark" type="submit">Сохранить</button><a class="btn btn-soft" href="/u/${S.user.id}">${ic('eye', 18)}Как видят покупатели</a></div>
       </section>
+      <section class="set-group set-wide">
+        <h2>Главное в магазине</h2>
+        ${d.plan.id !== 'pro' ? html`<p class="muted" style="margin:0;font-size:14px">${ic('lock', 14, 2)} До 3 объявлений в начале витрины — в тарифе «Магазин Про».</p>`
+    : html`${d.pinned.length ? html`<div class="pin-list">${d.pinned.map((l) => html`<div class="pin-row"><span class="pin-ic">${ic('pushpin', 16, 2)}</span><a href="/l/${l.id}">${l.title}</a><button type="button" class="btn btn-line btn-sm" data-unpin="${l.id}">Открепить</button></div>`)}</div>` : ''}
+        <p class="muted" style="margin:0;font-size:14px">${d.pinned.length >= 3 ? 'Закреплено 3 из 3 — чтобы закрепить другое, открепите одно.' : `Закреплено ${d.pinned.length} из 3. Закрепить: «Мои объявления» → ⋯ → «Закрепить на витрине».`} Закреплённые покупатели видят первыми.</p>`}
+      </section>
     </form>`);
+    $$('[data-unpin]', box).forEach((b) => { b.onclick = async () => { if (await setPin(Number(b.dataset.unpin), false)) reload(); }; });
+    // Из «Что ещё заполнить» в карточке профиля — сразу к нужному полю.
+    const target = location.hash && $(location.hash, box);
+    if (target) { target.scrollIntoView({ block: 'center' }); target.focus({ preventScroll: true }); }
     $('[data-cover]', box).onclick = () => {
       const inp = document.createElement('input');
       inp.type = 'file'; inp.accept = 'image/jpeg,image/png,image/webp';
@@ -4811,48 +4901,16 @@
     </div>`);
   }
 
-  function renderFeed(box, d, reload) {
-    const f = d.feed; const st = f.state || {};
-    box.innerHTML = String(html`<div class="set">
-      <form class="set-group set-wide" id="feed-form">
-        <h2>Ссылка на фид</h2>
-        <p class="muted" style="margin:0;font-size:14px">XML-файл в формате автозагрузки Авито — та же ссылка, что вы указываете в Авито. Берём поля Id, Title, Description, Price, Category, Address, Condition и Images.</p>
-        <div class="field"><label for="fd-url">Ссылка</label><input id="fd-url" name="url" class="input" inputmode="url" value="${f.url}" placeholder="https://example.ru/avito.xml"></div>
-        <div class="row stack-m">
-          <div class="field" style="flex:1"><label for="fd-cat">Категория, если не распознана</label><select id="fd-cat" name="category" class="select"><option value="">Не загружать такие</option>${S.config.categories.map((c) => html`<option value="${c.id}" ${c.id === f.category ? raw('selected') : ''}>${c.name}</option>`)}</select></div>
-          <div class="field" style="flex:1"><label for="fd-city">Город, если нет в адресе</label><input id="fd-city" name="city" class="input" data-cities autocomplete="off" value="${f.city}" placeholder="${S.user.city || 'Казань'}"></div>
-        </div>
-        <div class="set-btns"><button class="btn btn-dark" type="submit">${f.url ? 'Сохранить и загрузить' : 'Подключить фид'}</button>${f.url ? html`<button type="button" class="btn btn-soft" data-run ${st.running ? raw('disabled') : ''}>${ic('refresh', 16, 2)}Загрузить сейчас</button>` : ''}</div>
-      </form>
-      ${f.url ? html`<section class="set-group set-wide" id="feed-state">
-        <h2>Последняя загрузка</h2>
-        ${st.running ? html`<div class="banner soft">${ic('clock', 18, 2)} Загружаем фид — это может занять несколько минут, если фото много.</div>`
-    : st.at ? html`<div class="banner ${st.status === 'error' ? 'danger' : 'ok'}">${st.status === 'error' ? html`<strong>Ошибка.</strong> ${st.message}` : html`<strong>Готово ${when(st.at)}.</strong> ${st.message || ''}`}</div>
-          ${st.status !== 'error' ? html`<div class="feed-nums">${[['В фиде', st.total], ['Новых', st.created], ['Изменено', st.updated], ['Без изменений', st.unchanged], ['Снято', st.archived], ['Пропущено', st.skipped]].map(([k, v]) => html`<div><b>${NF.format(v || 0)}</b><span>${k}</span></div>`)}</div>` : ''}
-          ${st.errors && st.errors.length ? html`<h3 class="set-h3">Что не загрузилось</h3><ul class="feed-errs">${st.errors.map((e) => html`<li><b>${e.title || `Id ${e.id}`}</b> — ${e.error}</li>`)}</ul>` : ''}` : html`<p class="muted" style="margin:0">Ещё не загружали.</p>`}
-        <p class="muted" style="margin:0;font-size:13px">Фид обновляется каждые 6 часов${f.next && !st.running ? ` — следующий раз ${when(f.next)}` : ''}. Новые и изменённые объявления проходят проверку модератора; те, что пропали из файла, снимаются с публикации.</p>
-      </section>` : ''}
-    </div>`);
-    let timer = null;
-    const watch = () => { timer = setTimeout(async () => { if (!box.isConnected) return; const n = await api('GET', '/api/my/business').catch(() => null); if (n && box.isConnected) { if (n.feed.state.running) watch(); else renderFeed(box, n, reload); } }, 2000); };
-    if (st.running) watch();
-    cleanup = () => clearTimeout(timer);
-    $('#feed-form').onsubmit = async (e) => {
-      e.preventDefault();
-      try { const r = await api('PUT', '/api/my/feed', Object.fromEntries(new FormData(e.target).entries())); toast(r.feed.url ? 'Фид сохранён — загружаем' : 'Фид отключён'); setTimeout(reload, 400); } catch (ex) { toast(ex.message, true); }
-    };
-    const run = $('[data-run]', box);
-    if (run) run.onclick = async () => { try { await api('POST', '/api/my/feed/run'); toast('Загружаем фид'); setTimeout(reload, 400); } catch (ex) { toast(ex.message, true); } };
-  }
-
-  // Витрина магазина на публичной странице продавца.
-  // Часы, адрес, сайт магазина — строкой (1.46.1: в общей шапке профиля).
-  function shopFacts(sh) {
+  // 1.49.0: «О магазине» — часы, адрес (с картой в Яндекс Картах), доставка, сайт. Пусто — блока нет.
+  function shopAbout(sh) {
     const site = sh.site ? (() => { try { return new URL(sh.site).hostname.replace(/^www\./, ''); } catch { return ''; } })() : '';
-    return sh.hours || sh.address || site ? html`<div class="shop-facts">
-      ${sh.hours ? html`<span>${ic('clock', 16)}${sh.hours}</span>` : ''}
-      ${sh.address ? html`<span>${ic('pin', 16)}${sh.address}</span>` : ''}
-      ${site ? html`<a href="${sh.site}" target="_blank" rel="nofollow noopener ugc">${ic('link', 16)}${site}</a>` : ''}</div>` : '';
+    const rows = [
+      sh.hours && ['clock', 'Часы работы', sh.hours],
+      sh.address && ['pin', 'Адрес', html`${sh.address}<a class="sa-map" href="https://yandex.ru/maps/?text=${encodeURIComponent(sh.address)}" target="_blank" rel="noopener">Открыть в Яндекс Картах</a>`],
+      sh.delivery && ['truck', 'Доставка', sh.delivery],
+      site && ['link', 'Сайт', html`<a href="${sh.site}" target="_blank" rel="nofollow noopener ugc">${site}</a>`]
+    ].filter(Boolean);
+    return rows.length ? html`<aside class="shop-info" aria-label="О магазине"><h2>О магазине</h2>${rows.map(([icn, k, v]) => html`<div class="si-row"><span class="si-ic">${ic(icn, 18, 2)}</span><div><small>${k}</small><span>${v}</span></div></div>`)}</aside>` : '';
   }
 
   // ================= модерация =================
