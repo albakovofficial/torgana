@@ -19,7 +19,7 @@ test('VIN: проверка, русские буквы, частичный по�
   assert.match((await seller.post('/api/listings', { ...CAR, price: 900000, vin: 'XTA2190001234567!' })).data.error, /VIN/);
   const id = await publish(seller, admin, { ...CAR, price: 900000, vin: 'хта21900012345678' });
   const anon = await (await fetch(`${srv.base}/api/listings/${id}`)).json();
-  assert.equal(anon.listing.title, 'Kia Rio 1.6 AT, 2017, 90 000 км'.replace(' ', anon.listing.title.includes(' ') ? ' ' : ' '));
+  assert.equal(anon.listing.title.replace(/\s/g, ' '), 'Kia Rio · 2017 · автомат', 'название — из характеристик');
   assert.equal(anon.listing.vin, '');
   assert.equal(anon.listing.vinMasked, 'XTA2•••••••••5678');
   assert.equal((await fetch(`${srv.base}/api/listings/${id}/vin`)).status, 401);

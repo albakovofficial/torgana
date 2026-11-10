@@ -168,15 +168,17 @@
   const subOf = (id) => { for (const list of Object.values(S.config.subcategories || {})) { const x = list.find((s) => s.id === id); if (x) return x; } return null; };
   const subName = (id) => (subOf(id) || {}).name || '';
   const attrNum = (v) => (Math.abs(Number(v)) >= 10000 ? NF.format(v) : String(v).replace('.', ','));
-  // <auto-title> 1.48.0: название из характеристик, как на Авито — только главное. Тот же код — в lib/taxonomy.js (тест сверяет).
+  // <auto-title> 1.48.0: название из характеристик — свой стиль Торганы: короткие части через «·», полными словами
+  // (вариант B владельца): «Toyota Camry · 2018 · автомат», «Квартира · 2 комнаты · 54,5 м²». Тот же код — в lib/taxonomy.js (тест сверяет).
   const TITLE_SUBS = new Set(['cars', 'moto', 'phones', 'flats', 'flats_rent', 'daily', 'rooms', 'houses', 'land', 'garages', 'commercial']);
   function autoTitle(sub, a) {
     if (!TITLE_SUBS.has(sub) || !a) return '';
     const n = (v) => (Math.abs(Number(v)) >= 10000 ? new Intl.NumberFormat('ru-RU').format(v) : String(v).replace('.', ','));
     const has = (k) => a[k] !== undefined && a[k] !== null && a[k] !== '';
-    const join = (...xs) => xs.filter(Boolean).join(', ');
-    const floor = () => (has('floor') ? `${a.floor}${has('floors') ? `/${a.floors}` : ''} эт.` : '');
-    const flat = () => (a.rooms === 'Студия' ? 'Квартира-студия' : a.rooms === '5+' ? 'Многокомнатная квартира' : `${a.rooms}-к. квартира`);
+    const dot = (...xs) => xs.filter(Boolean).join('\u00a0· '); // точка не переносится в начало строки
+    const pl = (v, one, few, many) => { const x = Number(v); if (!Number.isInteger(x)) return few; const d = x % 10; const h = x % 100; return d === 1 && h !== 11 ? one : d >= 2 && d <= 4 && (h < 12 || h > 14) ? few : many; };
+    const rooms = () => (a.rooms === 'Студия' ? '' : a.rooms === '5+' ? '5\u00a0и больше комнат' : `${a.rooms}\u00a0${pl(a.rooms, 'комната', 'комнаты', 'комнат')}`);
+    const flat = () => (a.rooms === 'Студия' ? 'Квартира-студия' : 'Квартира');
     const named = (brand, model, skip) => {
       if (!model) return '';
       const m = String(model);
@@ -185,41 +187,30 @@
     };
     if (sub === 'cars') {
       if (!has('brand') || !has('model') || !has('year')) return '';
-      const gb = { Механика: 'MT', Автомат: 'AT', Робот: 'AMT', Вариатор: 'CVT' }[a.gearbox] || '';
-      const eng = has('engine') && a.fuel !== 'Электро' ? Number(a.engine).toFixed(1) : '';
-      const head = [named(a.brand, a.model, a.brand === 'Другая'), eng, gb].filter(Boolean).join(' ');
-      return join(head, String(a.year), Number(a.mileage) > 0 ? `${n(a.mileage)} км` : '');
+      return dot(named(a.brand, a.model, a.brand === 'Другая'), String(a.year), has('gearbox') ? String(a.gearbox).toLowerCase() : '');
     }
     if (sub === 'moto') {
       if (!has('motoType') || !has('model') || !has('year')) return '';
-      const head = [a.motoType === 'Мотоцикл' ? '' : a.motoType, a.model].filter(Boolean).join(' ');
-      return join(head, String(a.year), Number(a.mileage) > 0 ? `${n(a.mileage)} км` : '');
+      return dot([a.motoType === 'Мотоцикл' ? '' : a.motoType, a.model].filter(Boolean).join(' '), String(a.year));
     }
     if (sub === 'phones') {
       if (!has('brand') || !has('model') || !has('memory')) return '';
-      return join(named(a.brand, a.model, a.brand === 'Другой' || (a.brand === 'Apple' && /^iphone/i.test(a.model))), a.memory);
+      return dot(named(a.brand, a.model, a.brand === 'Другой' || (a.brand === 'Apple' && /^iphone/i.test(a.model))), a.memory);
     }
-    if (sub === 'flats' || sub === 'flats_rent') {
-      if (!has('rooms') || !has('area')) return '';
-      return join(flat(), `${n(a.area)} м²`, floor());
-    }
-    if (sub === 'daily') {
-      if (!has('rooms') || !has('guests')) return '';
-      const g = Number(a.guests);
-      return join(flat(), `до ${g} ${g % 10 === 1 && g % 100 !== 11 ? 'гостя' : 'гостей'}`);
-    }
-    if (sub === 'rooms') return has('area') ? join(`Комната ${n(a.area)} м²`, floor()) : '';
-    if (sub === 'houses') return has('houseType') && has('area') ? `${a.houseType} ${n(a.area)} м²${Number(a.land) > 0 ? ` на участке ${n(a.land)} сот.` : ''}` : '';
+    if (sub === 'flats' || sub === 'flats_rent') return has('rooms') && has('area') ? dot(flat(), rooms(), `${n(a.area)}\u00a0м²`) : '';
+    if (sub === 'daily') return has('rooms') && has('guests') ? dot(flat(), rooms(), `до ${a.guests}\u00a0${pl(a.guests, 'гостя', 'гостей', 'гостей')}`) : '';
+    if (sub === 'rooms') return has('area') ? dot('Комната', `${n(a.area)}\u00a0м²`) : '';
+    if (sub === 'houses') return has('houseType') && has('area') ? dot(a.houseType, `${n(a.area)}\u00a0м²`, Number(a.land) > 0 ? `${n(a.land)}\u00a0${pl(a.land, 'сотка', 'сотки', 'соток')}` : '') : '';
     if (sub === 'land') {
       if (!has('land')) return '';
-      const use = { ИЖС: 'ИЖС', 'СНТ, ДНП': 'СНТ, ДНП', Сельхозназначение: 'сельхозназначения', Промназначение: 'промназначения' }[a.landUse];
-      return `Участок ${n(a.land)} сот.${use ? ` (${use})` : ''}`;
+      const use = { ИЖС: 'ИЖС', 'СНТ, ДНП': 'СНТ, ДНП', Сельхозназначение: 'сельхозназначение', Промназначение: 'промназначение' }[a.landUse];
+      return dot('Участок', `${n(a.land)}\u00a0${pl(a.land, 'сотка', 'сотки', 'соток')}`, use || '');
     }
-    if (sub === 'garages') return has('garageType') ? join(a.garageType, has('area') ? `${n(a.area)} м²` : '') : '';
+    if (sub === 'garages') return has('garageType') ? dot(a.garageType, has('area') ? `${n(a.area)}\u00a0м²` : '') : '';
     if (sub === 'commercial') {
       if (!has('commType') || !has('area')) return '';
-      const t = { Торговое: 'Торговое помещение', Производство: 'Производственное помещение', Общепит: 'Помещение общепита', 'Свободное назначение': 'Помещение свободного назначения' }[a.commType] || a.commType;
-      return join(t, `${n(a.area)} м²`);
+      const t = { Торговое: 'Торговое помещение', Производство: 'Производственное помещение', Общепит: 'Помещение под общепит', 'Свободное назначение': 'Помещение свободного назначения' }[a.commType] || a.commType;
+      return dot(t, `${n(a.area)}\u00a0м²`);
     }
     return '';
   }
@@ -256,7 +247,7 @@
   const attrSummary = (subId, attrs) => {
     const x = subOf(subId);
     if (!x || !attrs) return '';
-    const line = (x.card || x.summary).map((k) => { const f = x.fields.find((y) => y.key === k); return f ? attrText(f, attrs[k]) : ''; }).filter(Boolean).join(', ');
+    const line = (x.card || x.summary).map((k) => { const f = x.fields.find((y) => y.key === k); if (!f) return ''; if (x.card && k === 'floor' && attrs.floor !== undefined && attrs.floors !== undefined) return `${attrs.floor} этаж из ${attrs.floors}`; return attrText(f, attrs[k]); }).filter(Boolean).join(', ');
     return line ? line[0].toUpperCase() + line.slice(1) : '';
   };
   const metroKey = (c) => String(c || '').toLowerCase().replace(/ё/g, 'е').trim();

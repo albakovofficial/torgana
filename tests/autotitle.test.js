@@ -15,31 +15,37 @@ const words = (s) => new Function(`return ${s.match(/const CARD_WORDS = (\{[\s\S
 
 const sp = (s) => s.replace(/\s/g, ' ');
 const CASES = [
-  ['cars', { brand: 'Toyota', model: 'Camry', year: 2018, mileage: 86500, gearbox: 'Автомат', engine: 2.5, fuel: 'Бензин' }, 'Toyota Camry 2.5 AT, 2018, 86 500 км'],
-  ['cars', { brand: 'Lada', model: 'Lada Granta', year: 2020, mileage: 5000, gearbox: 'Механика', engine: 1.6 }, 'Lada Granta 1.6 MT, 2020, 5000 км'],
-  ['cars', { brand: 'Tesla', model: 'Model 3', year: 2021, mileage: 0, gearbox: 'Автомат', engine: 1, fuel: 'Электро' }, 'Tesla Model 3 AT, 2021'],
-  ['cars', { brand: 'Другая', model: 'Москвич 3', year: 2024, mileage: 10, gearbox: 'Вариатор' }, 'Москвич 3 CVT, 2024, 10 км'],
+  ['cars', { brand: 'Toyota', model: 'Camry', year: 2018, mileage: 86500, gearbox: 'Автомат', engine: 2.5, fuel: 'Бензин' }, 'Toyota Camry · 2018 · автомат'],
+  ['cars', { brand: 'Lada', model: 'Lada Granta', year: 2020, mileage: 5000, gearbox: 'Механика', engine: 1.6 }, 'Lada Granta · 2020 · механика'],
+  ['cars', { brand: 'Другая', model: 'Москвич 3', year: 2024 }, 'Москвич 3 · 2024'],
   ['cars', { brand: 'Kia', year: 2019 }, ''],
-  ['moto', { motoType: 'Мотоцикл', model: 'Honda CB400', year: 2015, mileage: 12000 }, 'Honda CB400, 2015, 12 000 км'],
-  ['moto', { motoType: 'Квадроцикл', model: 'CFMoto CForce 600', year: 2021 }, 'Квадроцикл CFMoto CForce 600, 2021'],
-  ['phones', { brand: 'Apple', model: 'iPhone 13', memory: '128 ГБ' }, 'iPhone 13, 128 ГБ'],
-  ['phones', { brand: 'Samsung', model: 'Galaxy S24', memory: '256 ГБ' }, 'Samsung Galaxy S24, 256 ГБ'],
-  ['flats', { rooms: '2', area: 54.5, floor: 5, floors: 9 }, '2-к. квартира, 54,5 м², 5/9 эт.'],
-  ['flats', { rooms: 'Студия', area: 28, floor: 3 }, 'Квартира-студия, 28 м², 3 эт.'],
-  ['flats_rent', { rooms: '5+', area: 140 }, 'Многокомнатная квартира, 140 м²'],
-  ['daily', { rooms: '1', guests: 21 }, '1-к. квартира, до 21 гостя'],
-  ['daily', { rooms: '3', guests: 6 }, '3-к. квартира, до 6 гостей'],
-  ['rooms', { area: 18, floor: 2, floors: 5 }, 'Комната 18 м², 2/5 эт.'],
-  ['houses', { houseType: 'Дом', area: 120, land: 6 }, 'Дом 120 м² на участке 6 сот.'],
-  ['houses', { houseType: 'Таунхаус', area: 95 }, 'Таунхаус 95 м²'],
-  ['land', { land: 10, landUse: 'Сельхозназначение' }, 'Участок 10 сот. (сельхозназначения)'],
-  ['garages', { garageType: 'Машиноместо', area: 14 }, 'Машиноместо, 14 м²'],
-  ['commercial', { commType: 'Общепит', area: 80 }, 'Помещение общепита, 80 м²'],
+  ['moto', { motoType: 'Мотоцикл', model: 'Honda CB400', year: 2015, mileage: 12000 }, 'Honda CB400 · 2015'],
+  ['moto', { motoType: 'Квадроцикл', model: 'CFMoto CForce 600', year: 2021 }, 'Квадроцикл CFMoto CForce 600 · 2021'],
+  ['phones', { brand: 'Apple', model: 'iPhone 13', memory: '128 ГБ' }, 'iPhone 13 · 128 ГБ'],
+  ['phones', { brand: 'Samsung', model: 'Galaxy S24', memory: '256 ГБ' }, 'Samsung Galaxy S24 · 256 ГБ'],
+  ['flats', { rooms: '2', area: 54.5, floor: 5, floors: 9 }, 'Квартира · 2 комнаты · 54,5 м²'],
+  ['flats', { rooms: '1', area: 38 }, 'Квартира · 1 комната · 38 м²'],
+  ['flats', { rooms: 'Студия', area: 28, floor: 3 }, 'Квартира-студия · 28 м²'],
+  ['flats_rent', { rooms: '5+', area: 140 }, 'Квартира · 5 и больше комнат · 140 м²'],
+  ['daily', { rooms: '1', guests: 21 }, 'Квартира · 1 комната · до 21 гостя'],
+  ['daily', { rooms: '3', guests: 6 }, 'Квартира · 3 комнаты · до 6 гостей'],
+  ['rooms', { area: 18, floor: 2, floors: 5 }, 'Комната · 18 м²'],
+  ['houses', { houseType: 'Дом', area: 120, land: 6 }, 'Дом · 120 м² · 6 соток'],
+  ['houses', { houseType: 'Дача', area: 40, land: 6.5 }, 'Дача · 40 м² · 6,5 сотки'],
+  ['houses', { houseType: 'Таунхаус', area: 95 }, 'Таунхаус · 95 м²'],
+  ['land', { land: 21, landUse: 'ИЖС' }, 'Участок · 21 сотка · ИЖС'],
+  ['land', { land: 10, landUse: 'Сельхозназначение' }, 'Участок · 10 соток · сельхозназначение'],
+  ['garages', { garageType: 'Машиноместо', area: 14 }, 'Машиноместо · 14 м²'],
+  ['commercial', { commType: 'Общепит', area: 80 }, 'Помещение под общепит · 80 м²'],
   ['laptops', { brand: 'Apple' }, '']
 ];
 
-test('название из характеристик: только главное, как на Авито', () => {
-  for (const [sub, a, want] of CASES) assert.equal(sp(autoTitle(sub, a)), want, `${sub} ${JSON.stringify(a)}`);
+test('название из характеристик: свой стиль Торганы — части через «·», полными словами, без сокращений', () => {
+  for (const [sub, a, want] of CASES) {
+    const t = sp(autoTitle(sub, a));
+    assert.equal(t, want, `${sub} ${JSON.stringify(a)}`);
+    assert.doesNotMatch(t, /\d-к\.|\bэт\.|\bсот\.|\b(AT|MT|AMT|CVT)\b/, 'без сокращений как на Авито');
+  }
 });
 
 test('в браузере — тот же код: те же названия и те же слова в карточке', () => {
@@ -53,6 +59,7 @@ test('модель: без ссылок, лишних пробелов и с з�
   assert.equal(cleanAttrs('phones', { model: 'iPhone 15' }).model, 'iPhone 15');
   assert.throws(() => cleanAttrs('cars', { model: 'site.ru' }), /без ссылок/);
   assert.equal(cleanAttrs('cars', { model: '<b>X5</b>' }).model, 'X5');
-  assert.equal(summaryOf('cars', { body: 'Седан', fuel: 'Дизель', drive: 'Полный' }), 'Седан, дизель, полный привод');
+  assert.equal(sp(summaryOf('cars', { engine: 2.5, mileage: 86500, body: 'Седан', fuel: 'Дизель' })), '2,5 л, 86 500 км, седан', 'в карточке — то, чего нет в названии');
+  assert.equal(summaryOf('flats', { floor: 5, floors: 9, market: 'Вторичка' }), '5 этаж из 9, вторичка');
   assert.equal(summaryOf('houses', { floors: 2, built: 2005 }), '2 этажа, 2005 г.');
 });

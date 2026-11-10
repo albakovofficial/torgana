@@ -63,9 +63,9 @@ test('характеристики: в карточке короткая стр�
   assert.equal(data.listing.district, 'Замоскворечье');
   const list = await buyer.get('/api/listings?category=transport');
   const card = list.data.items.find((x) => x.id === car);
-  // 1.48.0: год, пробег и коробка — уже в названии; в строке карточки — остальное (кузов, двигатель, привод).
-  assert.equal(sp(card.title), 'Toyota Camry AT, 2018, 85 000 км');
-  assert.equal(sp(card.summary), 'Бензин');
+  // 1.48.0: марка, модель, год и коробка — в названии; в строке карточки — объём, пробег, кузов.
+  assert.equal(sp(card.title), 'Toyota Camry · 2018 · автомат');
+  assert.equal(sp(card.summary), '85 000 км');
   assert.equal(card.metro, 'Павелецкая');
   const f = (await buyer.get(`/api/listings/${flat}`)).data.listing;
   assert.equal(f.attrs.area, 54.5);
@@ -111,12 +111,12 @@ test('характеристики проверяются: чужие поля �
 test('поиск: подкатегория, характеристика из списка, диапазон чисел, метро; марка ищется словом', async () => {
   const ids = async (q) => (await buyer.get(`/api/listings?${q}`)).data.items.map((x) => x.title.replace(/\s/g, ' ')).sort();
   // 1.48.0: название машин и квартир собирается из характеристик — то, что написал продавец, не используется.
-  const LADA = 'Lada Vesta MT, 2021, 30 000 км'; const CAMRY = 'Toyota Camry AT, 2018, 85 000 км';
+  const LADA = 'Lada Vesta · 2021 · механика'; const CAMRY = 'Toyota Camry · 2018 · автомат';
   assert.deepEqual(await ids('sub=cars'), [LADA, CAMRY]);
   assert.deepEqual(await ids('sub=cars&a_gearbox=Автомат'), [CAMRY]);
   assert.deepEqual(await ids('sub=cars&a_year_min=2020'), [LADA]);
   assert.deepEqual(await ids('sub=cars&a_mileage_max=50000'), [LADA]);
-  assert.deepEqual(await ids('sub=flats&a_rooms=2&a_area_min=50'), ['2-к. квартира, 54,5 м², 5/9 эт.']);
+  assert.deepEqual(await ids('sub=flats&a_rooms=2&a_area_min=50'), ['Квартира · 2 комнаты · 54,5 м²']);
   assert.deepEqual(await ids('metro=Павелецкая'), [CAMRY]);
   assert.deepEqual(await ids('q=тойота%20автомат'.replace('тойота', 'toyota')), [CAMRY]);
   assert.deepEqual(await ids('sub=cars&a_gearbox=Неизвестно'), [LADA, CAMRY], 'значение не из списка не фильтрует');
