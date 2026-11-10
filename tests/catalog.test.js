@@ -38,8 +38,8 @@ before(async () => {
   seller = await registerUser(srv.base, { name: 'Олег', email: 'oleg@test.local' });
   buyer = await registerUser(srv.base, { name: 'Анна', email: 'anna@test.local' });
   car = await publish(seller, admin, { title: 'Toyota Camry', category: 'transport', subcategory: 'cars', city: 'Москва', price: 2100000, metro: 'Павелецкая', district: 'Замоскворечье',
-    attrs: { brand: 'Toyota', year: 2018, mileage: '85 000', gearbox: 'Автомат', fuel: 'Бензин' } });
-  await publish(seller, admin, { title: 'Lada Vesta', category: 'transport', subcategory: 'cars', city: 'Москва', price: 900000, attrs: { brand: 'Lada', year: 2021, mileage: 30000, gearbox: 'Механика' } });
+    attrs: { brand: 'Toyota', model: 'Camry', year: 2018, mileage: '85 000', gearbox: 'Автомат', fuel: 'Бензин' } });
+  await publish(seller, admin, { title: 'Lada Vesta', category: 'transport', subcategory: 'cars', city: 'Москва', price: 900000, attrs: { brand: 'Lada', model: 'Vesta', year: 2021, mileage: 30000, gearbox: 'Механика' } });
   flat = await publish(seller, admin, { title: '2-комнатная квартира', category: 'realty', subcategory: 'flats', city: 'Казань', price: 7500000, metro: 'Кремлёвская', attrs: { rooms: '2', area: '54,5', floor: 5, floors: 9 } });
 });
 after(() => srv.stop());
@@ -63,7 +63,9 @@ test('характеристики: в карточке короткая стр�
   assert.equal(data.listing.district, 'Замоскворечье');
   const list = await buyer.get('/api/listings?category=transport');
   const card = list.data.items.find((x) => x.id === car);
-  assert.equal(sp(card.summary), '2018 г., 85 000 км, Автомат');
+  // 1.48.0: марка, модель, год и коробка — в названии; в строке карточки — объём, пробег, кузов.
+  assert.equal(sp(card.title), 'Toyota Camry · 2018 · автомат');
+  assert.equal(sp(card.summary), '85 000 км');
   assert.equal(card.metro, 'Павелецкая');
   const f = (await buyer.get(`/api/listings/${flat}`)).data.listing;
   assert.equal(f.attrs.area, 54.5);
@@ -76,18 +78,18 @@ test('характеристики проверяются: чужие поля �
   r = await seller.post('/api/listings', { title: 'Машина', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { gearbox: 'Телепорт' } });
   assert.equal(r.status, 400);
   // 1.22: главные характеристики обязательны в форме (марка, год, пробег, коробка у автомобиля).
-  r = await seller.post('/api/listings', { title: 'Машина', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', year: 2019, gearbox: 'Автомат' } });
+  r = await seller.post('/api/listings', { title: 'Машина', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', model: 'Rio', year: 2019, gearbox: 'Автомат' } });
   assert.equal(r.status, 400);
   assert.match(r.data.error, /Укажите «Пробег»/);
-  r = await seller.post('/api/listings', { title: 'Машина', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', year: 2019, mileage: 1000, gearbox: 'Автомат', engine: '1,6', power: 123.4, color: 'Белый', owners: '1' } });
+  r = await seller.post('/api/listings', { title: 'Машина', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', model: 'Rio', year: 2019, mileage: 1000, gearbox: 'Автомат', engine: '1,6', power: 123.4, color: 'Белый', owners: '1' } });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   const k = (await seller.get(`/api/listings/${r.data.id}`)).data.listing;
   // 1.47.3: «Владельцев по ПТС» — 1/2/3 или точное число до 30; «4+» из старых объявлений остаётся; в фильтре «4+» — от 4.
   assert.equal(k.attrs.owners, '1');
-  const own = await seller.post('/api/listings', { title: 'Машина 2', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', year: 2010, mileage: 150000, gearbox: 'Механика', owners: 5 } });
+  const own = await seller.post('/api/listings', { title: 'Машина 2', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', model: 'Rio', year: 2010, mileage: 150000, gearbox: 'Механика', owners: 5 } });
   assert.equal(own.status, 200, JSON.stringify(own.data));
   assert.equal((await seller.get(`/api/listings/${own.data.id}`)).data.listing.attrs.owners, '5');
-  assert.match((await seller.post('/api/listings', { title: 'Машина 3', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', year: 2010, mileage: 1, gearbox: 'Механика', owners: 31 } })).data.error, /Владельцев по ПТС».*от 0 до 30/);
+  assert.match((await seller.post('/api/listings', { title: 'Машина 3', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', model: 'Rio', year: 2010, mileage: 1, gearbox: 'Механика', owners: 31 } })).data.error, /Владельцев по ПТС».*от 0 до 30/);
   const { cleanAttrs, fmt, SUB } = require('../lib/taxonomy');
   assert.equal(cleanAttrs('cars', { owners: '4+' }).owners, '4+');
   assert.equal(cleanAttrs('cars', { owners: 0 }).owners, '0', 'новая машина — 0 владельцев');
@@ -97,7 +99,7 @@ test('характеристики проверяются: чужие поля �
   assert.equal(k.attrs.engine, 1.6, 'дробное — с шагом');
   assert.equal(k.attrs.power, 123, 'целое — округляется');
   assert.ok(k.specs.some((x) => x.label === 'Владельцев по ПТС' && x.value === '1'));
-  r = await seller.post('/api/listings', { title: 'Машина', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', year: 2019, mileage: 1000, gearbox: 'Автомат', color: 'Хамелеон' } });
+  r = await seller.post('/api/listings', { title: 'Машина', category: 'transport', subcategory: 'cars', city: 'Москва', attrs: { brand: 'Kia', model: 'Rio', year: 2019, mileage: 1000, gearbox: 'Автомат', color: 'Хамелеон' } });
   assert.equal(r.status, 400, 'цвет — только из списка');
   r = await seller.post('/api/listings', { title: 'Машина', category: 'transport', subcategory: 'phones', city: 'Москва', attrs: { brand: 'Apple' } });
   assert.equal(r.status, 200, 'подкатегория чужой категории просто не сохраняется');
@@ -107,20 +109,22 @@ test('характеристики проверяются: чужие поля �
 });
 
 test('поиск: подкатегория, характеристика из списка, диапазон чисел, метро; марка ищется словом', async () => {
-  const ids = async (q) => (await buyer.get(`/api/listings?${q}`)).data.items.map((x) => x.title).sort();
-  assert.deepEqual(await ids('sub=cars'), ['Lada Vesta', 'Toyota Camry']);
-  assert.deepEqual(await ids('sub=cars&a_gearbox=Автомат'), ['Toyota Camry']);
-  assert.deepEqual(await ids('sub=cars&a_year_min=2020'), ['Lada Vesta']);
-  assert.deepEqual(await ids('sub=cars&a_mileage_max=50000'), ['Lada Vesta']);
-  assert.deepEqual(await ids('sub=flats&a_rooms=2&a_area_min=50'), ['2-комнатная квартира']);
-  assert.deepEqual(await ids('metro=Павелецкая'), ['Toyota Camry']);
-  assert.deepEqual(await ids('q=тойота%20автомат'.replace('тойота', 'toyota')), ['Toyota Camry']);
-  assert.deepEqual(await ids('sub=cars&a_gearbox=Неизвестно'), ['Lada Vesta', 'Toyota Camry'], 'значение не из списка не фильтрует');
+  const ids = async (q) => (await buyer.get(`/api/listings?${q}`)).data.items.map((x) => x.title.replace(/\s/g, ' ')).sort();
+  // 1.48.0: название машин и квартир собирается из характеристик — то, что написал продавец, не используется.
+  const LADA = 'Lada Vesta · 2021 · механика'; const CAMRY = 'Toyota Camry · 2018 · автомат';
+  assert.deepEqual(await ids('sub=cars'), [LADA, CAMRY]);
+  assert.deepEqual(await ids('sub=cars&a_gearbox=Автомат'), [CAMRY]);
+  assert.deepEqual(await ids('sub=cars&a_year_min=2020'), [LADA]);
+  assert.deepEqual(await ids('sub=cars&a_mileage_max=50000'), [LADA]);
+  assert.deepEqual(await ids('sub=flats&a_rooms=2&a_area_min=50'), ['Квартира · 2 комнаты · 54,5 м²']);
+  assert.deepEqual(await ids('metro=Павелецкая'), [CAMRY]);
+  assert.deepEqual(await ids('q=тойота%20автомат'.replace('тойота', 'toyota')), [CAMRY]);
+  assert.deepEqual(await ids('sub=cars&a_gearbox=Неизвестно'), [LADA, CAMRY], 'значение не из списка не фильтрует');
   // 1.35: числа с пробелами и запятой — как их пишут люди («1 000 000», «50 000», «2,5»).
   const enc = (q) => q.split('&').map((x) => x.split('=').map(encodeURIComponent).join('=')).join('&');
-  assert.deepEqual(await ids(enc('sub=cars&min=1 000 000')), ['Toyota Camry']);
-  assert.deepEqual(await ids(enc('sub=cars&max=1\u00a0000\u00a0000')), ['Lada Vesta'], 'неразрывные пробелы тоже');
-  assert.deepEqual(await ids(enc('sub=cars&a_mileage_max=50 000')), ['Lada Vesta']);
+  assert.deepEqual(await ids(enc('sub=cars&min=1 000 000')), [CAMRY]);
+  assert.deepEqual(await ids(enc('sub=cars&max=1\u00a0000\u00a0000')), [LADA], 'неразрывные пробелы тоже');
+  assert.deepEqual(await ids(enc('sub=cars&a_mileage_max=50 000')), [LADA]);
 });
 
 test('метро: станции города из справочника, станция не из списка — ошибка, в городе без метро — не сохраняется', async () => {

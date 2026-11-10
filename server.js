@@ -144,6 +144,7 @@ function cardFromRow(r) {
     createdAt: r.created_at,
     isFav: !!r.is_fav,
     priceWas: priceWasOf(r),
+    goodPrice: r.status === 'active' && r.good_price > 0, // 1.48.0
     boost: boostApi ? boostApi.cardExtra(r) : null, // XL, рамка, метки (lib/boost.js)
     seller: sellerOfCard(r) // 1.26: продавец в карточке — имя, фото, оценка
   };
@@ -163,7 +164,7 @@ const countListings = (whereSql, params) => db.memo(`count|${whereSql}|${JSON.st
 
 const CARD_SELECT = `
   SELECT l.id, l.title, l.price, l.price_unit, l.city, l.category, l.delivery, l.exchange, l.status, l.created_at, l.price_was, l.price_drop_at,
-    l.subcategory, l.attrs, l.metro, l.video,
+    l.subcategory, l.attrs, l.metro, l.video, l.good_price,
     (SELECT COALESCE(NULLIF(p.thumb, ''), p.file) FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
     EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id = l.id AND f.user_id = ?) AS is_fav,
     (SELECT json_object('xl', MAX(b.xl), 'frame', MAX(b.frame)) FROM boosts b WHERE b.listing_id = l.id AND b.status = 'active') AS boost,
@@ -175,7 +176,7 @@ const CARD_SELECT = `
 // Текст для поиска: название, описание, подкатегория и характеристики из списков («Toyota», «Автомат»).
 function searchText(title, description, v = {}) {
   const sub = taxonomy.SUB[v.subcategory];
-  const extra = sub ? [sub.name, ...sub.fields.filter((f) => f.type === 'select' && v.attrs && v.attrs[f.key]).map((f) => v.attrs[f.key])] : [];
+  const extra = sub ? [sub.name, ...sub.fields.filter((f) => (f.type === 'select' || f.type === 'text') && v.attrs && v.attrs[f.key]).map((f) => v.attrs[f.key])] : [];
   const text = `${title} ${description} ${extra.join(' ')}`;
   return norm(`${text} ${brandAliases(text)}`);
 }
@@ -200,7 +201,7 @@ function marketEstimate({ id = 0, category, title, priceUnit }) {
 
 // strict — форма объявления (1.22): главные характеристики раздела обязательны; автозагрузка из фида — без strict.
 function validateListing(body, { strict = false } = {}) {
-  const title = str(body.title, 80);
+  let title = str(body.title, 80);
   const description = str(body.description, 4000);
   const category = str(body.category, 40);
   const city = str(body.city, 60);
@@ -212,7 +213,6 @@ function validateListing(body, { strict = false } = {}) {
     price = parseInt(String(body.price).replace(/\s/g, ''), 10);
     if (!Number.isFinite(price) || price < 0 || price > 10_000_000_000) throw new HttpError(400, 'Проверьте цену');
   }
-  if (title.length < 3) throw new HttpError(400, 'Название слишком короткое');
   if (!CATEGORY_IDS.has(category)) throw new HttpError(400, 'Выберите категорию');
   if (city.length < 2) throw new HttpError(400, 'Укажите город');
   const photos = Array.isArray(body.photos) ? body.photos.slice(0, 10).map(String) : [];
@@ -220,6 +220,19 @@ function validateListing(body, { strict = false } = {}) {
   const subcategory = taxonomy.SUB[body.subcategory] && taxonomy.SUB[body.subcategory].category === category ? body.subcategory : '';
   let attrs = {};
   try { attrs = taxonomy.cleanAttrs(subcategory, body.attrs, { strict }); } catch (e) { throw new HttpError(400, e.message); }
+  // 1.48.0: в форме у машин, квартир, телефонов… название собираем из характеристик (как на Авито); фид — со своим названием.
+  if (strict && taxonomy.TITLE_SUBS.has(subcategory)) title = taxonomy.autoTitle(subcategory, attrs).slice(0, 80) || title;
+  if (title.length < 3) throw new HttpError(400, 'Название слишком короткое');
+  // 1.48.0: VIN или номер кузова — только у машин; на странице объявления виден частично, целиком — по нажатию.
+  let vin;
+  if (body.vin !== undefined) {
+    // Набрали в русской раскладке — меняем похожие буквы на латинские; в VIN нет O, I, Q — это 0 и 1.
+    const LAT = { А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H', О: 'O', Р: 'P', С: 'C', Т: 'T', Х: 'X', У: 'Y' };
+    vin = String(body.vin || '').toUpperCase().replace(/[\s]/g, '').replace(/[АВЕКМНОРСТХУ]/g, (c) => LAT[c]).slice(0, 20);
+    if (vin.length === 17) vin = vin.replace(/O|Q/g, '0').replace(/I/g, '1');
+    if (subcategory !== 'cars') vin = '';
+    if (vin && !vinOk(vin)) throw new HttpError(400, 'Проверьте VIN: 17 латинских букв и цифр (без I, O, Q) или номер кузова');
+  }
   // Метро — только станция этого города из справочника; если справочника пока нет — сохраняем как есть.
   let station = str(body.metro, 60);
   if (station && metro.has(city) && !metro.isStation(city, station)) throw new HttpError(400, 'Выберите станцию метро из списка');
@@ -240,8 +253,12 @@ function validateListing(body, { strict = false } = {}) {
   }
   // Похоже на запрещённое — публикуем после проверки модератором.
   const flags = checkProhibited(title, description).map((f) => f.title).join(', ');
-  return { title, description, category, city, priceUnit, condition, delivery, bargain, exchange, publishAt, price, photos, flags, subcategory, attrs, metro: station, district, video };
+  return { title, description, category, city, priceUnit, condition, delivery, bargain, exchange, publishAt, price, photos, flags, subcategory, attrs, metro: station, district, video, vin };
 }
+// VIN — 17 знаков без I, O, Q; номер кузова (праворульные из Японии) — 6–17 латинских букв, цифр и дефисов, есть цифры.
+const vinOk = (v) => (v.length === 17 ? /^[A-HJ-NPR-Z0-9]{17}$/.test(v) : /^[A-Z0-9-]{6,17}$/.test(v) && /\d{4}/.test(v));
+// XTA2190••••••4567 — марка и модель видны, середина скрыта.
+const vinMask = (v) => { if (!v) return ''; const a = v.length >= 17 ? 4 : 2; const b = v.length >= 17 ? 4 : 3; return `${v.slice(0, a)}${'•'.repeat(Math.max(3, v.length - a - b))}${v.slice(-b)}`; };
 
 function attachPhotos(userId, listingId, files) {
   const owned = db.prepare('SELECT file, listing_id FROM uploads WHERE file = ? AND user_id = ?');
@@ -299,6 +316,8 @@ const video = require('./lib/video')({ route, db, h: { HttpError, requireUser, r
 
 // Модерация (очередь, проверка «от и до», жалобы, история) и чат поддержки — в отдельных модулях.
 const autoChecks = require('./lib/checks')({ db, marketEstimate });
+const goodPrice = require('./lib/goodprice')({ db }); // 1.48.0: «Хорошая цена»
+const GP_LOW = 0.85;
 const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, taxonomy, metro, video, attrsOf, setAvatar, str, now, norm, autoChecks, OWNER_EMAIL, redirect, file: fileResponse, PUBLIC_URL: PUBLIC_URL || `http://localhost:${PORT}` };
 const push = createPush({ db, subject: `mailto:${SUPPORT_EMAIL || 'support@torgana.ru'}`, allowHttp: process.env.PUSH_ALLOW_HTTP === '1' });
 const alerts = require('./lib/alerts')({ route, db, mailer, push, h: helpers, categories: CATEGORIES });
@@ -321,6 +340,8 @@ const promo = require('./lib/promo')({ route, db, h: helpers, billing, business,
 const boost = require('./lib/boost')({ route, db, h: helpers, billing });
 boostApi = boost;
 const feed = require('./lib/feed')({ route, db, h: helpers, business });
+const blocks = require('./lib/blocks')({ route, db, h: helpers }); // 1.48.0: чёрный список
+helpers.blocks = blocks;
 const deals = require('./lib/deals')({ route, db, h: helpers, alerts }); // предложение цены, быстрые ответы, подписки
 const reputation = require('./lib/reputation')({ route, db, h: helpers, replyStats }); // 1.46.0: репутация вместо отзывов
 helpers.reputation = reputation;
@@ -624,6 +645,9 @@ function findListings(q, uid) {
   const spec = searchSpec(Object.fromEntries(q.entries()), CATEGORY_IDS);
   const { parsed } = spec;
   const base = ['l.status = \'active\'', 'u.is_blocked = 0'];
+  // 1.48.0: объявления тех, кого человек заблокировал, ему не показываем.
+  const hidden = blocks.hiddenFor(uid);
+  if (hidden.length) base.push(`l.user_id NOT IN (${hidden.map(Number).join(',')})`);
   const f = specSql(spec);
   const sort = q.get('sort');
   // С фильтром цены «договорных» (NULL) в выдаче нет — сортируем прямо по индексу цены.
@@ -681,14 +705,18 @@ route('GET', '/api/listings/:id', (ctx) => {
   const favCount = db.prepare('SELECT COUNT(*) AS n FROM favorites WHERE listing_id = ?').get(id).n;
   const uid = ctx.user ? ctx.user.id : 0;
   // Похожие: сначала свежие из той же подкатегории, недостающие — из категории (оба запроса идут по индексу с датой).
-  const similarIn = (col, val, not) => db.prepare(`${CARD_SELECT} WHERE l.${col} = ? AND l.status = 'active' AND u.is_blocked = 0 AND l.id != ?
+  const hiddenU = blocks.hiddenFor(uid).map(Number); // 1.48.0: заблокированных — не в «Похожих»
+  const similarIn = (col, val, not) => db.prepare(`${CARD_SELECT} WHERE l.${col} = ? AND l.status = 'active' AND u.is_blocked = 0 AND l.id != ?${hiddenU.length ? ` AND l.user_id NOT IN (${hiddenU.join(',')})` : ''}
     ${not.length ? `AND l.id NOT IN (${not.map(() => '?').join(',')})` : ''} ORDER BY l.created_at DESC LIMIT ?`).all(uid, val, id, ...not, 4 - not.length);
   const sameSub = l.subcategory ? similarIn('subcategory', l.subcategory, []) : [];
   const similar = [...sameSub, ...(sameSub.length < 4 ? similarIn('category', l.category, sameSub.map((r) => r.id)) : [])].map(cardFromRow);
   const attrs = attrsOf(l);
   const station = l.metro ? (({ name, line, color }) => ({ name, line, color }))(metro.stations(l.city).find((s) => s.name === l.metro) || { name: l.metro, line: '', color: '' }) : null;
   let market = null;
-  if (l.price) {
+  // 1.48.0: где можно сравнить по характеристикам (машины, телефоны, квартиры…) — по ним; иначе — по словам названия.
+  const gp = l.status === 'active' || isOwner || isAdmin ? goodPrice.estimate(l) : null;
+  if (gp) market = { median: gp.median, count: gp.count, pct: gp.pct, perM2: gp.perM2, basis: gp.basis, level: gp.good ? 'good' : gp.ratio < GP_LOW ? 'below' : gp.ratio > 1.15 ? 'above' : 'market' };
+  else if (l.price) {
     const est = marketEstimate({ id, category: l.category, title: l.title, priceUnit: l.price_unit });
     if (est) {
       const ratio = l.price / est.median;
@@ -703,7 +731,8 @@ route('GET', '/api/listings/:id', (ctx) => {
       subcategory: l.subcategory, attrs, specs: taxonomy.describe(l.subcategory, attrs), metro: station, district: l.district, video: video.url(l.video),
       createdAt: l.created_at, updatedAt: l.updated_at, photos, isFav, isOwner: !!isOwner,
       rejectReason: (isOwner || isAdmin) ? l.reject_reason : '', appealText: (isOwner || isAdmin) ? l.appeal_text : '',
-      appealReply: (isOwner || isAdmin) ? l.appeal_reply : '', flags: (isOwner || isAdmin) ? l.flags : ''
+      appealReply: (isOwner || isAdmin) ? l.appeal_reply : '', flags: (isOwner || isAdmin) ? l.flags : '',
+      vin: (isOwner || isAdmin) ? l.vin || '' : '', vinMasked: l.subcategory === 'cars' ? vinMask(l.vin || '') : ''
     },
     seller: { id: seller.id, name: seller.name, city: seller.city, avatar: photoUrl(seller.avatar), createdAt: seller.created_at, activeCount: sellerActive, rep: reputation.repOf(seller.id), badges: badgesOf(seller),
       followers: deals.followers(seller.id), following: deals.isFollowing(ctx.user ? ctx.user.id : 0, seller.id), reply: replyStats(seller.id) },
@@ -714,15 +743,24 @@ route('GET', '/api/listings/:id', (ctx) => {
   };
 });
 
+// 1.48.0: VIN целиком — по нажатию «Показать», только вошедшим (так его не соберут роботы).
+route('GET', '/api/listings/:id/vin', (ctx) => {
+  const u = requireUser(ctx);
+  rateLimit(`vin:${u.id}`, 60, 60 * 60 * 1000);
+  const l = loadListing(parseInt(ctx.params.id, 10));
+  if (!l || !l.vin || l.subcategory !== 'cars' || (l.status !== 'active' && l.status !== 'sold' && l.user_id !== u.id && !u.is_admin)) throw new HttpError(404, 'VIN не указан');
+  return { vin: l.vin };
+});
+
 // Новое объявление и правка — одни функции для формы и для автозагрузки из фида (lib/feed.js).
 // Все объявления публикуются после проверки модератором; любая правка — снова на проверку.
 function createListing(u, v) {
   const t = now();
   const info = db.prepare(`INSERT INTO listings (user_id, title, description, category, price, price_unit, city, condition, delivery, bargain, exchange, publish_at, search_text, city_lc, status, flags,
-    subcategory, attrs, metro, district, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`)
+    subcategory, attrs, metro, district, vin, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(u.id, v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, v.bargain ?? 1, v.exchange ?? 0, v.publishAt || null, searchText(v.title, v.description, v), norm(v.city), v.flags,
-      v.subcategory || '', JSON.stringify(v.attrs || {}), v.metro || '', v.district || '', t, t);
+      v.subcategory || '', JSON.stringify(v.attrs || {}), v.metro || '', v.district || '', v.vin || '', t, t);
   const id = Number(info.lastInsertRowid);
   attachPhotos(u.id, id, v.photos);
   if (v.video) video.attach(u.id, id, v.video);
@@ -736,19 +774,20 @@ function createListing(u, v) {
 // В историю пишем, что именно изменилось.
 function updateListing(u, l, v) {
   const before = { title: l.title, description: l.description, category: l.category, price: l.price, priceUnit: l.price_unit, city: l.city, condition: l.condition, delivery: !!l.delivery,
-    bargain: !!l.bargain, exchange: !!l.exchange, subcategory: l.subcategory, attrs: JSON.stringify(attrsOf(l)), metro: l.metro, district: l.district };
+    bargain: !!l.bargain, exchange: !!l.exchange, subcategory: l.subcategory, attrs: JSON.stringify(attrsOf(l)), metro: l.metro, district: l.district, vin: l.vin || '' };
   const after = { title: v.title, description: v.description, category: v.category, price: v.price, priceUnit: v.priceUnit, city: v.city, condition: v.condition, delivery: !!v.delivery,
     bargain: v.bargain === undefined ? before.bargain : !!v.bargain, exchange: v.exchange === undefined ? before.exchange : !!v.exchange,
     subcategory: v.subcategory === undefined ? l.subcategory : v.subcategory, attrs: v.attrs === undefined ? before.attrs : JSON.stringify(v.attrs),
-    metro: v.metro === undefined ? l.metro : v.metro, district: v.district === undefined ? l.district : v.district };
+    metro: v.metro === undefined ? l.metro : v.metro, district: v.district === undefined ? l.district : v.district,
+    vin: v.vin === undefined ? (v.subcategory === 'cars' || v.subcategory === undefined ? l.vin || '' : '') : v.vin };
   const changes = Object.fromEntries(Object.keys(before).filter((k) => before[k] !== after[k]).map((k) => [k, [before[k], after[k]]]));
   const oldPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(l.id).map((r) => r.file);
   const extra = { subcategory: after.subcategory, attrs: JSON.parse(after.attrs) };
   // Время публикации выбирают только до первой публикации (alerted = 0); потом правка просто уходит на проверку.
   db.prepare(`UPDATE listings SET title = ?, description = ?, category = ?, price = ?, price_unit = ?, city = ?, condition = ?, delivery = ?, bargain = ?, exchange = ?, publish_at = ?,
-    search_text = ?, city_lc = ?, status = 'pending', flags = ?, subcategory = ?, attrs = ?, metro = ?, district = ?, updated_at = ? WHERE id = ?`)
+    search_text = ?, city_lc = ?, status = 'pending', flags = ?, subcategory = ?, attrs = ?, metro = ?, district = ?, vin = ?, updated_at = ? WHERE id = ?`)
     .run(v.title, v.description, v.category, v.price, v.priceUnit, v.city, v.condition, v.delivery, after.bargain ? 1 : 0, after.exchange ? 1 : 0, l.alerted ? null : v.publishAt || null,
-      searchText(v.title, v.description, extra), norm(v.city), v.flags || (l.status === 'pending' ? l.flags : ''), after.subcategory, after.attrs, after.metro, after.district, now(), l.id);
+      searchText(v.title, v.description, extra), norm(v.city), v.flags || (l.status === 'pending' ? l.flags : ''), after.subcategory, after.attrs, after.metro, after.district, after.vin, now(), l.id);
   attachPhotos(u.id, l.id, v.photos);
   if (v.video !== undefined && v.video !== l.video) { video.attach(u.id, l.id, v.video); changes.video = [l.video ? 'было' : 'не было', v.video ? 'новое' : 'убрано']; }
   const newPhotos = db.prepare('SELECT file FROM uploads WHERE listing_id = ? ORDER BY position').all(l.id).map((r) => r.file);
@@ -1057,11 +1096,12 @@ route('GET', '/api/conversations', (ctx) => {
     JOIN users ou ON ou.id = CASE WHEN c.buyer_id = ? THEN c.seller_id ELSE c.buyer_id END
     WHERE c.buyer_id = ? OR c.seller_id = ?
     ORDER BY c.updated_at DESC`).all(u.id, u.id, u.id, u.id);
+  const mine = new Set(blocks.hiddenFor(u.id));
   return {
     items: rows.map((r) => ({
       id: r.id, listingId: r.listing_id, title: r.title, price: r.price, priceUnit: r.price_unit, status: r.status,
       photo: photoUrl(r.photo), other: { id: r.other_id, name: r.other_name, avatar: photoUrl(r.other_avatar) }, lastBody: r.last_body || '',
-      unread: r.unread, updatedAt: r.updated_at, role: r.buyer_id === u.id ? 'buyer' : 'seller'
+      unread: r.unread, updatedAt: r.updated_at, role: r.buyer_id === u.id ? 'buyer' : 'seller', blocked: mine.has(r.other_id)
     }))
   };
 });
@@ -1074,6 +1114,7 @@ route('POST', '/api/conversations', async (ctx) => {
   if (l.user_id === u.id) throw new HttpError(400, 'Это ваше объявление');
   const existing = db.prepare('SELECT id FROM conversations WHERE listing_id = ? AND buyer_id = ?').get(listingId, u.id);
   if (existing) return { id: existing.id };
+  blocks.assertCanWrite(u.id, l.user_id);
   rateLimit(`conv:${u.id}`, 30, 60 * 60 * 1000); // 1.41.0: защита от рассылки — не больше 30 новых диалогов в час
   const t = now();
   const info = db.prepare('INSERT INTO conversations (listing_id, buyer_id, seller_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
@@ -1115,6 +1156,8 @@ route('GET', '/api/conversations/:id', (ctx) => {
     listing: { id: l.id, title: l.title, price: l.price, priceUnit: l.price_unit, status: l.status, bargain: !!l.bargain, delivery: !!l.delivery, city: l.city, metro: l.metro || '', photo: photoUrl(photo && photo.file) },
     // 1.27: оценка собеседника — для колонки «Объявление и продавец» справа от чата
     other: { id: other.id, name: other.name, avatar: photoUrl(other.avatar), createdAt: other.created_at, rep: reputation.levelOf(other.id) },
+    block: blocks.between(u.id, other.id), // 1.48.0: 'me' — я заблокировал, 'them' — меня
+
     offers: deals.offersOf(c.id), // состояния всех предложений — обновляются при каждом опросе
     messages
   };
@@ -1130,6 +1173,7 @@ route('POST', '/api/conversations/:id/messages', async (ctx) => {
   if (!body && !photo) throw new HttpError(400, 'Пустое сообщение');
   const other = db.prepare('SELECT deactivated_at, deleted_at FROM users WHERE id = ?').get(c.buyer_id === u.id ? c.seller_id : c.buyer_id);
   if (other && (other.deactivated_at || other.deleted_at)) throw new HttpError(400, 'Собеседник удалил профиль — сообщения не доставляются');
+  blocks.assertCanWrite(u.id, c.buyer_id === u.id ? c.seller_id : c.buyer_id);
   const t = now();
   const info = db.prepare('INSERT INTO messages (conversation_id, sender_id, body, photo, created_at) VALUES (?, ?, ?, ?, ?)').run(c.id, u.id, body, photo, t);
   db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(t, c.id);
@@ -1147,7 +1191,7 @@ route('GET', '/api/users/:id', (ctx) => {
     .map((r) => ({ ...cardFromRow(r), seller: null })); // в профиле продавца все объявления его — строка продавца не нужна
   const sold = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ? AND status = \'sold\'').get(id).n;
   return { user: { id: u.id, name: u.name, city: u.city, avatar: photoUrl(u.avatar), createdAt: u.created_at, soldCount: sold, activeCount: items.length, emailVerified: !!u.email_verified, rep: reputation.repOf(u.id), badges: badgesOf(u), shop: business.shopOf(u),
-    followers: deals.followers(u.id), following: deals.isFollowing(uid, u.id) }, items };
+    followers: deals.followers(u.id), following: deals.isFollowing(uid, u.id), block: uid && uid !== u.id ? blocks.between(uid, u.id) : null }, items };
 });
 
 // Юридические документы (реквизиты и раздел «Запрещено» подставляются на сервере).
@@ -1276,9 +1320,10 @@ function serveVideo(req, res, filePath) {
 const ASSET_VERSION = crypto.createHash('sha1')
   .update(fs.readFileSync(path.join(PUBLIC_DIR, 'assets/app.js')))
   .update(fs.readFileSync(path.join(PUBLIC_DIR, 'assets/app.css')))
+  .update(fs.readFileSync(path.join(PUBLIC_DIR, 'assets/theme.js')))
   .digest('hex').slice(0, 10);
 const INDEX_HTML = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
-  .replace(/(\/assets\/app\.(?:css|js))"/g, `$1?v=${ASSET_VERSION}"`);
+  .replace(/(\/assets\/(?:app\.(?:css|js)|theme\.js))"/g, `$1?v=${ASSET_VERSION}"`);
 
 // Страница приложения: заголовок, описание, карточка для мессенджеров и снимок содержимого для поисковиков (lib/seo.js).
 function serveIndex(res, pathname) {

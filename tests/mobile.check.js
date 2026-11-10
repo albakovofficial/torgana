@@ -67,7 +67,7 @@ async function seed(base, browser, srv) {
   // 1.16: раздел, характеристики, метро и район.
   const extra = [
     { subcategory: 'kids', attrs: { kidsGoods: 'Коляска', kidsAge: '0–1 год' } },
-    { subcategory: 'phones', attrs: { brand: 'Apple', memory: '256 ГБ' }, metro: 'Тверская' },
+    { subcategory: 'phones', attrs: { brand: 'Apple', model: 'iPhone 15 Pro', memory: '256 ГБ' }, metro: 'Тверская' },
     { subcategory: 'flats_rent', attrs: { rooms: '2', area: 54, floor: 5, floors: 9, renovation: 'Евро', furnished: 'Есть' }, metro: 'Площадь Восстания', district: 'Центральный' },
     { subcategory: 'bikes', attrs: { bikeType: 'Горный' } },
     { subcategory: 'furniture', attrs: { furnType: 'Диван', material: 'Ткань', color: 'Серый' } },
@@ -92,7 +92,7 @@ async function seed(base, browser, srv) {
   await fetch(`${base}/api/videos/${vs.data.file}?offset=0`, { method: 'PUT', headers: { cookie: seller.cookie }, body: clip });
   const carPhotos = [(await seller.post('/api/uploads', { data: photoData })).data.file, (await seller.post('/api/uploads', { data: photoData })).data.file];
   const car = (await seller.post('/api/listings', { title: 'Toyota Camry 2.5, один владелец', category: 'transport', subcategory: 'cars', price: '2350000', city: 'Москва', metro: 'Павелецкая', district: 'Замоскворечье',
-    attrs: { brand: 'Toyota', year: 2018, mileage: 86500, gearbox: 'Автомат', fuel: 'Бензин', engine: 2.5, power: 181, body: 'Седан', drive: 'Передний', owners: '1', color: 'Белый', damage: 'Не битый' }, photos: carPhotos, video: vs.data.file,
+    attrs: { brand: 'Toyota', model: 'Camry', year: 2018, mileage: 86500, gearbox: 'Автомат', fuel: 'Бензин', engine: 2.5, power: 181, body: 'Седан', drive: 'Передний', owners: '1', color: 'Белый', damage: 'Не битый' }, photos: carPhotos, video: vs.data.file,
     description: 'Обслуживание у официального дилера, два комплекта резины.' })).data.id;
   await admin.post(`/api/admin/listings/${car}/restore`); // подписчик (Борис) получит «Новое у продавца»
   const conv = await buyer.post('/api/conversations', { listingId: ids[0] });
@@ -452,7 +452,7 @@ async function main() {
       // UI_ONLY=home,boost-modal — проверить только эти страницы (быстрее при правке вёрстки).
       const only = process.env.UI_ONLY ? process.env.UI_ONLY.split(',') : null;
       for (const [name, url, who, open] of pages(d).filter(([n]) => !only || only.includes(n))) {
-        const ctx = await browser.newContext({ ...vp, locale: 'ru-RU' });
+        const ctx = await browser.newContext({ ...vp, locale: 'ru-RU', ...(process.env.UI_SCHEME ? { colorScheme: process.env.UI_SCHEME } : {}) }); // UI_SCHEME=dark — тёмная тема (1.48.0)
         if (who) {
           const [k, v] = who.cookie.split('=');
           await ctx.addCookies([{ name: k, value: v, url: srv.base }]);

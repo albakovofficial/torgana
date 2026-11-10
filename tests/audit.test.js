@@ -15,8 +15,8 @@ after(() => srv.stop());
 
 test('«лада», «айфон», «самсунг» находят Lada, iPhone, Samsung', async () => {
   const mk = async (b) => { const r = await anna.post('/api/listings', b); assert.equal(r.status, 200, JSON.stringify(r.data)); await admin.post(`/api/admin/listings/${r.data.id}/restore`); return r.data.id; };
-  const lada = await mk({ title: 'Lada Vesta 2021', category: 'transport', subcategory: 'cars', city: 'Казань', price: 1200000, attrs: { brand: 'Lada', year: 2021, mileage: 30000, gearbox: 'Механика' } });
-  const phone = await mk({ title: 'iPhone 13, 128 ГБ', category: 'electronics', subcategory: 'phones', city: 'Казань', price: 42000, attrs: { brand: 'Apple', memory: '128 ГБ' } });
+  const lada = await mk({ title: 'Lada Vesta 2021', category: 'transport', subcategory: 'cars', city: 'Казань', price: 1200000, attrs: { brand: 'Lada', model: 'Vesta', year: 2021, mileage: 30000, gearbox: 'Механика' } });
+  const phone = await mk({ title: 'iPhone 13, 128 ГБ', category: 'electronics', subcategory: 'phones', city: 'Казань', price: 42000, attrs: { brand: 'Apple', model: 'iPhone 13', memory: '128 ГБ' } });
   const sams = await mk({ title: 'Телефон Samsung Galaxy S21', category: 'electronics', city: 'Казань', price: 25000 });
   const find = async (q) => (await client(srv.base).get(`/api/listings?q=${encodeURIComponent(q)}`)).data.items.map((i) => i.id);
   assert.deepEqual(await find('лада'), [lada]);
