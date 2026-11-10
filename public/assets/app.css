@@ -3117,15 +3117,14 @@ html.dw-open { overflow: hidden; }
   .f-switches .switch:has(input:checked) { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
   .f-switches .switch:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
-/* 1.47.3: «Владельцев по ПТС» — строка: подпись и значение слева, маленький счётчик «− 5 +» справа */
-.own-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 10px 10px 14px; border-radius: 18px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
-.own-t { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.own-l { font-size: 15px; font-weight: 650; color: var(--text); white-space: nowrap; }
-.own-t small { font-size: 13px; color: var(--muted); }
-.own-st { flex: none; display: flex; align-items: center; gap: 2px; height: 40px; padding: 4px; border-radius: 999px; background: var(--surface); }
-.own-pm { width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 50%; background: #fff; color: var(--accent); cursor: pointer; box-shadow: 0 1px 2px rgba(30, 42, 107, .08); transition: background .15s, transform .1s; }
+/* 1.47.3: «Владельцев по ПТС» — широкая капсула: «−» и «+» по краям, число с подписью в центре */
+.own-cap { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 56px; padding: 6px; border-radius: 999px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
+.own-pm { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--accent-soft); color: var(--accent); cursor: pointer; transition: background .15s, transform .1s; }
+.own-pm:hover:not(:disabled) { background: #DCE2FA; }
 .own-pm:active:not(:disabled) { transform: scale(.92); }
-.own-pm:disabled { background: transparent; color: var(--faint); box-shadow: none; cursor: default; }
+.own-pm:disabled { background: var(--surface); color: var(--faint); cursor: default; }
 .own-pm:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.own-n { min-width: 28px; text-align: center; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); }
-.own-n.own-none { color: var(--faint); font-weight: 600; }
+.own-val { min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 6px; white-space: nowrap; overflow: hidden; }
+.own-val b { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); }
+.own-val small { font-size: 14.5px; font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.own-val em { font-style: normal; font-size: 16px; font-weight: 600; color: var(--faint); }

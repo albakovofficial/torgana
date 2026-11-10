@@ -378,7 +378,7 @@
     if (f.color) {
       return html`<div class="field wide av" data-field="${f.key}">${head}<div class="av-sw-row" role="radiogroup" aria-label="${f.label}">${f.options.map((o) => html`<button type="button" role="radio" class="av-sw${o === v ? ' on' : ''}" data-av="${o}" title="${o}" aria-label="${o}" aria-checked="${o === v ? 'true' : 'false'}" style="--sw:${COLOR_HEX[o] || '#ccc'}"></button>`)}</div></div>`;
     }
-    // 1.47.3: «Владельцев по ПТС» — строка с маленьким счётчиком справа (как в настройках iPhone): от 0 (новая) до 30.
+    // 1.47.3: «Владельцев по ПТС» — широкая капсула «− 2 владельца +» (вариант A): от 0 (новая) до 30.
     // В фильтре — плашки «Без владельцев», «1», «2», «3», «4+».
     if (f.custom) {
       const plus = `${f.options.length + 1}+`;
@@ -389,13 +389,13 @@
       }
       const sv = has ? String(v) : '';
       const n = !has ? null : sv === plus ? f.options.length + 1 : Number(sv);
-      return html`<div class="field wide own-row" data-field="${f.key}">
-        <span class="own-t"><span class="own-l">${f.label}${f.req ? html`<i class="rq">*</i>` : ''}</span><small aria-live="polite">${has ? (n === 0 ? 'Нет — новая машина' : attrText(f, sv)) : 'Не указано'}</small></span>
-        <span class="own-st" role="group" aria-label="${f.label}">
-          <button type="button" class="own-pm" data-own="-1" aria-label="Меньше" ${has ? '' : raw('disabled')}>${ic('minus', 16, 2.4)}</button>
-          <b class="own-n${has ? '' : ' own-none'}">${has ? (sv === plus ? plus : n) : '—'}</b>
-          <button type="button" class="own-pm" data-own="1" aria-label="Больше" ${has && n >= f.custom.max ? raw('disabled') : ''}>${ic('plus', 16, 2.4)}</button>
-        </span></div>`;
+      const word = has ? (n === 0 ? 'нет — новая машина' : attrText(f, sv).replace(/^\S+\s/, '')) : '';
+      return html`<div class="field wide own-a" data-field="${f.key}">${head}
+        <div class="own-cap" role="group" aria-label="${f.label}">
+          <button type="button" class="own-pm" data-own="-1" aria-label="Меньше" ${has ? '' : raw('disabled')}>${ic('minus', 20, 2.4)}</button>
+          <span class="own-val" aria-live="polite">${has ? html`<b>${sv === plus ? plus : n}</b><small>${word}</small>` : html`<em>Не указано</em>`}</span>
+          <button type="button" class="own-pm" data-own="1" aria-label="Больше" ${has && n >= f.custom.max ? raw('disabled') : ''}>${ic('plus', 20, 2.4)}</button>
+        </div></div>`;
     }
     const long = f.popular && f.options.length > f.popular.length;
     const shown = long ? [...f.popular, ...(has && !f.popular.includes(v) ? [v] : [])] : f.options;
