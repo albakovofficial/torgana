@@ -3611,7 +3611,8 @@
     const badges = html`${trustBadges(u.badges && { ...u.badges, shop: false, tm: null })}${u.isAdmin ? html`<span class="pf-badge">${ic('shield', 13, 2)} ${u.isOwner ? 'Владелец' : 'Модератор'}</span>` : ''}`;
     return html`<div class="pf-card ${sh ? `shop ${u.plan.id}` : ''}">
       ${sh ? html`<a class="pf-cover ${sh.cover ? 'has' : ''}" href="/profile/business/shop"${sh.cover ? raw(` style="--cv:url('${esc(sh.cover)}')"`) : ''}>
-        <span class="pf-plan">${ic('store', 14, 2.2)}${u.plan.name}${u.plan.trial ? ' · бесплатно' : ''}</span><span class="pf-until">до ${new Date(u.plan.until).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</span></a>` : ''}
+        <span class="pf-plan">${ic('store', 14, 2.2)}${u.plan.name}</span>${u.plan.trial ? html`<span class="pf-trial">${ic('gift', 13, 2.2)}Бесплатно</span>` : ''}
+        <span class="pf-until">${ic('clock', 13, 2.2)}до ${new Date(u.plan.until).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</span></a>` : ''}
       <div class="pf-who">
         <div class="pf-ava">${ava(u, 'lg')}<button class="pf-cam" type="button" data-ava-pick aria-label="${u.avatar ? 'Сменить фото профиля' : 'Добавить фото профиля'}">${ic('camera', 15, 2)}</button></div>
         <div class="pf-who-txt">
