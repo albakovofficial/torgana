@@ -16,7 +16,7 @@ const { norm, parseQuery, searchSpec, specSql, brandAliases, correctQuery } = re
 const { suggestFromPhoto, pingYandex } = require('./lib/ai');
 const { createMailer } = require('./lib/mailer');
 const { createPush } = require('./lib/push');
-const { checkProhibited } = require('./lib/prohibited');
+const { checkProhibited, blockedOf } = require('./lib/prohibited');
 const legal = require('./lib/legal');
 
 const ROOT = __dirname;
@@ -252,6 +252,9 @@ function validateListing(body, { strict = false } = {}) {
     if (publishAt <= now()) publishAt = null;
     else if (publishAt > now() + 31 * DAY) throw new HttpError(400, 'Отложить публикацию можно не больше чем на 30 дней');
   }
+  // 1.48.2: алкоголь, табак и никотин, эротические товары — сразу нельзя (и в форме, и в фиде).
+  const banned = blockedOf(title, description);
+  if (banned) throw new HttpError(400, `На Торгане нельзя продавать: ${banned.title.toLowerCase()} (в объявлении — «${banned.words[0]}»). Если мы ошиблись — напишите в поддержку, модератор проверит`);
   // Похоже на запрещённое — публикуем после проверки модератором.
   const flags = checkProhibited(title, description).map((f) => f.title).join(', ');
   return { title, description, category, city, priceUnit, condition, delivery, bargain, exchange, publishAt, price, photos, flags, subcategory, attrs, metro: station, district, video, vin };
@@ -1477,6 +1480,23 @@ if (!db.prepare('SELECT 1 FROM settings WHERE key = ?').get('titles_v148')) {
   db.exec('COMMIT');
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('titles_v148', JSON.stringify({ at: Date.now(), changed, kept }));
   console.log(`Названия из характеристик: изменено ${changed}, без изменений ${kept}`);
+}
+// 1.48.2 (решение владельца 10 ноября): алкоголь, табак и эротические товары запрещены. Уже опубликованные такие
+// объявления один раз уходят на проверку модератору с пометкой — снять их или вернуть решает человек.
+if (!db.prepare('SELECT 1 FROM settings WHERE key = ?').get('ban_v1482')) {
+  const rows = db.prepare("SELECT id, title, description, flags FROM listings WHERE status IN ('active', 'scheduled')").all();
+  const upd = db.prepare("UPDATE listings SET status = 'pending', flags = ? WHERE id = ?");
+  let n = 0;
+  db.exec('BEGIN');
+  for (const r of rows) {
+    const b = blockedOf(r.title, r.description);
+    if (!b) continue;
+    upd.run([...new Set([...(r.flags ? r.flags.split(', ') : []), b.title])].join(', '), r.id);
+    n++;
+  }
+  db.exec('COMMIT');
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('ban_v1482', JSON.stringify({ at: Date.now(), n }));
+  if (n) console.log(`Алкоголь, табак, эротика: на проверку — ${n}`);
 }
 // 7 ноября 2026: письма с кодами не доходили — по просьбе владельца коды выключены, пока почту не починят
 // (включаются в «Модерация → Почта»). Только на работающем сайте с подключённой почтой и только один раз.
