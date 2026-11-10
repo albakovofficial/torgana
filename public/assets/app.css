@@ -3093,11 +3093,11 @@ html.dw-open { overflow: hidden; }
 
 /* 1.47.3: строка поиска на телефоне — тот же вид (город плашкой, круглая кнопка со значком), только меньше. */
 @media (max-width: 900px) {
-  .home-search { flex: none; height: 50px; padding: 0 11px 0 16px; gap: 8px; } /* сама строка — прежних 50 px (flex: none — иначе высоту задают кнопки внутри) */
-  .home-search .hs-city { height: 26px; max-width: 110px; padding: 0 9px; gap: 3px; font-size: 12px; }
-  .home-search .hs-city svg { width: 12px; height: 12px; }
-  .home-search .hs-go { width: 28px; height: 28px; }
-  .home-search .hs-go svg { width: 14px; height: 14px; }
+  .home-search { flex: none; height: 50px; padding: 0 7px 0 16px; gap: 8px; } /* сама строка — прежних 50 px (flex: none — иначе высоту задают кнопки внутри) */
+  .home-search .hs-city { height: 34px; max-width: 124px; padding: 0 11px; gap: 4px; font-size: 13.5px; }
+  .home-search .hs-city svg { width: 14px; height: 14px; }
+  .home-search .hs-go { width: 36px; height: 36px; }
+  .home-search .hs-go svg { width: 17px; height: 17px; }
 }
 
 /* 1.47.3: фильтры на телефоне компактнее — категория и город в один ряд, поля ниже, переключатели — плашками в строку. */
