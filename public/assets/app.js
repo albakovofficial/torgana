@@ -4917,17 +4917,24 @@
     </div>`);
   }
 
-  // 1.49.0: «О магазине» — часы, адрес (с картой в Яндекс Картах), доставка, сайт. Пусто — блока нет.
+  // «О магазине» — часы, адрес (ссылка на Яндекс Карты), доставка, сайт. Пусто — блока нет.
+  // 1.50.2: шапка в градиенте (у официального аккаунта — знак Торганы), значки в цветных плитках, ссылки со стрелкой;
+  // «Открыто» — только когда в часах написано «круглосуточно» (24/7): тогда это правда в любой момент.
   function shopAbout(sh) {
     const site = sh.site ? (() => { try { return new URL(sh.site).hostname.replace(/^www\./, ''); } catch { return ''; } })() : '';
+    const go = (href, text, rel) => html`<a class="si-link" href="${href}" target="_blank" rel="${rel}">${text}${ic('right', 15, 2.4)}</a>`;
+    const allDay = /круглосуточ|24\s*\/\s*7|24\s*час/i.test(sh.hours || '');
     const rows = [
-      sh.hours && ['clock', 'Часы работы', sh.hours],
-      sh.address && ['pin', 'Адрес', html`${sh.address}<a class="sa-map" href="https://yandex.ru/maps/?text=${encodeURIComponent(sh.address)}" target="_blank" rel="noopener">Открыть в Яндекс Картах</a>`],
-      sh.delivery && ['truck', 'Доставка', sh.delivery],
-      site && ['link', 'Сайт', html`<a href="${sh.site}" target="_blank" rel="nofollow noopener ugc">${site}</a>`]
+      sh.hours && ['clock', 'Часы работы', html`<span class="si-v">${sh.hours}${allDay ? html`<span class="si-open">Открыто</span>` : ''}</span>`],
+      sh.address && ['pin', 'Адрес', html`<span class="si-v">${sh.address}</span>${go(`https://yandex.ru/maps/?text=${encodeURIComponent(sh.address)}`, 'Открыть в Яндекс Картах', 'noopener')}`],
+      sh.delivery && ['truck', 'Доставка', html`<span class="si-v">${sh.delivery}</span>`],
+      site && ['link', 'Сайт', go(sh.site, site, 'nofollow noopener ugc')]
     ].filter(Boolean);
     const t = sh.official ? 'О Торгане' : 'О магазине';
-    return rows.length ? html`<aside class="shop-info" aria-label="${t}"><h2>${t}</h2>${rows.map(([icn, k, v]) => html`<div class="si-row"><span class="si-ic">${ic(icn, 18, 2)}</span><div><small>${k}</small><span>${v}</span></div></div>`)}</aside>` : '';
+    return rows.length ? html`<aside class="shop-info" aria-label="${t}">
+      <div class="si-head"><span class="si-mark">${sh.official ? torganaAva(40) : ic('store', 20, 2.2)}</span><h2>${t}</h2></div>
+      <div class="si-list">${rows.map(([icn, k, v]) => html`<div class="si-row"><span class="si-ic">${ic(icn, 18, 2.2)}</span><div><small>${k}</small>${v}</div></div>`)}</div>
+    </aside>` : '';
   }
 
   // ================= модерация =================
