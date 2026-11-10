@@ -221,7 +221,8 @@ function validateListing(body, { strict = false } = {}) {
   let attrs = {};
   try { attrs = taxonomy.cleanAttrs(subcategory, body.attrs, { strict }); } catch (e) { throw new HttpError(400, e.message); }
   // 1.48.0: в форме у машин, квартир, телефонов… название собираем из характеристик (как на Авито); фид — со своим названием.
-  if (strict && taxonomy.TITLE_SUBS.has(subcategory)) title = taxonomy.autoTitle(subcategory, attrs).slice(0, 80) || title;
+  // В фиде модели может не быть — берём её из названия фида; не вышло — остаётся название фида.
+  if (taxonomy.TITLE_SUBS.has(subcategory)) { const r = taxonomy.retitle(subcategory, attrs, title); if (r) { title = r.title; attrs = r.attrs; } }
   if (title.length < 3) throw new HttpError(400, 'Название слишком короткое');
   // 1.48.0: VIN или номер кузова — только у машин; на странице объявления виден частично, целиком — по нажатию.
   let vin;
@@ -1457,6 +1458,25 @@ if (!db.prepare('SELECT 1 FROM settings WHERE key = ?').get('search_v2')) {
   for (const r of rows) { let attrs = {}; try { attrs = JSON.parse(r.attrs || '{}'); } catch { /* пусто */ } upd.run(searchText(r.title, r.description, { subcategory: r.subcategory, attrs }), r.id); }
   db.exec('COMMIT');
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('search_v2', JSON.stringify({ at: Date.now(), n: rows.length }));
+}
+// 1.48.0 (решение владельца 10 ноября): один раз меняем названия уже размещённых объявлений на собранные из характеристик.
+// Модель — из старого названия («Kia Rio, 2015» → Rio); не угадали — название прежнее до правки. Дата правки и проверка не меняются.
+if (!db.prepare('SELECT 1 FROM settings WHERE key = ?').get('titles_v148')) {
+  const rows = db.prepare(`SELECT id, title, description, subcategory, attrs FROM listings WHERE status != 'deleted' AND subcategory IN (${[...taxonomy.TITLE_SUBS].map(() => '?').join(',')})`).all(...taxonomy.TITLE_SUBS);
+  const upd = db.prepare('UPDATE listings SET title = ?, attrs = ?, search_text = ? WHERE id = ?');
+  let changed = 0; let kept = 0;
+  db.exec('BEGIN');
+  for (const r of rows) {
+    let attrs = {}; try { attrs = JSON.parse(r.attrs || '{}') || {}; } catch { /* пусто */ }
+    const x = taxonomy.retitle(r.subcategory, attrs, r.title);
+    if (!x) { kept++; continue; }
+    if (x.title === r.title && JSON.stringify(x.attrs) === JSON.stringify(attrs)) continue;
+    upd.run(x.title, JSON.stringify(x.attrs), searchText(x.title, r.description, { subcategory: r.subcategory, attrs: x.attrs }), r.id);
+    changed++;
+  }
+  db.exec('COMMIT');
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('titles_v148', JSON.stringify({ at: Date.now(), changed, kept }));
+  console.log(`Названия из характеристик: изменено ${changed}, без изменений ${kept}`);
 }
 // 7 ноября 2026: письма с кодами не доходили — по просьбе владельца коды выключены, пока почту не починят
 // (включаются в «Модерация → Почта»). Только на работающем сайте с подключённой почтой и только один раз.
