@@ -899,7 +899,8 @@
           ${xl ? '' : html`<span class="card-price">${price(it.price, it.priceUnit)}</span>`}
           <span class="card-title">${it.title}</span>
           ${xl && (bo.desc || it.summary) ? html`<span class="card-desc">${[it.summary, bo.desc].filter(Boolean).join('. ')}</span>` : it.summary ? html`<span class="card-sum">${it.summary}</span>` : ''}
-          <span class="card-meta">${meta}${it.delivery ? html` · <span class="ok">Доставка</span>` : ''}${it.exchange ? html` · <span class="ok">Обмен</span>` : ''}</span>
+          <span class="card-meta">${meta}</span>
+          ${it.delivery || it.exchange ? html`<span class="card-perks">${ic(it.delivery ? 'truck' : 'refresh', 13, 2.2)}${[it.delivery && 'Доставка', it.exchange && 'Обмен'].filter(Boolean).join(' · ')}</span>` : ''}
           ${it.seller ? cardSeller(it.seller) : ''}
         </div>
       </a>
@@ -3491,12 +3492,12 @@
     const k = `md${++medalN}`; const [a, b] = MEDAL[level] || MEDAL[0];
     return raw(`<svg class="medal" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="${k}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><path d="M12 2l8.5 5v10L12 22 3.5 17V7z" fill="url(#${k})"/><path d="M12 2l8.5 5L12 12 3.5 7z" fill="#fff" opacity=".3"/>${MEDAL_MARK[level] || MEDAL_MARK[0]}</svg>`);
   }
-  const dealsWord = (n) => `${NF.format(n)} ${plural(n, 'сделка', 'сделки', 'сделок')}`;
+  const dealsWord = (n) => `${NF.format(n)}\u00a0${plural(n, 'сделка', 'сделки', 'сделок')}`; // «5 сделок» не разрывается
   // Строка под именем: «⬢ Опытный · 27 сделок». 1.49.0: shop — у магазина без уровня «Новый магазин» вместо «Новичок»;
   // deals: false — без числа сделок (в публичном профиле оно в счётчиках рядом).
   const repLine = (r, href = '', { shop = false, deals = true } = {}) => {
     if (!r) return '';
-    const inner = html`${levelMedal(r.level, 18)}<b>${shop && !r.level ? 'Новый магазин' : r.levelName}</b>${deals && r.deals ? html`<span>· ${dealsWord(r.deals)}</span>` : ''}`;
+    const inner = html`${levelMedal(r.level, 18)}<b>${shop && !r.level ? 'Новый магазин' : r.levelName}</b>${deals && r.deals ? html`<span>·\u00a0${dealsWord(r.deals)}</span>` : ''}`;
     return href ? html`<a class="rep-line l${r.level}" href="${href}">${inner}</a>` : html`<span class="rep-line l${r.level}">${inner}</span>`;
   };
   const REPLY_TXT = { hour: '~1 ч', hours: '1–3 ч', day: '< суток', days: '1–2 дня' };
@@ -4188,7 +4189,7 @@
             <label class="btn btn-soft tm-file">${ic('plus', 16, 2)}Загрузить файл<input type="file" id="doc-file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden></label></div>
             <p class="muted" style="margin:0;font-size:13px">PDF, JPG, PNG или WebP до 8 МБ. Скан или чёткое фото, весь документ целиком.</p>`}
         </div>
-        <p class="muted" style="margin:0;font-size:13px">Правообладателем в реестре должна быть ${b.name}. Лицензиатов и знаки, которые ещё не зарегистрированы, не подтверждаем. Галочку выдаёт только модератор после проверки.</p>
+        <p class="muted" style="margin:0;font-size:13px">Правообладателем в реестре должна быть ${b.name}${/\.$/.test(b.name) ? '' : '.'} Лицензиатов и знаки, которые ещё не зарегистрированы, не подтверждаем. Галочку выдаёт только модератор после проверки.</p>
         ${lock ? '' : html`<div class="set-btns"><button class="btn btn-dark" type="submit">Отправить на проверку</button></div>`}
       </form>`}`);
     const tf = $('#tmf', box);
@@ -4580,7 +4581,7 @@
   // ================= для бизнеса: тарифы, оплата, продвижение =================
   const PLAN_NAME = { shop: 'Магазин', pro: 'Магазин Про' };
   const rub = (n) => `${NF.format(n)} ₽`;
-  const dateLong = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  const dateLong = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).replace(/\s?г\.$/, ''); // «9 ноября 2031» — без «г.», иначе «г..» в конце фразы
   const dateShort = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   const daysLeft = (ts) => Math.max(0, Math.ceil((ts - Date.now()) / 86400000));
   // Что даёт каждый тариф — ровно то, что работает в коде (lib/business.js, lib/deals.js, lib/support.js, lib/promo.js).
