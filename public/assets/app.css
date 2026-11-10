@@ -864,6 +864,8 @@ a.rep-line:hover { color: var(--text); text-decoration: underline; }
 .f-brand { display: grid; gap: 12px; justify-items: start; align-content: start; }
 .footer .logo, .footer .logo:hover { color: var(--text); }
 .f-tag { margin: 0; max-width: 260px; font-size: 14px; line-height: 1.5; color: var(--muted); }
+/* 1.49.2: слоган «Сторгуемся!» — крупно над второй строкой */
+.f-tag b { display: block; margin-bottom: 2px; font-size: 17px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
 .fcol h4 { margin: 0 0 14px; font-size: 13px; font-weight: 700; color: var(--text); }
 .fcol summary { list-style: none; cursor: default; display: flex; align-items: center; justify-content: space-between; }
 .fcol summary::-webkit-details-marker { display: none; }

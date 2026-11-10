@@ -8,6 +8,7 @@
 // assets/icons/badge-96.png (значок push-уведомлений в строке состояния Android: белый знак на прозрачном).
 // apple-touch-icon.png (180×180, без прозрачности) — она же аватарка отправителя для Mail.ru Postmaster,
 // icon-512.png — для портрета Яндекс ID и фото Google-аккаунта no-reply@.
+// assets/og.jpg (1200×630) — картинка для ссылок в мессенджерах и соцсетях: знак, слоган «Сторгуемся!» (1.49.2).
 // Нужен Playwright с Chromium (как для npm run test:ui).
 const fs = require('node:fs');
 const path = require('node:path');
@@ -39,6 +40,25 @@ const BADGE = 96;
 const badge = `<svg xmlns="http://www.w3.org/2000/svg" width="${BADGE}" height="${BADGE}" viewBox="0 0 48 48"><g transform="translate(24 24.4) scale(0.95) translate(-24 -25)">${MARK('transparent')}</g></svg>`;
 const MAIL_LOGO = 102; // показывается 34×34, запас на экраны с высокой плотностью
 
+// Картинка для ссылок: шрифт Onest — из assets/fonts (встраиваем, чтобы не зависеть от сети).
+const font = (file, range) => `@font-face{font-family:Onest;font-weight:400 800;src:url(data:font/woff2;base64,${fs.readFileSync(path.join(ASSETS, 'fonts', file)).toString('base64')}) format('woff2');unicode-range:${range}}`;
+const og = () => `<html><head><style>${font('onest-cyrillic.woff2', 'U+0400-045F')}${font('onest-latin.woff2', 'U+0000-00FF')}
+  body{margin:0}.o{position:relative;width:1200px;height:630px;overflow:hidden;box-sizing:border-box;padding:72px 84px;font-family:Onest,sans-serif;color:#fff;
+  background:radial-gradient(60% 90% at 92% 0%,rgba(185,168,255,.55),transparent 70%),radial-gradient(50% 80% at 0% 100%,rgba(120,200,255,.32),transparent 70%),linear-gradient(125deg,${SKY},#3D67D0 50%,${LILAC})}
+  .m{position:absolute;right:-60px;bottom:-120px;width:560px;height:560px;opacity:.09;transform:rotate(-12deg)}
+  .b{display:flex;align-items:center;gap:20px;font-size:46px;font-weight:800;letter-spacing:-.03em}.lg{display:flex;width:84px;height:84px;border-radius:50%;box-shadow:0 0 0 4px rgba(255,255,255,.92),0 10px 30px rgba(20,25,90,.3)}
+  h1{margin:96px 0 14px;font-size:118px;line-height:1;font-weight:800;letter-spacing:-.045em;text-shadow:0 8px 40px rgba(20,25,90,.28)}
+  p{margin:0;font-size:38px;font-weight:600;opacity:.95;letter-spacing:-.01em}
+  .c{display:flex;gap:16px;margin-top:44px}.c span{height:62px;display:flex;align-items:center;gap:12px;padding:0 26px 0 8px;border-radius:999px;background:#fff;color:#1E2A6B;font-size:25px;font-weight:700;letter-spacing:-.01em;box-shadow:0 12px 30px rgba(20,25,90,.25)}
+  .c i{width:46px;height:46px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:linear-gradient(135deg,${SKY},${LILAC})}.c i svg{width:24px;height:24px}
+  </style></head><body><div class="o">
+  <svg class="m" viewBox="0 0 48 48">${MARK('transparent')}</svg>
+  <div class="b"><span class="lg">${favicon.replace('<svg ', '<svg width="84" height="84" ')}</span>торгана</div>
+  <h1>Сторгуемся!</h1>
+  <p>Объявления по всей России</p>
+  <div class="c"><span><i><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></i>Бесплатно и без лимитов</span><span><i><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></i>Проверка модератором</span></div>
+  </div></body></html>`;
+
 async function main() {
   fs.writeFileSync(path.join(ASSETS, 'favicon.svg'), favicon);
   fs.mkdirSync(path.join(ASSETS, 'icons'), { recursive: true });
@@ -62,6 +82,12 @@ async function main() {
     await bp.screenshot({ path: path.join(ASSETS, 'icons', 'badge-96.png'), clip: { x: 0, y: 0, width: BADGE, height: BADGE }, omitBackground: true });
     await bp.close();
     console.log(`icons/badge-96.png — ${BADGE}×${BADGE}`);
+    const op = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1 });
+    await op.setContent(og());
+    await op.evaluate(() => document.fonts.ready);
+    await op.screenshot({ path: path.join(ASSETS, 'og.jpg'), type: 'jpeg', quality: 88, clip: { x: 0, y: 0, width: 1200, height: 630 } });
+    await op.close();
+    console.log('og.jpg — 1200×630');
   } finally {
     await browser.close();
   }

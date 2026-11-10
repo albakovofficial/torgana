@@ -835,7 +835,7 @@
     footer.innerHTML = String(html`<div class="wrap">
       <div class="f-main">
         <div class="f-grid">
-          <div class="f-brand">${logo()}<p class="f-tag">Честная площадка объявлений по всей России</p></div>
+          <div class="f-brand">${logo()}<p class="f-tag"><b>Сторгуемся!</b>Объявления по всей России — бесплатно и с проверкой модератора</p></div>
           ${cols.map(([t, ls]) => html`<details class="fcol" open><summary><h4>${t}</h4>${ic('down', 18, 2)}</summary><ul>${ls.map(([href, label]) => html`<li><a href="${href}">${label}</a></li>`)}</ul></details>`)}
         </div>
         <div class="f-help">
