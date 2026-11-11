@@ -797,7 +797,8 @@
       d.items.forEach((n) => { const k = noticeDay(n.at); const g = groups[groups.length - 1]; if (g && g[0] === k) g[1].push(n); else groups.push([k, [n]]); });
       $('#nt-body', m).innerHTML = String(d.items.length ? html`${groups.map(([day, list]) => html`<div class="nt-day">${day}</div>
         ${list.map((n) => { const col = noticeColor(n); const icn = ic(P[n.icon] ? n.icon : 'bell', 12, 2.6); return html`<a class="nt-it${n.read ? '' : ' new'}" href="${n.url || '#'}">
-          <span class="nt-ph${n.photo ? '' : ' brand'}">${n.photo ? html`<img src="${n.photo}" alt="" loading="lazy">` : html`<svg width="30" height="30" viewBox="0 0 48 48" aria-hidden="true">${raw(MARK)}</svg>`}<i class="nt-badge ${col}">${icn}</i></span>
+          ${n.icon === 'medal' ? html`<span class="nt-ph medal">${firstMedal(30)}</span>` /* 1.52.0: медаль «Один из первых» */
+    : html`<span class="nt-ph${n.photo ? '' : ' brand'}">${n.photo ? html`<img src="${n.photo}" alt="" loading="lazy">` : html`<svg width="30" height="30" viewBox="0 0 48 48" aria-hidden="true">${raw(MARK)}</svg>`}<i class="nt-badge ${col}">${icn}</i></span>`}
           <span class="nt-t"><b>${n.title}</b>${n.body ? html`<span>${n.body}</span>` : ''}<small>${hm(n.at)}</small></span></a>`; })}`)}`
         : html`<div class="nt-empty"><span class="nt-empty-ic">${ic('bell', 30, 1.6)}</span><b>Здесь будут уведомления</b><p>Напишем, когда объявление опубликуют или подешевеет товар из избранного.</p></div>`);
       if (d.unread) { api('POST', '/api/notices/read', {}).then((r) => setNotices(r.unread)).catch(() => {}); }
@@ -869,7 +870,7 @@
   // ================= карточки =================
   // it.ad — карточка из блока «Реклама»: пометка и рекламодатель по кнопке «Реклама».
   // it.boost — продвижение в ленте (lib/boost.js): XL — на две ячейки (на телефоне — во всю ширину) с ещё двумя фото
-  // и началом описания, рамка — изумрудная обводка, tags — метки на фото. Подписи «Продвигается» на карточке нет (1.43.1).
+  // и началом описания, рамка — синяя обводка в цвет Торганы, tags — метки на фото. Подписи «Продвигается» на карточке нет (1.43.1).
   const boostImg = (src, cls = '', extra = '') => html`<span class="xl-ph ${cls}${src ? ' ph' : ''}"${src ? raw(` style="--ph:url('${esc(src)}')"`) : ''}>${src ? html`<img src="${src}" alt="" loading="lazy">` : svg(P.image, 28, 1.2)}${extra}</span>`;
   // 1.26 (вариант 7 «С продавцом»): под описанием карточки — фото и имя продавца, значок уровня (1.46.0), если он есть.
   const cardSeller = (s) => html`<span class="card-seller">${ava(s, 'xs')}<span class="cs-name">${s.name}</span>${s.shop ? html`<span class="cs-shop" title="Магазин на Торгане">${ic('store', 12, 2.2)}<span class="sr">Магазин</span></span>` : ''}${s.level ? html`<span class="cs-rate" title="${['', 'Надёжный', 'Опытный', 'Мастер Торганы'][s.level]} продавец">${levelMedal(s.level, 14)}</span>` : ''}</span>`;
@@ -1007,6 +1008,7 @@
   function go(url, replace = false) {
     if (!replace) rememberPlace();
     history[replace ? 'replaceState' : 'pushState']({}, '', url);
+    window.dispatchEvent(new Event('torgana:route')); // закрыть подсказки, привязанные к старой странице
     render();
   }
   function goSearch(params) {
@@ -1724,7 +1726,7 @@
           <a href="/u/${seller.id}" class="panel" style="display:flex;align-items:center;gap:14px;color:var(--text)">
             ${ava(seller)}
             <span style="flex:1;min-width:0"><span style="display:block;font-size:17px;font-weight:700">${nameSeal(seller.name, seller.badges)}</span>
-            ${repLine(seller.rep)}
+            ${repLine(seller.rep, '', { first: seller.badges && seller.badges.first, who: seller.name, kind: seller.badges && seller.badges.shop ? 'shop' : '' })}
             <span class="muted" style="display:block;font-size:13px">На Торгане с ${since(seller.createdAt)} · ${seller.activeCount} ${plural(seller.activeCount, 'объявление', 'объявления', 'объявлений')}</span>
             ${seller.badges && (seller.badges.phone || seller.badges.biz) ? html`<span class="pf-badges" style="margin-top:8px">${trustBadges(seller.badges)}</span>` : ''}</span>
             ${ic('right', 20)}
@@ -1967,7 +1969,7 @@
   // ================= продвижение в ленте (1.21) =================
   // Один выбор для формы объявления и окна «Продвинуть»: XL-карточка, рамка, метки (до двух) и пакет «Всё в одном».
   // Цена считается так же, как на сервере (lib/boost.js): все три — по цене пакета, если он дешевле суммы.
-  const BOOST = [['xl', 'xl', 'XL-карточка', 'Две ячейки, три фото и описание'], ['frame', 'frame', 'Яркая рамка', 'Изумрудная обводка карточки'], ['tags', 'tag', 'Метки на фото', 'Одна или две прямо на фото']];
+  const BOOST = [['xl', 'xl', 'XL-карточка', 'Две ячейки, три фото и описание'], ['frame', 'frame', 'Яркая рамка', 'Синяя обводка карточки'], ['tags', 'tag', 'Метки на фото', 'Одна или две прямо на фото']];
   const boostOn = () => !!(S.config.billing && S.config.billing.ready);
   const boostPrices = () => (S.config.billing && S.config.billing.prices && S.config.billing.prices.boost) || { xl: 99, frame: 39, tags: 29, all: 129 };
   function boostQuote(b) {
@@ -2043,7 +2045,7 @@
       <div class="bp-tags hidden" data-bp-tags role="group" aria-label="Метки на фото"><span class="bp-tags-h">Выберите одну или две</span>
         ${S.config.billing.boostTags.map((t) => html`<button type="button" class="bp-chip" data-tag="${t}" aria-pressed="false">${t}</button>`)}</div>
       ${free.length === 3 && pr.all < sum ? html`<label class="bp-all"><input type="checkbox" data-bk="all"><span class="bp-ic">${ic('bolt', 20, 1.9)}</span>
-        <span class="bp-t"><b>Всё в одном</b><small>XL, рамка и метки · <span class="bp-save">выгоднее на ${rub(sum - pr.all)}</span></small></span><em>${rub(pr.all)}</em></label>` : ''}
+        <span class="bp-t"><b>Всё в одном</b><small>XL, рамка и метки\u00a0· <span class="bp-save">выгоднее на ${rub(sum - pr.all)}</span></small></span><em>${rub(pr.all)}</em></label>` : ''}
     </div>`;
   }
   // st = { xl, frame, tagsOn, tags: [] }; onChange — после каждого изменения.
@@ -2162,6 +2164,7 @@
         <a class="pf-back always" href="${l ? `/l/${l.id}` : '/profile'}">${ic('left', 18, 2)}${l ? 'К объявлению' : 'Мои объявления'}</a>
         <h1>${l ? 'Редактирование' : 'Новое объявление'}</h1>
         <p>${l ? 'После сохранения объявление снова проверит модератор — обычно несколько часов. Пока идёт проверка, его не видно в поиске.' : 'Бесплатно и без лимитов. Каждое объявление проверяет модератор — обычно это несколько часов.'}</p>
+        ${!l && S.first && S.first.left && !(S.user.badges && S.user.badges.first) && !S.user.isOwner ? html`<div class="ed-first">${firstMedal(30)}<span><b>Медаль «${firstName(S.first.form)}»</b> — первой тысяче продавцов, с личным номером. Осталось ${NF.format(S.first.left)}: медаль будет вашей, когда объявление одобрят</span></div>` : ''}
         ${draft ? html`<div class="ed-draft">${ic('refresh', 15, 2.2)}<span>Черновик от ${when(draft.at)}</span><button type="button" id="draft-drop">Сбросить</button></div>` : ''}
       </div>
       <nav class="ed-steps" aria-label="Шаги">${ED_STEPS.map(([sid, t], i) => html`<button type="button" data-step="${i}" aria-controls="${sid}" aria-label="Шаг ${i + 1}: ${t}"><i></i><span>${ic('check', 14, 2.6)}${t}</span></button>`)}</nav>
@@ -3495,10 +3498,11 @@
   const dealsWord = (n) => `${NF.format(n)}\u00a0${plural(n, 'сделка', 'сделки', 'сделок')}`; // «5 сделок» не разрывается
   // Строка под именем: «⬢ Опытный · 27 сделок». 1.49.0: shop — у магазина без уровня «Новый магазин» вместо «Новичок»;
   // deals: false — без числа сделок (в публичном профиле оно в счётчиках рядом).
-  const repLine = (r, href = '', { shop = false, deals = true } = {}) => {
-    if (!r) return '';
-    const inner = html`${levelMedal(r.level, 18)}<b>${shop && !r.level ? 'Новый магазин' : r.levelName}</b>${deals && r.deals ? html`<span>·\u00a0${dealsWord(r.deals)}</span>` : ''}`;
-    return href ? html`<a class="rep-line l${r.level}" href="${href}">${inner}</a>` : html`<span class="rep-line l${r.level}">${inner}</span>`;
+  // 1.52.0: first — медаль «Один из первых» (badges.first): стоит в той же строке, справа от уровня.
+  const repLine = (r, href = '', { shop = false, deals = true, first = null, who = '', kind = '' } = {}) => {
+    const inner = r ? html`${levelMedal(r.level, 18)}<b>${shop && !r.level ? 'Новый магазин' : r.levelName}</b>${deals && r.deals ? html`<span>·\u00a0${dealsWord(r.deals)}</span>` : ''}` : '';
+    const line = !r ? '' : href ? html`<a class="rep-line l${r.level}" href="${href}">${inner}</a>` : html`<span class="rep-line l${r.level}">${inner}</span>`;
+    return first ? html`<span class="rep-row">${line}${firstChip(first, who, kind || (shop ? 'shop' : ''))}</span>` : line;
   };
   const REPLY_TXT = { hour: '~1 ч', hours: '1–3 ч', day: '< суток', days: '1–2 дня' };
   const MARKS = { first: 'Первая сделка', 10: '10 сделок', 50: '50 сделок', 100: '100 сделок', year: 'Год без жалоб' };
@@ -3654,7 +3658,7 @@
         <div class="pf-who-txt">
           <div class="pf-name">${nameSeal(u.name, u.badges)}</div>
           <div class="pf-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
-          ${u.rep && !(sh && sh.official) ? repLine(u.rep, '/profile/reputation', { shop: !!sh }) : ''}
+          ${u.rep && !(sh && sh.official) ? repLine(u.rep, '/profile/reputation', { shop: !!sh, first: u.badges && u.badges.first, kind: 'me' }) : ''}
         </div>
         <a class="icon-btn pf-gear" href="/profile/settings" aria-label="Настройки">${ic('gear', 20)}</a>
       </div>
@@ -3728,6 +3732,84 @@
       <path d="M7.6 12.6l3 3 6-6.4" fill="none" stroke="#1B2A8A" stroke-opacity=".35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 .7)"/>
       <path d="M7.6 12.6l3 3 6-6.4" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`);
   }
+  // 1.52.0: медаль «Один из первых / Одна из первых» — первые 1000 продавцов (lib/first.js). Объёмная, как галочка
+  // проверки, но в индиго Торганы, чтобы их не путали. n — номер на медали (подсказка, настройки); без номера — звезда.
+  const MEDAL_R = ['M16 33L9 54.5l5.6-2.6 3.6 5 5.4-19z', 'M32 33l7 21.5-5.6-2.6-3.6 5-5.4-19z'];
+  const MEDAL_STAR = 'M24 13.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.4L24 28.4l-5.8 3 1.1-6.4-4.7-4.6 6.5-.9z';
+  function firstMedal(w = 18, n = 0) {
+    const k = `fm${++sealN}`; const g = (id, a, b, c) => `<linearGradient id="${k}${id}" x1="0" y1="0" x2="${c ? 1 : 0}" y2="1"><stop offset="0" stop-color="${a}"/>${c ? `<stop offset=".45" stop-color="${b}"/><stop offset="1" stop-color="${c}"/>` : `<stop offset="1" stop-color="${b}"/>`}</linearGradient>`;
+    const big = w >= 30; const fs = String(n).length > 3 ? 8.8 : 10.5;
+    const face = n ? `<ellipse cx="21.5" cy="17" rx="9" ry="4.6" fill="url(#${k}h)" opacity=".7"/><path d="M24 12.2l1.2 2.5 2.7.4-2 1.9.5 2.7-2.4-1.3-2.4 1.3.5-2.7-2-1.9 2.7-.4z" fill="#fff"/>
+      <text x="24" y="30.6" text-anchor="middle" font-size="${fs}" font-weight="800" fill="#24187A" fill-opacity=".5" letter-spacing="-.3">${n}</text><text x="24" y="29.8" text-anchor="middle" font-size="${fs}" font-weight="800" fill="#fff" letter-spacing="-.3">${n}</text>`
+      : `<path d="${MEDAL_STAR}" fill="#24187A" fill-opacity=".35" transform="translate(0 1)"/><path d="${MEDAL_STAR}" fill="#fff"/>`;
+    return raw(`<svg class="fmedal${big ? ' big' : ''}" width="${w}" height="${Math.round(w * 58 / 48)}" viewBox="0 0 48 58" aria-hidden="true"><defs>
+      ${g('g', '#B9C6FF', '#5B6FE8', '#5B3DF5')}${g('a', '#3963CC', '#4B33E6')}${g('b', '#7C8CFF', '#3963CC')}${g('h', '#fff', 'rgba(255,255,255,0)')}
+      <radialGradient id="${k}f" cx=".34" cy=".28" r=".9"><stop offset="0" stop-color="#9AA8FF"/><stop offset=".48" stop-color="#4A5BE0"/><stop offset="1" stop-color="#3A23B8"/></radialGradient></defs>
+      ${MEDAL_R.map((d) => `<path d="${d}" fill="#24187A" opacity=".45" transform="translate(0 1.4)"/>`).join('')}<path d="${MEDAL_R[0]}" fill="url(#${k}a)"/><path d="${MEDAL_R[1]}" fill="url(#${k}b)"/>
+      <path d="M16 33l7.6 4.9-3 10.6-5.3-1.2 2.6-11z" fill="#fff" opacity=".16"/><circle cx="24" cy="23" r="19" fill="#24187A" opacity=".5" transform="translate(0 2.6)"/>
+      <circle cx="24" cy="23" r="19" fill="#33229E" transform="translate(0 1.5)"/><circle cx="24" cy="23" r="19" fill="url(#${k}g)"/>
+      ${big ? '<circle cx="24" cy="23" r="17.6" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width=".7" stroke-dasharray=".9 1.3"/>' : ''}
+      <circle cx="24" cy="23.7" r="14.6" fill="#24187A" opacity=".45"/><circle cx="24" cy="23" r="14.4" fill="url(#${k}f)"/><ellipse cx="22" cy="10.6" rx="12" ry="5" fill="url(#${k}h)"/>${face}</svg>`);
+  }
+  const firstName = (form) => (form === 'f' ? 'Одна из первых' : 'Один из первых');
+  // Метка у уровня репутации. Касание (телефон) или наведение мыши — подсказка с номером (bindFirstPop).
+  // who — имя для текста подсказки; kind: me — свой профиль, shop — магазин.
+  const firstChip = (f, who = '', kind = '') => (f ? html`<span class="fm-chip" role="button" tabindex="0" data-first="${f.no}" data-form="${f.form}" data-who="${who}" data-kind="${kind}" aria-label="${firstName(f.form)}, номер ${f.no}" aria-haspopup="dialog">${firstMedal(16)}<b>${firstName(f.form)}</b></span>` : '');
+  function firstText(d) {
+    const no = d.first; const she = d.form === 'f';
+    if (d.kind === 'me') return `Вы в первой тысяче продавцов Торганы, ваш номер — ${no}. Медаль остаётся навсегда.`;
+    if (d.kind === 'shop') return `«${d.who}» — в первой тысяче продавцов Торганы, номер — ${no}. Медаль остаётся навсегда.`;
+    return `${d.who} ${she ? 'вошла' : 'вошёл'} в первую тысячу продавцов Торганы, ${she ? 'её' : 'его'} номер — ${no}. Медаль остаётся навсегда.`;
+  }
+  // Одна подсказка на страницу: под меткой (или над ней, если внизу нет места), в пределах экрана.
+  function bindFirstPop() {
+    let pop = null; let at = null; let timer = 0;
+    const hide = () => { clearTimeout(timer); if (pop) { pop.remove(); pop = null; } if (at) { at.setAttribute('aria-expanded', 'false'); at = null; } };
+    const show = (chip) => {
+      clearTimeout(timer);
+      if (at === chip) return;
+      hide(); at = chip; chip.setAttribute('aria-expanded', 'true');
+      const d = chip.dataset;
+      pop = document.createElement('div');
+      pop.className = 'fm-pop'; pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', firstName(d.form));
+      pop.innerHTML = String(html`${firstMedal(46, d.first)}<span><b>${firstName(d.form)} · № ${d.first}</b><small>${firstText(d)}</small></span>`);
+      document.body.appendChild(pop);
+      const r = chip.getBoundingClientRect(); const pw = pop.offsetWidth; const ph = pop.offsetHeight; const vw = document.documentElement.clientWidth;
+      const left = Math.min(Math.max(12, r.left + r.width / 2 - pw / 2), vw - pw - 12);
+      const below = r.bottom + 10 + ph < window.innerHeight || r.top < ph + 20;
+      pop.style.left = `${left + window.scrollX}px`;
+      pop.style.top = `${(below ? r.bottom + 10 : r.top - ph - 10) + window.scrollY}px`;
+      pop.style.setProperty('--ax', `${Math.min(Math.max(22, r.left + r.width / 2 - left), pw - 22)}px`);
+      pop.classList.add(below ? 'down' : 'up');
+      pop.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse' && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-first]'))) timer = setTimeout(hide, 150); });
+      pop.addEventListener('pointerenter', () => clearTimeout(timer));
+    };
+    const chipOf = (e) => e.target.closest && e.target.closest('[data-first]');
+    // Метка бывает внутри ссылки (карточка продавца в объявлении) — касание не уводит со страницы.
+    document.addEventListener('click', (e) => {
+      const c = chipOf(e);
+      if (c) { e.preventDefault(); e.stopPropagation(); if (at === c && !matchMedia('(hover: hover)').matches) hide(); else show(c); return; }
+      if (pop && !pop.contains(e.target)) hide();
+    }, true);
+    document.addEventListener('keydown', (e) => {
+      const c = chipOf(e);
+      if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); if (at === c) hide(); else show(c); }
+      if (e.key === 'Escape' && pop) { const a = at; hide(); if (a) a.focus(); }
+    }, true);
+    document.addEventListener('pointerover', (e) => { const c = chipOf(e); if (c && e.pointerType === 'mouse') show(c); });
+    document.addEventListener('pointerout', (e) => {
+      const c = chipOf(e);
+      if (!c || e.pointerType !== 'mouse' || c !== at) return;
+      const to = e.relatedTarget;
+      if (to && (c.contains(to) || (pop && pop.contains(to)))) return;
+      timer = setTimeout(hide, 150);
+    });
+    document.addEventListener('focusout', (e) => { if (chipOf(e) && !(pop && pop.contains(e.relatedTarget))) timer = setTimeout(hide, 150); });
+    window.addEventListener('resize', hide);
+    window.addEventListener('popstate', hide);
+    window.addEventListener('torgana:route', hide);
+  }
+  bindFirstPop();
   // Имя с галочкой — только у проверенного бренда (товарный знак из реестра Роспатента).
   // 1.49.0: последнее слово и галочка не разрываются — галочка не уходит одна на новую строку.
   // 1.50.0: у официального аккаунта Торганы — та же галочка, что у «Поддержки Торганы».
@@ -4364,7 +4446,10 @@
             <div class="field wide"><label for="s-phone">Телефон</label><input id="s-phone" name="phone" class="input" type="tel" inputmode="tel" maxlength="30" value="${u.phone || ''}" placeholder="+7" autocomplete="tel">${phoneNote}</div>
           </div>
           <div class="set-foot"><span>Имя и фото сразу обновятся во всех ваших объявлениях</span><button type="reset" class="btn btn-soft">Отменить</button><button class="btn btn-accent" type="submit">Сохранить</button></div>
-        </form>`,
+        </form>
+        ${u.badges && u.badges.first ? html`<div class="set-medal">${firstMedal(46, u.badges.first.no)}<div class="set-medal-t"><b>Медаль № ${u.badges.first.no}</b>
+          <span>Вы в первой тысяче продавцов Торганы — медаль видна в профиле и в ваших объявлениях. Как её подписать:</span>
+          <div class="seg" role="radiogroup" aria-label="Подпись медали">${['m', 'f'].map((v) => html`<button type="button" role="radio" class="${u.badges.first.form === v ? 'on' : ''}" aria-checked="${u.badges.first.form === v ? 'true' : 'false'}" data-medal-form="${v}">${firstName(v)}</button>`)}</div></div></div>` : ''}`,
       sn: () => html`${head('Уведомления', 'О чём сообщать и куда. Переключатели сохраняются сразу')}
         <div id="push-dev"></div>
         <table class="ntf" id="sn">
@@ -4426,6 +4511,10 @@
     }
     if (sec === 'sf') {
       $('[data-ava-set]').onclick = () => pickAvatar(reload);
+      $$('[data-medal-form]').forEach((b) => { b.onclick = async () => {
+        if (b.classList.contains('on')) return;
+        try { S.user = (await api('PATCH', '/api/me', { medalForm: b.dataset.medalForm })).user; toast(`Подпись медали: «${firstName(b.dataset.medalForm)}»`); reload(); } catch (e) { toast(e.message, true); }
+      }; });
       const del = $('[data-ava-del]'); if (del) del.onclick = () => removeAvatar(reload);
       $('#sf').onsubmit = async (e) => {
         e.preventDefault();
@@ -4485,7 +4574,7 @@
         <div class="pub-who">
           <h1>${nameSeal(sh ? sh.name : u.name, u.badges)}</h1>
           <div class="pub-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
-          ${sh && sh.official ? '' : repLine(u.rep, `/u/${u.id}?tab=rep`, { shop: !!sh, deals: false })}
+          ${sh && sh.official ? '' : repLine(u.rep, `/u/${u.id}?tab=rep`, { shop: !!sh, deals: false, first: u.badges && u.badges.first, who: sh ? sh.name : u.name, kind: own ? 'me' : '' })}
           ${sh && sh.about ? html`<p class="shop-about">${sh.about}</p>` : ''}
           ${badges ? html`<div class="pf-badges">${raw(badges)}</div>` : ''}
         </div>
@@ -5367,6 +5456,7 @@
   function applyMe(r) {
     const changed = (S.user && S.user.id) !== (r.user && r.user.id);
     S.user = r.user;
+    S.first = r.first || null; // медаль «Один из первых»: { left, form }
     setUnread(r.unread || 0);
     setFresh(r.fresh);
     setNotices(r.notices);

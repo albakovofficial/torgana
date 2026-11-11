@@ -3501,3 +3501,37 @@ html.dw-open { overflow: hidden; }
   .pf-back, .pf-back.always { min-height: 44px; margin-block: -11px; }
   .setx-back { min-height: 44px; margin: -11px 0 3px; }
 }
+
+/* 1.52.0: медаль «Один из первых / Одна из первых» — у уровня репутации; касание или наведение — подсказка с номером */
+.rep-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.rep-row .rep-line { margin: 0; }
+.panel .rep-row { margin: 2px 0; }
+.fm-chip { position: relative; display: inline-flex; align-items: center; gap: 5px; font-size: 14px; color: var(--accent); cursor: pointer; border-radius: 8px; -webkit-tap-highlight-color: transparent; white-space: nowrap; }
+.fm-chip b { font-weight: 800; }
+.fm-chip::after { content: ''; position: absolute; inset: -12px -6px; }
+.fm-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (hover: hover) { .fm-chip:hover b, .fm-chip[aria-expanded="true"] b { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; } }
+.fmedal { flex: none; overflow: visible; filter: drop-shadow(0 1px 2px rgba(57, 80, 220, .35)); }
+.fmedal.big { filter: drop-shadow(0 3px 5px rgba(57, 80, 220, .35)); }
+.fmedal text { font-family: inherit; }
+.fm-pop { position: absolute; z-index: 65; width: max-content; max-width: min(340px, calc(100vw - 24px)); display: flex; align-items: center; gap: 14px; padding: 14px 18px 14px 14px; border-radius: 20px; background: var(--card); color: var(--text); box-shadow: 0 14px 40px rgba(22, 26, 43, .18), 0 0 0 1px var(--line); animation: fm-in .16s ease-out; }
+.fm-pop::before { content: ''; position: absolute; left: calc(var(--ax, 50%) - 7px); width: 14px; height: 14px; background: var(--card); transform: rotate(45deg); }
+.fm-pop.down::before { top: -7px; box-shadow: -1px -1px 0 var(--line); }
+.fm-pop.up::before { bottom: -7px; box-shadow: 1px 1px 0 var(--line); }
+.fm-pop > span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fm-pop b { font-size: 15.5px; font-weight: 750; }
+.fm-pop small { font-size: 14px; line-height: 1.45; color: var(--text-2); }
+@keyframes fm-in { from { opacity: 0; transform: translateY(4px); } }
+.fm-pop.up { animation-name: fm-up; }
+@keyframes fm-up { from { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .fm-pop, .fm-pop.up { animation: none; } }
+.nt-ph.medal { display: grid; place-items: center; border-radius: 14px; background: var(--accent-soft); }
+.set-medal { display: flex; gap: 16px; align-items: flex-start; margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--line); }
+.set-medal-t { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.set-medal-t b { font-size: 16px; font-weight: 700; }
+.set-medal-t span { font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.set-medal .seg { width: 100%; max-width: 380px; margin-top: 4px; }
+.set-medal .seg button { flex: 1 1 0; justify-content: center; min-width: 0; padding: 0 10px; }
+@media (max-width: 420px) { .set-medal { gap: 12px; } .set-medal > .fmedal { width: 36px; height: 44px; } }
+.ed-first { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 12px 16px 12px 12px; border-radius: 18px; background: var(--accent-soft); font-size: 14px; line-height: 1.45; color: var(--text-2); max-width: 640px; }
+.ed-first b { color: var(--text); font-weight: 700; }
