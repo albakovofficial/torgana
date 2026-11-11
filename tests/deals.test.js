@@ -60,7 +60,7 @@ test('предложение: сообщение в чате, новое зам�
   assert.match(nb(list.lastBody), /Согласен/);
 });
 
-test('предложение: отклонить и отозвать; не больше пяти в день', async () => {
+test('предложение: отклонить и отозвать; не больше шести в день (1.54.0: торгуются обе стороны)', async () => {
   const c = await buyer.post(`/api/conversations/${cid}/offer`, { price: 30000 });
   const no = await seller.post(`/api/offers/${c.data.message.offerId}/decline`);
   assert.match(nb(no.data.message.body), /Не готов уступить до 30 000 ₽/);
@@ -69,8 +69,9 @@ test('предложение: отклонить и отозвать; не бо�
   assert.equal(w.data.offer.status, 'withdrawn');
   assert.equal(w.data.message, null, 'отзыв без сообщения');
   assert.equal((await buyer.post(`/api/conversations/${cid}/offer`, { price: 32000 })).status, 200, 'пятое за день');
-  const e = await buyer.post(`/api/conversations/${cid}/offer`, { price: 32500 });
-  assert.equal(e.status, 429, 'шестое — нет');
+  assert.equal((await buyer.post(`/api/conversations/${cid}/offer`, { price: 32500 })).status, 200, 'шестое за день');
+  const e = await buyer.post(`/api/conversations/${cid}/offer`, { price: 33000 });
+  assert.equal(e.status, 429, 'седьмое — нет');
 });
 
 test('быстрые ответы: готовые по умолчанию, свои, сброс', async () => {

@@ -228,7 +228,9 @@ window.TorganaAdmin = function (T) {
           ${d.moderators.map((m) => html`<a class="dash-mod" href="/admin?status=log&admin=${m.id}">${ava(m, 'sm')}<span>${m.name}${m.me ? html` <small class="muted">(вы)</small>` : ''}</span><b>${NF.format(m.actions)}</b></a>`)}
           <p class="muted" style="margin:6px 0 0;font-size:13px">Число действий: решения по объявлениям, блокировки, ответы в поддержке.</p>
         </section>
-      </div>`);
+      </div>
+      <section class="panel dash-funnel" id="funnel" aria-label="Воронка продавцов"></section>`);
+    renderFunnel($('#funnel', box), 30);
     $$('[data-chart]', box).forEach((a) => {
       a.onclick = (e) => {
         e.preventDefault();
@@ -236,6 +238,35 @@ window.TorganaAdmin = function (T) {
         $('#chart', box).innerHTML = String(barChart(d.days, a.dataset.chart, a.textContent));
       };
     });
+  }
+
+  // 1.54.0: воронка продавцов — где теряются люди (lib/admin.js /api/admin/funnel). Шаги — по тем, кто зарегистрировался
+  // за период; первый шаг — новые посетители. Самый большой провал подсвечен, рядом — что с ним делать.
+  const FUNNEL_TIPS = {
+    signups: 'Заходят, но не регистрируются — проверьте, понятно ли на главной, зачем регистрироваться и что это бесплатно.',
+    sellers: 'Регистрируются, но не размещают — напомните про медаль «Один из первых» и что размещение бесплатное.',
+    approved: 'Объявления не проходят проверку — посмотрите частые причины отказа в «Журнале действий» и поправьте подсказки.',
+    contacted: 'Покупатели не пишут — нужен поток покупателей: посты, реклама, понятные фото и цены в объявлениях.',
+    sold: 'Пишут, но не продают — подскажите продавцам про торг, встречную цену и быстрые ответы.'
+  };
+  const FUNNEL_DAYS = [[7, '7 дней'], [30, '30 дней'], [90, '90 дней'], [0, 'Всё время']];
+  async function renderFunnel(el, days) {
+    if (!el) return;
+    let f;
+    try { f = await api('GET', `/api/admin/funnel?days=${days}`); } catch (e) { el.innerHTML = String(html`<p class="muted">${e.message}</p>`); return; }
+    const max = Math.max(1, ...f.steps.map((x) => x.n));
+    const conv = f.steps.map((x, i) => (i && f.steps[i - 1].n ? Math.round((x.n / f.steps[i - 1].n) * 100) : null));
+    let worst = -1;
+    conv.forEach((c, i) => { if (c !== null && f.steps[i - 1].n >= 3 && (worst < 0 || c < conv[worst])) worst = i; });
+    el.innerHTML = String(html`<div class="dash-chart-head"><h2 class="h2">Воронка продавцов</h2>
+        <div class="seg" role="tablist">${FUNNEL_DAYS.map(([d, t]) => html`<a role="tab" href="#" data-fd="${d}" class="${d === f.days ? 'on' : ''}" aria-selected="${d === f.days ? 'true' : 'false'}">${t}</a>`)}</div></div>
+      <ol class="fn">${f.steps.map((x, i) => html`<li class="fn-row ${i === worst ? 'worst' : ''}">
+        <span class="fn-l">${x.label}</span>
+        <span class="fn-bar"><i style="--w:${Math.max(x.n ? 2 : 0, (x.n / max) * 100).toFixed(1)}%"></i><b>${NF.format(x.n)}</b></span>
+        <span class="fn-c">${conv[i] === null ? '' : html`${ic('right', 14, 2.4)}${conv[i]}%`}</span></li>`)}</ol>
+      ${worst > 0 ? html`<div class="fn-tip">${ic('info', 18, 2)}<div><b>Больше всего теряем на шаге «${f.steps[worst].label}» — доходит ${conv[worst]}%.</b> ${FUNNEL_TIPS[f.steps[worst].key]}</div></div>` : ''}
+      <p class="fn-note muted">Шаги считаются по тем, кто зарегистрировался ${f.days ? `за ${f.days} ${plural(f.days, 'день', 'дня', 'дней')}` : 'за всё время'} (без модераторов); посетители — браузеры, впервые открывшие сайт.${f.toFirst !== null ? ` От регистрации до первого объявления — обычно ${fmtDur(f.toFirst)}.` : ''}</p>`);
+    $$('[data-fd]', el).forEach((a) => { a.onclick = (e) => { e.preventDefault(); renderFunnel(el, Number(a.dataset.fd)); }; });
   }
 
   // ---------- пользователи ----------

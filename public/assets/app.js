@@ -1626,8 +1626,7 @@
         ${l.appealReply ? '' : l.appealText ? html`<span class="tag">Апелляция отправлена</span>` : html`<button class="btn btn-line btn-sm" data-appeal>Не согласен — подать апелляцию</button>`}</div>
         ${l.appealReply ? html`<div style="margin-top:10px"><strong>Ответ на апелляцию:</strong> ${l.appealReply}</div>` : ''}</div>`;
     } else if (l.isOwner && l.status === 'pending') {
-      ownerBanner = html`<div class="banner warn"><strong>Объявление на проверке.</strong> Каждое объявление перед публикацией проверяет модератор — обычно это занимает несколько часов${S.config.mail ? ', о решении напишем на почту' : ''}.
-        ${l.flags ? html`Оно похоже на товар из раздела «${l.flags}» <a href="/page/rules" style="text-decoration:underline">правил</a> — проверим внимательнее.` : ''}</div>`;
+      ownerBanner = reviewCard(data.review, l);
     } else if (l.isOwner && l.status === 'scheduled') {
       ownerBanner = html`<div class="banner ok"><strong>Проверено — опубликуем ${atTime(l.publishAt)} (мск).</strong> До этого объявление видите только вы. Опубликовать раньше можно кнопкой справа.</div>`;
     } else if (l.isOwner && l.status === 'archived') {
@@ -3129,7 +3128,9 @@
   // load(after) → { messages }, send(body) → message; сообщения { id, mine, body, createdAt }.
   // decorate(m) → { cls, body } — особый вид сообщения (предложение цены); onData(r) — после каждой загрузки;
   // tools — над полем ввода (быстрые ответы); left — кнопка слева от поля (₽ — предложить цену).
-  function mountChat(box, { head, below = '', load, send, scam = false, empty, placeholder = 'Сообщение…', onActivity, back = '/messages', decorate, onData, tools = '', left = '' }) {
+  // 1.54.0: reply — { other: имя собеседника } включает ответ на конкретное сообщение: кнопка у сообщения (мышь),
+  // свайп вправо или долгое нажатие (телефон); над полем — «Ответ …», в сообщении — цитата, нажатие ведёт к оригиналу.
+  function mountChat(box, { head, below = '', load, send, scam = false, empty, placeholder = 'Сообщение…', onActivity, back = '/messages', decorate, onData, tools = '', left = '', reply = null }) {
     box.innerHTML = String(html`
       <div class="chat-head">
         <a href="${back}" class="icon-btn chat-back" aria-label="Назад">${ic('left', 20)}</a>
@@ -3138,6 +3139,7 @@
       ${below}
       <div class="chat-msgs" data-msgs></div>
       ${tools}
+      ${reply ? html`<div class="chat-reply hidden" data-reply-bar><span class="cr-ic">${ic('reply', 18, 2.2)}</span><div class="cr-tx"><b data-rb-who></b><span data-rb-text></span></div><button type="button" class="icon-btn cr-x" data-rb-x aria-label="Отменить ответ">${ic('close', 18, 2)}</button></div>` : ''}
       <form class="chat-form" data-send>
         ${left}
         <label class="icon-btn chat-attach" title="Отправить фото"><input type="file" accept="image/jpeg,image/png,image/webp" data-photo hidden>${ic('camera', 20)}<span class="sr">Отправить фото</span></label>
@@ -3150,6 +3152,10 @@
     const form = $('[data-send]', box);
     let lastId = 0;
     let lastDay = '';
+    const known = new Map(); // id → сообщение (для цитаты в ответе)
+    const qText = (q) => (q.body ? q.body : q.photo ? 'Фото' : q.kind === 'offer' ? 'Предложение цены' : 'Сообщение');
+    const quote = (q) => html`<button type="button" class="msg-q" data-goto="${q.id}"><b>${q.mine ? 'Вы' : reply.other}</b><span>${q.photo ? ic('camera', 13, 2) : ''}${qText(q)}</span></button>`;
+    const rpBtn = () => (reply ? html`<button type="button" class="msg-rp" data-rp aria-label="Ответить">${ic('reply', 16, 2.2)}</button>` : '');
     const append = (list) => {
       if (!list.length) return;
       const e = $('[data-empty]', msgs); if (e) e.remove();
@@ -3159,8 +3165,11 @@
         const d = new Date(m.createdAt).toDateString();
         if (d !== lastDay) { lastDay = d; out += String(html`<div class="chat-day">${shortWhen(m.createdAt)}</div>`); }
         const d2 = decorate ? decorate(m) : null;
-        out += d2 ? String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${d2.cls}">${d2.body}<span class="t">${hm(m.createdAt)}</span></div>`)
-          : String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${m.photo ? 'has-photo' : ''}">${m.photo ? html`<a class="msg-photo" href="${m.photo}" target="_blank" rel="noopener" data-pv-src="${m.photo}" data-pv-group="chat"><img src="${m.photo}" alt="Фото" loading="lazy"></a>` : ''}${m.body}<span class="t">${hm(m.createdAt)}</span></div>`);
+        known.set(m.id, { id: m.id, mine: m.mine, body: m.body, photo: !!m.photo, kind: m.kind || '' });
+        const q = reply && m.reply ? quote(m.reply) : '';
+        const can = reply && m.kind !== 'offer' ? 'can-rp' : ''; // на карточку предложения не отвечают — у неё свои кнопки
+        out += d2 ? String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${d2.cls} ${can}" data-mid="${m.id}">${q}${d2.body}<span class="t">${hm(m.createdAt)}</span>${can ? rpBtn() : ''}</div>`)
+          : String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${m.photo ? 'has-photo' : ''} ${q ? 'has-q' : ''} ${can}" data-mid="${m.id}">${q}${m.photo ? html`<a class="msg-photo" href="${m.photo}" target="_blank" rel="noopener" data-pv-src="${m.photo}" data-pv-group="chat"><img src="${m.photo}" alt="Фото" loading="lazy"></a>` : ''}${m.body}<span class="t">${hm(m.createdAt)}</span>${can ? rpBtn() : ''}</div>`);
         const risk = scam && !m.mine && !m.kind ? riskOf(m.body) : null;
         if (risk) out += String(html`<div class="msg-risk r-${risk.k}" role="note">${ic(risk.k === 'messenger' ? 'chat' : risk.k === 'link' ? 'link' : risk.k === 'card' ? 'card' : 'shield', 16, 2.2)}<span>${risk.text}</span></div>`);
         lastId = Math.max(lastId, m.id);
@@ -3170,9 +3179,66 @@
     };
     const poll = async () => { const r = await load(lastId); if (r.messages.length) { append(r.messages); if (onActivity) onActivity(); } if (onData) onData(r); return r; };
     ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`; };
-    ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } };
-    // send получает { body, photo }: текст, фото (имя файла из /api/uploads) или и то и другое.
-    const deliver = async (msg) => { append([await send(msg)]); if (onActivity) onActivity(); };
+    ta.onkeydown = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
+      if (e.key === 'Escape' && replyTo) { e.preventDefault(); setReply(null); }
+    };
+    // Ответ на сообщение: полоса над полем ввода, отмена — крестиком или Esc.
+    let replyTo = null;
+    const bar = $('[data-reply-bar]', box);
+    const setReply = (id) => {
+      const m = id ? known.get(Number(id)) : null;
+      replyTo = m ? m.id : null;
+      if (!bar) return;
+      bar.classList.toggle('hidden', !m);
+      if (!m) return;
+      $('[data-rb-who]', bar).textContent = m.mine ? 'Ответ себе' : `Ответ ${reply.other}`;
+      $('[data-rb-text]', bar).textContent = qText(m);
+      ta.focus();
+    };
+    if (bar) $('[data-rb-x]', bar).onclick = () => setReply(null);
+    if (reply) {
+      msgs.addEventListener('click', (e) => {
+        const rp = e.target.closest('[data-rp]');
+        if (rp) { setReply(rp.closest('[data-mid]').dataset.mid); return; }
+        const g = e.target.closest('[data-goto]');
+        if (g) {
+          const t = $(`[data-mid="${g.dataset.goto}"]`, msgs);
+          if (!t) { toast('Это сообщение было давно — пролистайте переписку выше', true); return; }
+          t.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash');
+        }
+      });
+      // Телефон: свайп вправо или долгое нажатие на сообщении — ответить.
+      let sw = null;
+      msgs.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'mouse') return;
+        const el = e.target.closest('.msg.can-rp');
+        if (!el || e.target.closest('a, button')) return;
+        sw = { el, x: e.clientX, y: e.clientY, dx: 0, lp: setTimeout(() => { if (sw && Math.abs(sw.dx) < 8) { navigator.vibrate?.(10); setReply(el.dataset.mid); sw = null; } }, 480) };
+      });
+      msgs.addEventListener('pointermove', (e) => {
+        if (!sw) return;
+        const dx = e.clientX - sw.x; const dy = e.clientY - sw.y;
+        if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx)) { clearTimeout(sw.lp); sw.el.style.transform = ''; sw = null; return; }
+        sw.dx = dx;
+        if (Math.abs(dx) > 8) clearTimeout(sw.lp);
+        if (dx > 0) { sw.el.style.transform = `translateX(${Math.min(dx, 72)}px)`; sw.el.classList.toggle('rp-ready', dx > 56); }
+      });
+      const end = () => {
+        if (!sw) return;
+        clearTimeout(sw.lp);
+        const { el, dx } = sw; sw = null;
+        el.style.transition = 'transform .18s ease'; el.style.transform = '';
+        setTimeout(() => { el.style.transition = ''; el.classList.remove('rp-ready'); }, 200);
+        if (dx > 56) { navigator.vibrate?.(10); setReply(el.dataset.mid); }
+      };
+      msgs.addEventListener('pointerup', end);
+      msgs.addEventListener('pointercancel', end);
+      msgs.addEventListener('contextmenu', (e) => { if (e.target.closest('.msg.can-rp') && matchMedia('(hover: none)').matches) e.preventDefault(); });
+    }
+    // send получает { body, photo, replyTo }: текст, фото (имя файла из /api/uploads) или и то и другое.
+    const deliver = async (msg) => { append([await send(replyTo ? { ...msg, replyTo } : msg)]); setReply(null); if (onActivity) onActivity(); };
     form.onsubmit = async (e) => {
       e.preventDefault();
       const body = ta.value.trim();
@@ -3222,53 +3288,110 @@
   }
 
   // ---------- торг: предложение цены ----------
+  // 1.54.0: сколько ждать проверки — по медиане за 14 дней (lib/admin.js reviewEta); пока решений мало — «несколько часов».
+  const etaText = (ms) => {
+    if (!ms) return 'в течение нескольких часов';
+    const m = Math.max(5, Math.round(ms / 60000 / 5) * 5);
+    if (m < 60) return `за ${m} мин`;
+    const h = Math.round(m / 60);
+    return h <= 1 ? 'примерно за час' : h < 24 ? `примерно за ${h} ${plural(h, 'час', 'часа', 'часов')}` : 'в течение дня';
+  };
+  const reviewLine = (rv) => (rv ? `${rv.night ? 'Ночью модераторы отдыхают — проверим утром' : `Обычно проверяем ${etaText(rv.median)}`}. ${rv.place > 1 ? `В очереди перед вами: ${rv.place - 1}.` : 'Вы первый в очереди.'}` : 'Модератор проверит объявление — обычно это несколько часов.');
+  // Карточка «На проверке» у своего объявления: срок, место в очереди, три шага и что пришлём, когда проверим.
+  function reviewCard(rv, l) {
+    const sent = l.updatedAt || l.createdAt;
+    return html`<section class="mq-card" aria-label="Объявление на проверке">
+      <span class="mq-ic">${ic(rv && rv.night ? 'moon' : 'clock', 22, 2)}</span>
+      <div class="mq-main">
+        <b class="mq-t">Объявление на проверке</b>
+        <span class="mq-s">${rv && rv.night ? 'Ночью модераторы отдыхают — проверим утром.' : html`Обычно проверяем <b>${etaText(rv && rv.median)}</b>.`}
+          ${rv ? (rv.place > 1 ? html` Перед вами в очереди: <b>${rv.place - 1}</b>.` : ' Вы первый в очереди.') : ''}</span>
+        <ol class="mq-steps">
+          <li class="done"><i>${ic('check', 13, 3)}</i><span>Отправлено<small>${shortWhen(sent) === 'сегодня' ? `в ${hm(sent)}` : shortWhen(sent)}</small></span></li>
+          <li class="now"><i></i><span>Проверка<small>сейчас</small></span></li>
+          <li><i></i><span>Опубликовано<small>после проверки</small></span></li>
+        </ol>
+        <span class="mq-foot">${ic('bell', 16, 2)}Как только проверим — пришлём уведомление${S.config.mail ? ' и письмо' : ''}.</span>
+        ${l.flags ? html`<span class="mq-flag">Объявление похоже на товар из раздела «${l.flags}» <a href="/page/rules">правил</a> — проверим внимательнее.</span>` : ''}
+      </div>
+    </section>`;
+  }
   // Сумма-подсказка: −5/−10/−15% с округлением до «красивой» (100, 500 или 1000 ₽).
-  const niceDown = (n) => { const step = n >= 100000 ? 1000 : n >= 10000 ? 500 : 100; return Math.max(step, Math.floor(n / step) * step); };
-  function offerModal({ listingPrice, title, onSubmit }) {
+  const niceStep = (n) => (n >= 100000 ? 1000 : n >= 10000 ? 500 : 100);
+  const niceDown = (n) => { const step = niceStep(n); return Math.max(step, Math.floor(n / step) * step); };
+  // 1.54.0: окно и для первого предложения покупателя, и для встречной цены (counter): тогда сумма — строго между
+  // low и high (продавец: между предложением и ценой; покупатель: ниже цены продавца), подсказки — середина и четверти.
+  function offerModal({ listingPrice, title, onSubmit, counter = null }) {
     const min = listingPrice ? Math.ceil(listingPrice * 0.3) : 1;
-    const picks = listingPrice ? [5, 10, 15].map((p) => niceDown(listingPrice * (1 - p / 100))).filter((v, i, a) => v < listingPrice && a.indexOf(v) === i) : [];
-    openModal(String(html`<h2>Предложить цену</h2>
-      <p class="muted" style="margin:0 0 16px">${title}${listingPrice ? html` · сейчас <b style="color:var(--text)">${rub(listingPrice)}</b>` : ''}</p>
-      <div class="ed-money offer-money"><label class="sr" for="of-sum">Ваша цена</label><input id="of-sum" class="input" inputmode="numeric" autocomplete="off" placeholder="Ваша цена"><span>₽</span></div>
-      ${picks.length ? html`<div class="offer-picks">${picks.map((v) => html`<button type="button" class="chip" data-pick-sum="${v}">${rub(v)}<span class="cnt">−${Math.round((1 - v / listingPrice) * 100)}%</span></button>`)}</div>` : ''}
-      <p class="offer-note">${ic('info', 16, 2)}<span>Продавец примет или отклонит предложение одной кнопкой — ответ придёт в чат.${listingPrice ? ` Можно предложить от ${rub(min)}.` : ''}</span></p>
-      <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-accent" data-ok>Предложить</button></div>`), (m, close) => {
-      const inp = $('#of-sum', m);
-      inp.oninput = () => { const d = inp.value.replace(/\D/g, '').slice(0, 11); inp.value = d ? NF.format(Number(d)) : ''; };
-      $$('[data-pick-sum]', m).forEach((b) => { b.onclick = () => { inp.value = NF.format(Number(b.dataset.pickSum)); inp.focus(); }; });
+    let picks; let head; let note; let ok = 'Предложить';
+    if (counter) {
+      const { low, high, theirs, bySeller } = counter; // theirs — на что отвечаем; bySeller — отвечает продавец
+      const step = niceStep(high || theirs);
+      const round = (v) => Math.round(v / step) * step;
+      picks = high ? [0.25, 0.5, 0.75].map((k) => round(low + (high - low) * k)).filter((v, i, x) => v > low && v < high && x.indexOf(v) === i) : [];
+      head = html`<h2>${bySeller ? 'Ваша цена' : 'Предложить свою'}</h2>
+        <p class="muted" style="margin:0 0 14px">${title}${listingPrice ? html` · в объявлении <b style="color:var(--text)">${rub(listingPrice)}</b>` : ''}</p>
+        <div class="offer-vs"><span><small>${bySeller ? 'Предлагает покупатель' : 'Цена продавца'}</small><b>${rub(theirs)}</b></span>${ic('right', 18, 2)}<span class="you"><small>${bySeller ? 'Вы уступите до' : 'Вы предложите'}</small><b data-vs>—</b></span></div>`;
+      note = bySeller ? `Сумма — больше ${rub(low)}${high ? ` и меньше ${rub(high)}` : ''}. Покупатель сможет согласиться, отказаться или предложить свою.`
+        : `Сумма — меньше ${rub(high)}${listingPrice ? `, но не меньше ${rub(min)}` : ''}. Продавец сможет согласиться, отказаться или назвать свою.`;
+      ok = 'Отправить';
+    } else {
+      picks = listingPrice ? [5, 10, 15].map((p) => niceDown(listingPrice * (1 - p / 100))).filter((v, i, a) => v < listingPrice && a.indexOf(v) === i) : [];
+      head = html`<h2>Предложить цену</h2><p class="muted" style="margin:0 0 16px">${title}${listingPrice ? html` · сейчас <b style="color:var(--text)">${rub(listingPrice)}</b>` : ''}</p>`;
+      note = `Продавец сможет согласиться, отказаться или назвать свою цену — ответ придёт в чат.${listingPrice ? ` Можно предложить от ${rub(min)}.` : ''}`;
+    }
+    const off = (v) => (listingPrice && v < listingPrice ? html`<span class="cnt">−${Math.round((1 - v / listingPrice) * 100)}%</span>` : '');
+    openModal(String(html`${head}
+      <div class="ed-money offer-money"><label class="sr" for="of-sum">${counter ? 'Ваша цена' : 'Ваша цена'}</label><input id="of-sum" class="input" inputmode="numeric" autocomplete="off" placeholder="Ваша цена"><span>₽</span></div>
+      ${picks.length ? html`<div class="offer-picks">${picks.map((v) => html`<button type="button" class="chip" data-pick-sum="${v}">${rub(v)}${off(v)}</button>`)}</div>` : ''}
+      <p class="offer-note">${ic('info', 16, 2)}<span>${note}</span></p>
+      <div class="modal-actions"><button class="btn btn-soft" data-x>Отмена</button><button class="btn btn-accent" data-ok>${ok}</button></div>`), (m, close) => {
+      const inp = $('#of-sum', m); const vs = $('[data-vs]', m);
+      const show = () => { if (vs) { const d = Number(inp.value.replace(/\D/g, '')); vs.textContent = d ? rub(d) : '—'; } };
+      inp.oninput = () => { const d = inp.value.replace(/\D/g, '').slice(0, 11); inp.value = d ? NF.format(Number(d)) : ''; show(); };
+      $$('[data-pick-sum]', m).forEach((b) => { b.onclick = () => { inp.value = NF.format(Number(b.dataset.pickSum)); show(); inp.focus(); }; });
       $('[data-x]', m).onclick = close;
-      const ok = $('[data-ok]', m);
-      ok.onclick = async () => {
+      const btn = $('[data-ok]', m);
+      btn.onclick = async () => {
         const sum = Number(inp.value.replace(/\D/g, ''));
         if (!sum) { inp.focus(); toast('Укажите сумму', true); return; }
-        ok.disabled = true;
-        try { await onSubmit(sum); close(); } catch (e) { toast(e.message, true); ok.disabled = false; }
+        btn.disabled = true;
+        try { await onSubmit(sum); close(); } catch (e) { toast(e.message, true); btn.disabled = false; }
       };
       setTimeout(() => inp.focus(), 50);
     });
   }
   // Карточка предложения в чате и её низ (кнопки или итог) — низ перерисовывается при каждом опросе.
+  // 1.54.0: торгуются обе стороны — у карточки свой заголовок (предложение / цена продавца / новое предложение),
+  // отвечает тот, кому предложили: «Принять», «Своя цена», «Отклонить».
   const offerCard = (o, m) => html`<div class="offer-card" data-offer="${m.offerId}">
-      <div class="offer-k">${ic('tag', 14, 2.2)}Предложение цены</div>
-      <div class="offer-sum"><b data-offer-sum></b><s data-offer-was></s></div>
+      <div class="offer-k">${ic('tag', 14, 2.2)}<span data-offer-k>Предложение цены</span></div>
+      <div class="offer-sum"><b data-offer-sum></b><s data-offer-was></s><span class="offer-pct" data-offer-off></span></div>
       <div class="offer-foot" data-offer-foot></div></div>`;
   function paintOffers(root, offers, role) {
     for (const o of offers || []) {
       const el = $(`[data-offer="${o.id}"]`, root);
       if (!el || el.dataset.state === o.status) continue;
       el.dataset.state = o.status;
+      const mine = (o.bySeller ? 'seller' : 'buyer') === role; // это предложение сделал я
+      const them = o.bySeller ? 'Продавец' : 'Покупатель';
+      el.classList.toggle('by-seller', o.bySeller);
+      $('[data-offer-k]', el).textContent = o.bySeller ? (mine ? 'Ваша цена' : 'Цена продавца') : o.parentId ? 'Новое предложение' : 'Предложение цены';
       $('[data-offer-sum]', el).textContent = rub(o.price);
       $('[data-offer-was]', el).textContent = o.listingPrice ? rub(o.listingPrice) : '';
-      el.closest('.msg').classList.toggle('offer-off', o.status === 'withdrawn' || o.status === 'declined');
+      $('[data-offer-off]', el).textContent = o.listingPrice && o.price < o.listingPrice ? `−${Math.round((1 - o.price / o.listingPrice) * 100)}%` : '';
+      el.closest('.msg').classList.toggle('offer-off', ['withdrawn', 'declined', 'countered'].includes(o.status));
       $('[data-offer-foot]', el).innerHTML = String(o.status === 'pending'
-        ? (role === 'seller'
-          ? html`<button type="button" class="btn btn-accent btn-sm" data-offer-act="accept" data-oid="${o.id}">${ic('check', 16, 2.4)}Принять</button><button type="button" class="btn btn-soft btn-sm" data-offer-act="decline" data-oid="${o.id}">Отклонить</button>`
-          : html`<span class="offer-st wait">${ic('clock', 15, 2)}Ждём ответа продавца</span><button type="button" class="offer-link" data-offer-act="withdraw" data-oid="${o.id}">Отозвать</button>`)
-        : o.status === 'accepted' ? html`<span class="offer-st ok">${ic('check', 15, 2.6)}${role === 'seller' ? 'Вы согласились' : 'Продавец согласился'}</span>`
-          : o.status === 'declined' ? html`<span class="offer-st">${role === 'seller' ? 'Вы отказались' : 'Продавец отказался'}</span>`
-            : html`<span class="offer-st">${role === 'buyer' ? 'Вы отозвали или заменили предложение' : 'Покупатель отозвал или заменил предложение'}</span>`);
+        ? (!mine
+          ? html`<button type="button" class="btn btn-accent btn-sm" data-offer-act="accept" data-oid="${o.id}">${ic('check', 16, 2.4)}Принять</button><button type="button" class="btn btn-soft btn-sm" data-offer-act="counter" data-oid="${o.id}">${ic('tag', 16, 2)}Своя цена</button><button type="button" class="offer-link offer-no" data-offer-act="decline" data-oid="${o.id}">Отклонить</button>`
+          : html`<span class="offer-st wait">${ic('clock', 15, 2)}Ждём ответа ${o.bySeller ? 'покупателя' : 'продавца'}</span><button type="button" class="offer-link" data-offer-act="withdraw" data-oid="${o.id}">Отозвать</button>`)
+        : o.status === 'accepted' ? html`<span class="offer-st ok">${ic('check', 15, 2.6)}Договорились на ${rub(o.price)}</span>`
+          : o.status === 'declined' ? html`<span class="offer-st">${mine ? `${them === 'Продавец' ? 'Покупатель' : 'Продавец'} отказался` : 'Вы отказались'}</span>`
+            : o.status === 'countered' ? html`<span class="offer-st">${ic('refresh', 15, 2)}${mine ? `${o.bySeller ? 'Покупатель' : 'Продавец'} предложил свою цену` : 'Вы предложили свою цену'}</span>`
+              : html`<span class="offer-st">${mine ? 'Вы отозвали или заменили предложение' : `${them} отозвал или заменил предложение`}</span>`);
     }
   }
+
 
   // ---------- быстрые ответы продавца ----------
   let qrMax = 12; // сколько шаблонов можно (сервер: 12, с тарифом магазина — 30)
@@ -3382,6 +3505,7 @@
     supportBadge();
     const listTimer = setInterval(() => loadList().then(supportBadge).catch(() => {}), 15000);
     let stopChat = () => {};
+    let offersNow = []; // предложения цены в открытом диалоге — для «Своя цена»
     cleanup = () => { clearInterval(listTimer); stopChat(); };
     if (!cid) return;
 
@@ -3401,11 +3525,19 @@
     const role = data.conversation.role;
     const canOffer = role === 'buyer' && l.status === 'active' && (l.bargain || l.price === null); // продавец указал «без торга» — кнопки ₽ нет
     stopChat = mountChat($('#chat'), {
-      head: html`<a href="/l/${l.id}" class="conv-img" aria-hidden="true" tabindex="-1">${l.photo ? html`<img src="${l.photo}" alt="">` : svg(P.image, 20, 1.4)}</a>
-        <div style="flex:1;min-width:0"><a href="/l/${l.id}" style="display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.title}</a>
-          <span class="muted" style="font-size:14px">${price(l.price, l.priceUnit)} · ${other.name}</span></div>
-        ${l.status === 'sold' ? html`<span class="tag dark">Продано</span>` : l.status === 'deleted' ? html`<span class="tag">Объявление удалено</span>` : ''}
-        <button type="button" class="icon-btn chat-more" data-chat-more aria-label="Ещё" aria-haspopup="menu">${ic('more', 20)}</button>`,
+      // 1.54.0: шапка — фото, название в одну строку, ниже цена и собеседник; статус — меткой на фото и в строке цены.
+      head: (() => {
+        const gone = l.status === 'deleted'; const sold = l.status === 'sold';
+        const st = gone ? html`<span class="ch-st" title="Объявление удалено">Удалено</span>` : sold ? html`<span class="ch-st dark">Продано</span>` : '';
+        const ph = html`${l.photo ? html`<img src="${l.photo}" alt="">` : svg(P.image, 20, 1.4)}`;
+        return html`${gone ? html`<span class="ch-ph gone" aria-hidden="true">${ph}</span>` : html`<a href="/l/${l.id}" class="ch-ph ${sold ? 'sold' : ''}" aria-hidden="true" tabindex="-1">${ph}</a>`}
+          <div class="ch-tx">
+            ${gone ? html`<span class="ch-t">${l.title}</span>` : html`<a href="/l/${l.id}" class="ch-t">${l.title}</a>`}
+            <div class="ch-m">${gone ? '' : html`<b class="${sold ? 'off' : ''}">${price(l.price, l.priceUnit)}</b>`}${st}<i aria-hidden="true">·</i><a href="/u/${other.id}" class="ch-who">${ava(other, 'xs')}<span>${other.name}</span></a></div>
+          </div>
+          <button type="button" class="icon-btn chat-more" data-chat-more aria-label="Ещё" aria-haspopup="menu">${ic('more', 20)}</button>`;
+      })(),
+      reply: { other: other.name },
       below: html`<div data-deal-slot></div>`,
       load: async (after) => {
         const r = await api('GET', `/api/conversations/${convId}?after=${after}`);
@@ -3422,7 +3554,7 @@
       },
       send: async (msg) => { const r = await api('POST', `/api/conversations/${convId}/messages`, msg); loadList().catch(() => {}); return r.message; },
       decorate: (m) => (m.kind === 'offer' ? { cls: 'offer-msg', body: offerCard(null, m) } : m.kind === 'offer-reply' ? { cls: 'offer-reply', body: html`${m.body}` } : null),
-      onData: (r) => paintOffers($('#chat'), r.offers, role),
+      onData: (r) => { offersNow = r.offers || offersNow; paintOffers($('#chat'), r.offers, role); },
       tools: role === 'seller' ? html`<div class="chat-tools" data-replies></div>`
         : l.status === 'active' ? html`<div class="chat-tools chat-asks" aria-label="Быстрые вопросы">${buyerAsks(l).map((t) => html`<button type="button" class="chip" data-topic="${t}">${t}</button>`)}</div>` : '',
       left: canOffer ? html`<button type="button" class="icon-btn chat-offer" data-make-offer title="Предложить цену" aria-label="Предложить цену">₽</button>` : '',
@@ -3465,12 +3597,23 @@
     });
     chatEl.addEventListener('click', async (e) => {
       const a = e.target.closest('[data-offer-act]');
+      if (a && a.dataset.offerAct === 'counter') { // 1.54.0: своя цена в ответ
+        const o = offersNow.find((x) => String(x.id) === a.dataset.oid);
+        if (!o) return;
+        const prev = o.parentId ? offersNow.find((x) => x.id === o.parentId) : null; // моё прошлое предложение
+        const min = l.price ? Math.ceil(l.price * 0.3) : 1;
+        offerModal({ listingPrice: l.price, title: l.title,
+          counter: o.bySeller ? { theirs: o.price, bySeller: false, high: o.price, low: Math.max(min, prev ? prev.price : min) }
+            : { theirs: o.price, bySeller: true, low: o.price, high: l.price },
+          onSubmit: async (sum) => { await api('POST', `/api/offers/${o.id}/counter`, { price: sum }); await stopChat.poll(); loadList().catch(() => {}); toast(o.bySeller ? 'Ваше предложение отправлено продавцу' : 'Ваша цена отправлена покупателю'); } });
+        return;
+      }
       if (a) {
         a.disabled = true;
         try {
           await api('POST', `/api/offers/${a.dataset.oid}/${a.dataset.offerAct}`);
           await stopChat.poll(); loadList().catch(() => {});
-          toast({ accept: 'Вы приняли предложение — покупатель получит уведомление', decline: 'Предложение отклонено', withdraw: 'Предложение отозвано' }[a.dataset.offerAct]);
+          toast({ accept: `Договорились — ${role === 'seller' ? 'покупатель' : 'продавец'} получит уведомление`, decline: 'Предложение отклонено', withdraw: 'Предложение отозвано' }[a.dataset.offerAct]);
         } catch (ex) { toast(ex.message, true); a.disabled = false; }
         return;
       }
@@ -4028,7 +4171,7 @@
           ${canBoost ? html`<button type="button" class="ml-boost" data-boost="${i.id}"><span class="ml-boost-ic">${ic('bolt', 17, 2.2)}</span><b>${free.length < 3 ? 'Добавить продвижение' : 'Продвинуть'}</b><small>${free.map(([k]) => ({ xl: 'XL', frame: 'рамка', tags: 'метки' })[k]).join(', ')} · от ${rub(Math.min(...free.map(([k]) => boostPrices()[k])))}</small>${ic('right', 17, 2)}</button>` : ''}
           ${i.status === 'scheduled' ? html`<div class="ml-note ok">${ic('clock', 15, 2)} Проверено — опубликуем ${atTime(i.publishAt)} (мск). Видно только вам.</div>` : ''}
           ${isExpired(i) ? html`<div class="ml-note soft">Прошло 30 дней, объявление снято. Если ещё актуально — опубликуйте снова: бесплатно, окажется среди свежих.</div>` : ''}
-          ${i.status === 'pending' ? html`<div class="ml-note warn">${i.flags ? `Проверяем внимательнее: похоже на «${i.flags}». ` : ''}Модератор проверит объявление — обычно это несколько часов.</div>` : ''}
+          ${i.status === 'pending' ? html`<div class="ml-note warn">${i.flags ? `Проверяем внимательнее: похоже на «${i.flags}». ` : ''}${reviewLine(i.review)}</div>` : ''}
           ${i.status === 'rejected' ? html`<div class="ml-note bad"><strong>Причина:</strong> ${i.rejectReason || 'не указана'}${i.appealAt ? ' · апелляция отправлена' : ''}${i.appealReply ? html`<br><strong>Ответ на апелляцию:</strong> ${i.appealReply}` : ''}</div>` : ''}
         </article>`;
       })}</div>`
@@ -4554,6 +4697,28 @@
     if (va) va.onclick = () => verifyModal(reload);
   }
 
+  // 1.54.0: «Написать магазину / продавцу» из профиля. Переписка на Торгане всегда о конкретном объявлении,
+  // поэтому сначала выбираем, о каком (одно — сразу в чат). У кого много — с поиском по названию.
+  async function writePicker(u, name, shop = false) {
+    if (!S.user) { go(`/login?next=${encodeURIComponent(location.pathname)}`); return; }
+    const start = async (lid) => { const { id: cid } = await api('POST', '/api/conversations', { listingId: lid }); go(`/messages/${cid}`); };
+    let items;
+    try { items = (await api('GET', `/api/listings?${new URLSearchParams({ user: u.id, limit: 60 })}`)).items || []; } catch (e) { toast(e.message, true); return; }
+    if (!items.length) { toast('Сейчас у продавца нет объявлений', true); return; }
+    if (items.length === 1) { try { await start(items[0].id); } catch (e) { toast(e.message, true); } return; }
+    const row = (i) => html`<button type="button" class="wp-row" data-wp="${i.id}" data-t="${String(i.title).toLowerCase()}">
+        <span class="wp-ph">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : ic('image', 22, 1.6)}</span>
+        <span class="wp-tx"><b>${i.title}</b><span>${price(i.price, i.priceUnit)}</span></span>${ic('right', 18, 2)}</button>`;
+    openModal(String(html`<h2>${shop ? 'Написать магазину' : 'Написать продавцу'}</h2>
+      <p class="muted" style="margin:0 0 14px"><b style="color:var(--text)">${name}</b> · выберите объявление — переписка будет о нём, так проще ответить.</p>
+      ${items.length > 6 ? html`<label class="search wp-search">${ic('search', 18)}<span class="sr">Найти объявление</span><input type="search" placeholder="Найти по названию" data-wp-q></label>` : ''}
+      <div class="wp-list">${items.map(row)}</div><p class="wp-none muted hidden">Ничего не нашлось</p>`), (m, close) => {
+      const q = $('[data-wp-q]', m);
+      if (q) q.oninput = () => { const v = q.value.trim().toLowerCase(); let n = 0; $$('[data-wp]', m).forEach((b) => { const on = !v || b.dataset.t.includes(v); b.classList.toggle('hidden', !on); n += on; }); $('.wp-none', m).classList.toggle('hidden', !!n); };
+      $$('[data-wp]', m).forEach((b) => { b.onclick = async () => { b.disabled = true; try { close(); await start(Number(b.dataset.wp)); } catch (e) { toast(e.message, true); b.disabled = false; } }; });
+    });
+  }
+
   async function viewUser(id, q) {
     const tab = q && ['rep', 'reviews'].includes(q.get('tab')) ? 'rep' : 'ads'; // reviews — старые ссылки
     const { user: u, sections, pinned } = await api('GET', `/api/users/${id}`);
@@ -4562,6 +4727,7 @@
     const followers = u.followers || 0;
     const deals = u.rep ? u.rep.total || 0 : 0;
     const sh = u.shop; // 1.46.1: у магазина — одна шапка: обложка, тариф, название, описание
+    const canWrite = !own && u.activeCount > 0 && u.block !== 'me' && !(sh && sh.official); // 1.54.0: «Написать» — о любом его объявлении
     // 1.49.0: одна отметка проверки (галочка бренда — у имени); три числа всегда, даже 0: объявления, сделки, подписчики.
     const badges = String(html`${planBadge(sh)}${trustBadges(u.badges && { ...u.badges, shop: false, tm: null })}`).trim();
     const num = (n, one, few, many, attr = '') => html`<div class="pf-num"><b${raw(attr)}>${NF.format(n)}</b><span>${plural(n, one, few, many)}</span></div>`;
@@ -4584,7 +4750,8 @@
             ${num(deals, 'сделка', 'сделки', 'сделок')}
             ${num(followers, 'подписчик', 'подписчика', 'подписчиков', ' data-followers')}
           </div>
-          <div class="pub-acts">${own ? html`<a class="btn btn-accent btn-block" href="/profile/settings">${ic('edit', 18)}Изменить профиль</a>` : followBtn(u.id, u.following, 'btn-accent')}<button type="button" class="icon-btn pub-share" data-share aria-label="Поделиться профилем">${ic('share', 19)}</button>${own || !S.user ? '' : html`<button type="button" class="icon-btn pub-share" data-pub-more aria-label="Ещё" aria-haspopup="menu">${ic('more', 19)}</button>`}</div>
+          <div class="pub-acts">${own ? html`<a class="btn btn-accent btn-block" href="/profile/settings">${ic('edit', 18)}Изменить профиль</a>`
+    : canWrite ? html`<button type="button" class="btn btn-accent btn-block pub-write" data-pub-write>${ic('chat', 18, 2)}Написать ${sh ? 'магазину' : 'продавцу'}</button>${followBtn(u.id, u.following)}` : followBtn(u.id, u.following, 'btn-accent')}<button type="button" class="icon-btn pub-share" data-share aria-label="Поделиться профилем">${ic('share', 19)}</button>${own || !S.user ? '' : html`<button type="button" class="icon-btn pub-share" data-pub-more aria-label="Ещё" aria-haspopup="menu">${ic('more', 19)}</button>`}</div>
         </div>
       </section>
       <div id="pub-block"></div>
@@ -4595,6 +4762,8 @@
       <div id="box"><div class="loader"></div></div>
     </div>`);
     $('[data-share]').onclick = () => shareLink(`${location.origin}/u/${u.id}`, `${u.name} на Торгане`);
+    const wb = $('[data-pub-write]');
+    if (wb) wb.onclick = () => writePicker(u, sh ? sh.name : u.name, !!sh);
     // 1.48.0: чёрный список — «…» в шапке профиля.
     let block = u.block || null;
     const paintPubBlock = () => {
@@ -5226,10 +5395,14 @@
 
   function setupPullToRefresh() {
     if (!STANDALONE || !('ontouchstart' in window)) return;
-    const START = 16; const TRIGGER = 96; const MAX = 120;
-    const FIELD = 'input, textarea, select, [contenteditable], label';
+    // 1.54.0: срабатывает надёжнее — короче рывок (~125 px пальцем), не мешают текст в поиске, дробная прокрутка
+    // и только что закончившаяся прокрутка; если обновить нельзя (недописанное сообщение) — говорим об этом.
+    const START = 12; const TRIGGER = 80; const MAX = 120; const PULL = 0.7;
+    const FIELD = 'input, textarea, select, [contenteditable]';
     let typed = [];
-    document.addEventListener('input', (e) => { const t = e.target; if (t && t.matches && t.matches('input, textarea, [contenteditable]') && !typed.includes(t)) typed.push(t); }, true);
+    // Черновик — только то, что жалко потерять: сообщение, текст объявления, формы. Поиск и фильтры — не черновик.
+    const isDraftField = (t) => t && t.matches && t.matches('textarea, [contenteditable], input:not([type=search]):not([type=checkbox]):not([type=radio])') && !t.closest('form[role=search], .search, .hdr, header, [data-no-draft]');
+    document.addEventListener('input', (e) => { const t = e.target; if (isDraftField(t) && !typed.includes(t)) typed.push(t); }, true);
     // Напечатанное и не отправленное (сообщение, объявление) обновлением не стираем
     const hasDraft = () => { typed = typed.filter((el) => document.contains(el)); return typed.some((el) => String(el.isContentEditable ? el.textContent : el.value || '').trim()); };
     const typingNow = () => {
@@ -5241,7 +5414,7 @@
     // Палец на блоке со своей прокруткой не в самом верху (переписка) — тянут его, а не страницу
     const innerScrolled = (node) => {
       for (let el = node; el && el !== document.body; el = el.parentElement) {
-        if (el.scrollTop > 0 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) return true;
+        if (el.scrollTop > 1 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) return true;
       }
       return false;
     };
@@ -5269,7 +5442,7 @@
       if (state === 'busy' || e.touches.length !== 1) return;
       state = 'idle';
       if (typingNow() || (e.target.closest && e.target.closest(FIELD))) return;
-      if (window.scrollY > 0 || Date.now() - lastScroll < 450 || $('.modal-back') || innerScrolled(e.target)) return;
+      if (window.scrollY > 2 || (window.scrollY > 0 && Date.now() - lastScroll < 150) || $('.modal-back') || innerScrolled(e.target)) return;
       x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dist = 0; state = 'maybe';
     }, { passive: true });
     document.addEventListener('touchmove', (e) => {
@@ -5278,15 +5451,18 @@
       const dx = e.touches[0].clientX - x0; const dy = e.touches[0].clientY - y0;
       if (state === 'maybe') {
         if (Math.abs(dx) < START && Math.abs(dy) < START) return;
-        if (dy <= 0 || Math.abs(dx) > dy || window.scrollY > 0 || typingNow()) { state = 'idle'; return; }
+        if (dy <= 0 || Math.abs(dx) > dy || window.scrollY > 2 || typingNow()) { state = 'idle'; return; }
         state = 'pull'; ind.classList.remove('back');
       }
-      dist = Math.min(MAX, Math.max(0, (dy - START) * 0.5));
+      const was = dist >= TRIGGER;
+      dist = Math.min(MAX, Math.max(0, (dy - START) * PULL));
+      if (!was && dist >= TRIGGER) navigator.vibrate?.(8); // «можно отпускать»
       show(dist);
     }, { passive: true });
     document.addEventListener('touchend', () => {
       if (state !== 'pull') { if (state === 'maybe') state = 'idle'; return; }
-      if (dist < TRIGGER || hasDraft()) { state = 'idle'; hide(); return; }
+      if (dist < TRIGGER) { state = 'idle'; hide(); return; }
+      if (hasDraft()) { state = 'idle'; hide(); toast('Не обновляем — есть недописанный текст. Отправьте или сотрите его'); return; }
       state = 'busy';
       ind.classList.add('busy', 'back'); ind.classList.remove('ready');
       ind.style.transform = `translate(-50%, ${TRIGGER - 48}px)`; icn.style.transform = '';
