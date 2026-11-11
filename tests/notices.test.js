@@ -23,15 +23,18 @@ test('опубликовано и отклонено — в колокольчи
   await admin.post(`/api/admin/listings/${b}/reject`, { reason: 'Добавьте фото товара' });
   const c = (await boris.post('/api/conversations', { listingId: a })).data.id;
   await boris.post(`/api/conversations/${c}/messages`, { body: 'Здравствуйте!' });
-  assert.equal((await anna.get('/api/me')).data.notices, 2);
-  const { items, unread } = (await anna.get('/api/notices')).data;
-  assert.equal(unread, 2);
+  // 1.52.0: третье — медаль «Одна из первых» за первое опубликованное объявление (tests/v152.test.js)
+  assert.equal((await anna.get('/api/me')).data.notices, 3);
+  const all = (await anna.get('/api/notices')).data;
+  assert.equal(all.unread, 3);
+  assert.equal(all.items.filter((n) => n.icon === 'medal').length, 1);
+  const items = all.items.filter((n) => n.icon !== 'medal');
   assert.deepEqual(items.map((n) => [n.title, n.tone, n.icon]), [['Объявление нужно исправить', 'bad', 'warn'], ['Объявление опубликовано', 'ok', 'check']]);
   assert.equal(items[1].url, `/l/${a}`);
   assert.match(items[0].body, /Добавьте фото товара/);
-  assert.equal((await anna.post('/api/notices/read', { id: items[1].id })).data.unread, 1);
+  assert.equal((await anna.post('/api/notices/read', { id: items[1].id })).data.unread, 2);
   assert.equal((await boris.post('/api/notices/read', { id: items[0].id })).data.unread, 0, 'чужое не трогается');
-  assert.equal((await anna.get('/api/me')).data.notices, 1);
+  assert.equal((await anna.get('/api/me')).data.notices, 2);
   assert.equal((await anna.post('/api/notices/read', {})).data.unread, 0);
   assert.equal((await boris.get('/api/notices')).data.items.length, 0);
   assert.equal((await client0().get('/api/notices')).status, 401);

@@ -91,7 +91,7 @@ function requireAdmin(ctx) {
 const photoUrl = (file) => (file ? `/uploads/${file}` : null);
 // Значки продавца: доверие (lib/trust.js) и «Магазин» при оплаченном тарифе.
 // 1.50.0: official — галочка «Официальный аккаунт Торганы» у имени (аккаунт владельца); значка «Магазин» у него нет.
-const badgesOf = (u) => ({ ...trust.badgesOf(u), shop: !!business.planOf(u) && !business.isOfficial(u), official: business.isOfficial(u) });
+const badgesOf = (u) => ({ ...trust.badgesOf(u), shop: !!business.planOf(u) && !business.isOfficial(u), official: business.isOfficial(u), first: first.of(u) });
 
 // Переключатели уведомлений: поле API → колонка users (письма и push по видам).
 const NOTIFY_FIELDS = {
@@ -344,6 +344,7 @@ const promo = require('./lib/promo')({ route, db, h: helpers, billing, business,
 const boost = require('./lib/boost')({ route, db, h: helpers, billing });
 boostApi = boost;
 const blocks = require('./lib/blocks')({ route, db, h: helpers }); // 1.48.0: чёрный список
+const first = require('./lib/first')({ db, h: helpers, alerts, business }); // 1.52.0: медаль «Один из первых»
 helpers.blocks = blocks;
 const deals = require('./lib/deals')({ route, db, h: helpers, alerts }); // предложение цены, быстрые ответы, подписки
 const reputation = require('./lib/reputation')({ route, db, h: helpers, replyStats }); // 1.46.0: репутация вместо отзывов
@@ -438,7 +439,8 @@ route('GET', '/api/metro', (ctx) => ({ stations: metro.stations(ctx.query.get('c
 
 route('GET', '/api/me', (ctx) => {
   const unread = ctx.user ? unreadCount(ctx.user.id) + supportChat.unreadFor(ctx.user.id) : 0;
-  return { user: publicUser(ctx.user), unread, fresh: ctx.user ? alerts.freshCounts(ctx.user.id) : null, notices: ctx.user ? alerts.unreadNotices(ctx.user.id) : 0 };
+  return { user: publicUser(ctx.user), unread, fresh: ctx.user ? alerts.freshCounts(ctx.user.id) : null, notices: ctx.user ? alerts.unreadNotices(ctx.user.id) : 0,
+    first: { left: first.left(), form: ctx.user ? first.formOf(ctx.user) : 'm' } }; // медаль «Один из первых»: сколько осталось и подпись
 });
 
 route('POST', '/api/auth/register', async (ctx) => {
@@ -598,8 +600,10 @@ route('PATCH', '/api/me', async (ctx) => {
   const cols = Object.entries(NOTIFY_FIELDS);
   // Другой номер — уже не подтверждённый (подтверждается входом через Яндекс ID или VK ID).
   const phoneVerified = phone.replace(/\D/g, '') === String(u.phone || '').replace(/\D/g, '') ? u.phone_verified : 0;
-  db.prepare(`UPDATE users SET name = ?, city = ?, phone = ?, phone_verified = ?, ${cols.map(([, c]) => `${c} = ?`).join(', ')} WHERE id = ?`)
-    .run(name, city, phone, phoneVerified, ...cols.map(([k, c]) => flag(body[k], u[c])), u.id);
+  // Подпись медали «Один из первых»: 'm' / 'f' (1.52.0); '' — угадываем по имени.
+  const medalForm = body.medalForm !== undefined ? (['m', 'f'].includes(body.medalForm) ? body.medalForm : '') : u.medal_form;
+  db.prepare(`UPDATE users SET name = ?, city = ?, phone = ?, phone_verified = ?, medal_form = ?, ${cols.map(([, c]) => `${c} = ?`).join(', ')} WHERE id = ?`)
+    .run(name, city, phone, phoneVerified, medalForm, ...cols.map(([k, c]) => flag(body[k], u[c])), u.id);
   if (avatar !== null) setAvatar(u.id, avatar);
   return { user: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id)) };
 });
@@ -813,6 +817,7 @@ function publishListing(id, fresh = false) {
     .run(fresh ? 1 : 0, t, t, fresh ? 1 : 0, t, t + LISTING_TTL, t, id);
   alerts.onPublished(id); // подписчики продавца, снижение цены
   if (boostApi) boostApi.onPublished(id); // оплаченное продвижение начинается с публикации
+  first.onPublished(id); // первым 1000 продавцам — медаль с номером (lib/first.js)
 }
 helpers.publishListing = publishListing;
 
