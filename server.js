@@ -774,7 +774,14 @@ function createListing(u, v) {
   if (!u.city) db.prepare('UPDATE users SET city = ? WHERE id = ?').run(v.city, u.id);
   logEvent(id, u.id, 'created', { flags: v.flags });
   autoChecks.run(id);
-  alerts.notifyAdmins('pending', { title: 'Новое объявление на проверку', body: `«${v.title}» — ${u.name}. В очереди: ${alerts.pendingCount()}`, url: `/admin/l/${id}` }, u.id);
+  // 1.53.0: первое объявление человека — push «Новый продавец» (у кого он включён — вместо обычного «на проверку»).
+  const firstTime = db.prepare('SELECT COUNT(*) AS n FROM listings WHERE user_id = ?').get(u.id).n === 1;
+  alerts.notifyAdmins('pending', { title: 'Новое объявление на проверку', body: `«${v.title}» — ${u.name}. В очереди: ${alerts.pendingCount()}`, url: `/admin/l/${id}` }, u.id, { unless: firstTime ? 'sellers' : '' });
+  if (firstTime) {
+    const she = first.formOf(u) === 'f';
+    alerts.notifyAdmins('sellers', { title: 'Новый продавец', url: `/admin/l/${id}`,
+      body: `${u.name} ${she ? 'отправила' : 'отправил'} первое объявление «${v.title}».${first.canGet(u) ? ` После одобрения — медаль «${first.name(u)}».` : ''} В очереди: ${alerts.pendingCount()}` }, u.id);
+  }
   return id;
 }
 
@@ -904,6 +911,7 @@ route('POST', '/api/listings/:id/appeal', async (ctx) => {
   if (l.appeal_reply) throw new HttpError(400, 'Апелляция уже рассмотрена. Исправьте объявление — после сохранения оно снова появится в поиске.');
   db.prepare('UPDATE listings SET appeal_text = ?, appeal_at = ? WHERE id = ?').run(text, now(), id);
   logEvent(id, u.id, 'appeal', { text });
+  alerts.notifyAdmins('appeals', { title: 'Апелляция', body: `«${l.title}» — ${u.name}: ${text.slice(0, 140)}`, url: `/admin/l/${id}` }, u.id); // 1.53.0
   return { ok: true };
 });
 

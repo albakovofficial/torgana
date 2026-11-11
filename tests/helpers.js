@@ -236,4 +236,26 @@ function fakeS3({ access = 'AKTEST', secret = 'secret-key', bucket = 'torgana-ba
   return new Promise((r) => srv.listen(0, '127.0.0.1', () => r({ srv, store, st, endpoint: `http://127.0.0.1:${srv.address().port}`, access, secret, bucket })));
 }
 
-module.exports = { ROOT, PNG_1PX, JPEG_HEAD, startServer, startSmtp, client, registerUser, publish, codeOf, fakeS3 };
+// Браузер «понарошку»: свои ключи подписки и расшифровка по RFC 8291 — так проверяем, что сервер шифрует правильно.
+function fakeBrowser() {
+  const { b64u } = require('../lib/push');
+  const ecdh = crypto.createECDH('prime256v1');
+  const pub = ecdh.generateKeys();
+  const auth = crypto.randomBytes(16);
+  const hmac = (k, d) => crypto.createHmac('sha256', k).update(d).digest();
+  return {
+    keys: { p256dh: b64u(pub), auth: b64u(auth) },
+    decrypt(buf) {
+      const salt = buf.subarray(0, 16); const idlen = buf[20]; const asPub = buf.subarray(21, 21 + idlen); const data = buf.subarray(21 + idlen);
+      const ikm = hmac(hmac(auth, ecdh.computeSecret(asPub)), Buffer.concat([Buffer.from('WebPush: info\0'), pub, asPub, Buffer.from([1])])).subarray(0, 32);
+      const prk = hmac(salt, ikm);
+      const d = crypto.createDecipheriv('aes-128-gcm', hmac(prk, Buffer.from('Content-Encoding: aes128gcm\0\x01')).subarray(0, 16), hmac(prk, Buffer.from('Content-Encoding: nonce\0\x01')).subarray(0, 12));
+      d.setAuthTag(data.subarray(data.length - 16));
+      const out = Buffer.concat([d.update(data.subarray(0, data.length - 16)), d.final()]);
+      if (out[out.length - 1] !== 2) throw new Error('нет разделителя последней записи');
+      return JSON.parse(out.subarray(0, out.length - 1).toString());
+    }
+  };
+}
+
+module.exports = { fakeBrowser, ROOT, PNG_1PX, JPEG_HEAD, startServer, startSmtp, client, registerUser, publish, codeOf, fakeS3 };
