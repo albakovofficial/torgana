@@ -5395,10 +5395,14 @@
 
   function setupPullToRefresh() {
     if (!STANDALONE || !('ontouchstart' in window)) return;
-    const START = 16; const TRIGGER = 96; const MAX = 120;
-    const FIELD = 'input, textarea, select, [contenteditable], label';
+    // 1.54.0: срабатывает надёжнее — короче рывок (~125 px пальцем), не мешают текст в поиске, дробная прокрутка
+    // и только что закончившаяся прокрутка; если обновить нельзя (недописанное сообщение) — говорим об этом.
+    const START = 12; const TRIGGER = 80; const MAX = 120; const PULL = 0.7;
+    const FIELD = 'input, textarea, select, [contenteditable]';
     let typed = [];
-    document.addEventListener('input', (e) => { const t = e.target; if (t && t.matches && t.matches('input, textarea, [contenteditable]') && !typed.includes(t)) typed.push(t); }, true);
+    // Черновик — только то, что жалко потерять: сообщение, текст объявления, формы. Поиск и фильтры — не черновик.
+    const isDraftField = (t) => t && t.matches && t.matches('textarea, [contenteditable], input:not([type=search]):not([type=checkbox]):not([type=radio])') && !t.closest('form[role=search], .search, .hdr, header, [data-no-draft]');
+    document.addEventListener('input', (e) => { const t = e.target; if (isDraftField(t) && !typed.includes(t)) typed.push(t); }, true);
     // Напечатанное и не отправленное (сообщение, объявление) обновлением не стираем
     const hasDraft = () => { typed = typed.filter((el) => document.contains(el)); return typed.some((el) => String(el.isContentEditable ? el.textContent : el.value || '').trim()); };
     const typingNow = () => {
@@ -5410,7 +5414,7 @@
     // Палец на блоке со своей прокруткой не в самом верху (переписка) — тянут его, а не страницу
     const innerScrolled = (node) => {
       for (let el = node; el && el !== document.body; el = el.parentElement) {
-        if (el.scrollTop > 0 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) return true;
+        if (el.scrollTop > 1 && /(auto|scroll)/.test(getComputedStyle(el).overflowY)) return true;
       }
       return false;
     };
@@ -5438,7 +5442,7 @@
       if (state === 'busy' || e.touches.length !== 1) return;
       state = 'idle';
       if (typingNow() || (e.target.closest && e.target.closest(FIELD))) return;
-      if (window.scrollY > 0 || Date.now() - lastScroll < 450 || $('.modal-back') || innerScrolled(e.target)) return;
+      if (window.scrollY > 2 || (window.scrollY > 0 && Date.now() - lastScroll < 150) || $('.modal-back') || innerScrolled(e.target)) return;
       x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dist = 0; state = 'maybe';
     }, { passive: true });
     document.addEventListener('touchmove', (e) => {
@@ -5447,15 +5451,18 @@
       const dx = e.touches[0].clientX - x0; const dy = e.touches[0].clientY - y0;
       if (state === 'maybe') {
         if (Math.abs(dx) < START && Math.abs(dy) < START) return;
-        if (dy <= 0 || Math.abs(dx) > dy || window.scrollY > 0 || typingNow()) { state = 'idle'; return; }
+        if (dy <= 0 || Math.abs(dx) > dy || window.scrollY > 2 || typingNow()) { state = 'idle'; return; }
         state = 'pull'; ind.classList.remove('back');
       }
-      dist = Math.min(MAX, Math.max(0, (dy - START) * 0.5));
+      const was = dist >= TRIGGER;
+      dist = Math.min(MAX, Math.max(0, (dy - START) * PULL));
+      if (!was && dist >= TRIGGER) navigator.vibrate?.(8); // «можно отпускать»
       show(dist);
     }, { passive: true });
     document.addEventListener('touchend', () => {
       if (state !== 'pull') { if (state === 'maybe') state = 'idle'; return; }
-      if (dist < TRIGGER || hasDraft()) { state = 'idle'; hide(); return; }
+      if (dist < TRIGGER) { state = 'idle'; hide(); return; }
+      if (hasDraft()) { state = 'idle'; hide(); toast('Не обновляем — есть недописанный текст. Отправьте или сотрите его'); return; }
       state = 'busy';
       ind.classList.add('busy', 'back'); ind.classList.remove('ready');
       ind.style.transform = `translate(-50%, ${TRIGGER - 48}px)`; icn.style.transform = '';
