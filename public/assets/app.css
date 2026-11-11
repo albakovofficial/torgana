@@ -3535,3 +3535,132 @@ html.dw-open { overflow: hidden; }
 @media (max-width: 420px) { .set-medal { gap: 12px; } .set-medal > .fmedal { width: 36px; height: 44px; } }
 .ed-first { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 12px 16px 12px 12px; border-radius: 18px; background: var(--accent-soft); font-size: 14px; line-height: 1.45; color: var(--text-2); max-width: 640px; }
 .ed-first b { color: var(--text); font-weight: 700; }
+
+/* 1.54.0: встречная цена — карточка цены продавца в фиолетовом бренда, три действия у того, кому предложили */
+.offer-card.by-seller { border-color: var(--hot); box-shadow: 0 6px 20px rgba(91, 95, 214, .12); }
+.offer-card.by-seller .offer-k { color: var(--hot); }
+.offer-pct:empty { display: none; }
+.offer-pct { align-self: center; height: 22px; font-size: 12.5px !important; padding: 0 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; }
+.msg.out .offer-card .offer-pct { background: var(--card); }
+.msg.offer-off .offer-pct { display: none; }
+.offer-foot .offer-no { flex: 1 0 100%; margin: 2px 0 0; text-align: center; }
+.offer-vs { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 16px; }
+.offer-vs > span { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 16px; background: var(--surface); min-width: 0; }
+.offer-vs > span.you { background: var(--accent-soft); }
+.offer-vs small { font-size: 12.5px; color: var(--muted); }
+.offer-vs b { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.offer-vs .you b { color: var(--accent); }
+.offer-vs > svg { flex: none; color: var(--muted); }
+
+/* 1.54.0: «На проверке» — срок, место в очереди и три шага */
+.mq-card { display: flex; gap: 16px; align-items: flex-start; padding: 20px 22px; border-radius: 24px; background: var(--card); box-shadow: inset 0 0 0 1.5px var(--accent-soft-2); }
+.mq-ic { flex: none; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.mq-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+.mq-t { font-size: 18px; font-weight: 750; letter-spacing: -0.01em; }
+.mq-s { font-size: 15px; line-height: 1.45; color: var(--text-2); }
+.mq-s b { color: var(--text); font-weight: 700; }
+.mq-steps { list-style: none; margin: 10px 0 4px; padding: 0; max-width: 560px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.mq-steps li { position: relative; display: flex; flex-direction: column; gap: 8px; font-size: 14px; font-weight: 650; }
+.mq-steps li::before { content: ''; position: absolute; top: 10px; left: 22px; right: 2px; height: 2px; border-radius: 2px; background: var(--line); }
+.mq-steps li:last-child::before { display: none; }
+.mq-steps li.done::before { background: var(--accent); }
+.mq-steps li.now::before { background: linear-gradient(90deg, var(--accent), var(--line)); }
+.mq-steps i { position: relative; z-index: 1; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--card); box-shadow: inset 0 0 0 2px var(--line); color: #fff; }
+.mq-steps .done i { background: var(--accent-fill); box-shadow: none; }
+.mq-steps .now i { box-shadow: inset 0 0 0 2px var(--accent); }
+.mq-steps .now i::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: mq-pulse 1.6s ease-in-out infinite; }
+@keyframes mq-pulse { 50% { transform: scale(.55); opacity: .5; } }
+@media (prefers-reduced-motion: reduce) { .mq-steps .now i::after { animation: none; } }
+.mq-steps span { display: flex; flex-direction: column; gap: 1px; padding-right: 8px; }
+.mq-steps small { font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.mq-steps li:not(.done):not(.now) span { color: var(--muted); }
+.mq-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 14px; color: var(--text-2); }
+.mq-foot svg { flex: none; color: var(--accent); }
+.mq-flag { margin-top: 4px; padding: 10px 12px; border-radius: 14px; background: var(--warn-soft); font-size: 14px; line-height: 1.45; }
+.mq-flag a { text-decoration: underline; }
+@media (max-width: 520px) { .mq-card { padding: 18px 16px; } .mq-ic { display: none; } .mq-t { font-size: 17px; } .mq-steps li { font-size: 13.5px; } .mq-steps small { font-size: 12px; } }
+
+/* 1.54.0: «Написать магазину / продавцу» в профиле и выбор объявления */
+.pub-acts { flex-wrap: wrap; }
+.pub-acts .pub-write { flex: 1 0 100%; }
+.pub-acts .pub-write ~ .follow-btn.btn-soft { background: var(--card); }
+.wp-search { margin-bottom: 10px; }
+.wp-list { display: flex; flex-direction: column; gap: 6px; max-height: min(56vh, 520px); overflow-y: auto; margin: 0 -6px; padding: 0 6px; }
+.wp-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 10px 8px 8px; border: 0; border-radius: 18px; background: var(--surface); color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.wp-row:hover, .wp-row:focus-visible { background: var(--accent-soft); }
+.wp-row > svg { flex: none; color: var(--muted); }
+.wp-ph { flex: none; width: 56px; height: 56px; border-radius: 14px; overflow: hidden; display: grid; place-items: center; background: var(--card); color: var(--muted); }
+.wp-ph img { width: 100%; height: 100%; object-fit: cover; }
+.wp-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wp-tx b { font-size: 15px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-tx span { font-size: 14px; font-weight: 700; color: var(--text-2); }
+.wp-none { margin: 12px 0 0; text-align: center; }
+
+/* 1.54.0: воронка продавцов в «Сводке» */
+.dash-funnel { margin-top: 12px; padding: 22px; border-radius: 28px; }
+.fn { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.fn-row { display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr) 64px; align-items: center; gap: 14px; padding: 6px 10px; border-radius: 14px; }
+.fn-l { font-size: 14.5px; font-weight: 600; }
+.fn-bar { position: relative; display: flex; align-items: center; height: 32px; }
+.fn-bar i { position: absolute; left: 0; top: 0; bottom: 0; width: var(--w); border-radius: 10px; background: var(--grad); opacity: .9; }
+.fn-bar b { position: relative; padding-left: 10px; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); text-shadow: 0 0 6px var(--card), 0 0 2px var(--card); }
+.fn-c { display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px; font-size: 14px; font-weight: 700; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.fn-c svg { color: var(--muted); }
+.fn-row.worst { background: var(--warn-soft); }
+.fn-row.worst .fn-c { color: var(--text); }
+.fn-tip { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; padding: 14px 16px; border-radius: 18px; background: var(--accent-soft); font-size: 14.5px; line-height: 1.5; color: var(--text-2); }
+.fn-tip svg { flex: none; margin-top: 2px; color: var(--accent); }
+.fn-tip b { color: var(--text); }
+.fn-note { margin: 12px 0 0; font-size: 13px; line-height: 1.5; }
+@media (max-width: 640px) {
+  .fn-row { grid-template-columns: minmax(0, 1fr) 56px; gap: 6px 10px; padding: 8px 10px; }
+  .fn-l { grid-column: 1 / -1; font-size: 14px; }
+  .fn-bar { grid-column: 1; height: 28px; }
+}
+
+/* 1.54.0: шапка переписки — фото, название, цена и собеседник; статус не сжимает название */
+.chat-head .ch-ph { position: relative; flex: none; width: 52px; height: 52px; border-radius: 16px; overflow: hidden; display: grid; place-items: center; background: var(--surface); color: var(--muted); }
+.chat-head .ch-ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.chat-head .ch-ph.gone img, .chat-head .ch-ph.sold img { filter: grayscale(1); opacity: .55; }
+.ch-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ch-t { display: block; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.25; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+a.ch-t:hover { color: var(--accent); }
+.ch-m { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 14px; color: var(--text-2); white-space: nowrap; }
+.ch-m > b { flex: none; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.ch-m > b.off { color: var(--muted); font-weight: 600; }
+.ch-m > i { flex: none; font-style: normal; color: var(--muted); }
+.ch-st { flex: none; height: 22px; padding: 0 8px; border-radius: 999px; display: inline-flex; align-items: center; background: var(--surface); color: var(--text-2); font-size: 12.5px; font-weight: 700; }
+.ch-st.dark { background: var(--ink); color: var(--on-ink); }
+.ch-who { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); }
+.ch-who:hover { color: var(--accent); }
+.ch-who > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.ch-who .avatar { width: 20px; height: 20px; font-size: 10px; }
+@media (max-width: 600px) { .chat-head { gap: 10px; padding: 10px 12px; } .chat-head .ch-ph { width: 44px; height: 44px; border-radius: 13px; } .ch-t { font-size: 15px; } .ch-m { font-size: 13.5px; gap: 5px; } .ch-who .avatar { display: none; } .chat-head .chat-back, .chat-head .chat-more { width: 40px; height: 40px; } }
+
+/* 1.54.0: ответ на сообщение — цитата в сообщении, кнопка у сообщения (мышь), свайп и полоса над полем ввода */
+.msg { position: relative; }
+.msg.can-rp { touch-action: pan-y; -webkit-touch-callout: none; }
+.msg-q { display: flex; flex-direction: column; gap: 1px; width: 100%; margin: 0 0 6px; padding: 6px 10px; border: 0; border-left: 3px solid var(--accent); border-radius: 10px; background: var(--accent-soft); color: inherit; font: inherit; text-align: left; white-space: normal; cursor: pointer; min-width: 0; }
+.msg.has-photo .msg-q { width: auto; margin: 4px 4px 6px; }
+.msg-q b { font-size: 13px; font-weight: 700; color: var(--accent); }
+.msg-q span { display: flex; align-items: center; gap: 4px; font-size: 13.5px; line-height: 1.35; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-q span svg { flex: none; }
+.msg.out .msg-q { background: color-mix(in srgb, var(--card) 62%, transparent); }
+.msg.offer-reply.out .msg-q { background: rgba(255, 255, 255, .18); border-left-color: #fff; }
+.msg.offer-reply.out .msg-q b, .msg.offer-reply.out .msg-q span { color: #fff; }
+.msg-rp { position: absolute; top: 50%; width: 34px; height: 34px; margin-top: -17px; border: 0; border-radius: 50%; display: grid; place-items: center; background: var(--card); color: var(--text-2); box-shadow: 0 2px 8px rgba(22, 26, 43, .12); opacity: 0; pointer-events: none; transition: opacity .15s; cursor: pointer; }
+.msg.out .msg-rp { right: calc(100% + 8px); }
+.msg.in .msg-rp { left: calc(100% + 8px); }
+@media (hover: hover) { .msg.can-rp:hover .msg-rp, .msg-rp:focus-visible { opacity: 1; pointer-events: auto; } .msg-rp:hover { color: var(--accent); } }
+.msg.can-rp::before { content: ''; position: absolute; left: -40px; top: 50%; width: 28px; height: 28px; margin-top: -14px; border-radius: 50%; background: var(--accent-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%233963CC' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 14L4 9l5-5'/%3E%3Cpath d='M4 9h10a6 6 0 0 1 6 6v5'/%3E%3C/svg%3E") center no-repeat; opacity: 0; transform: scale(.6); transition: opacity .12s, transform .12s; pointer-events: none; }
+.msg.rp-ready::before { opacity: 1; transform: scale(1); }
+.msg.flash { animation: msg-flash 1.2s ease; }
+@keyframes msg-flash { 0%, 40% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent; } }
+.chat-reply { display: flex; align-items: center; gap: 10px; padding: 10px 14px 0; }
+.chat-reply .cr-ic { flex: none; color: var(--accent); display: grid; place-items: center; }
+.cr-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 6px 12px; border-left: 3px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
+.cr-tx b { font-size: 13px; color: var(--accent); }
+.cr-tx span { font-size: 14px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-x { flex: none; width: 36px; height: 36px; }
+.chat-reply:not(.hidden) + .chat-form { border-top: 0; }
+@media (prefers-reduced-motion: reduce) { .msg.flash { animation: none; } }

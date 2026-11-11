@@ -331,7 +331,7 @@ helpers.audit = audit; // журнал модерации нужен и отзы
 const supportChat = require('./lib/support')({ route, db, mailer, h: helpers });
 const stats = require('./lib/stats')({ route, db, h: helpers });
 const trust = require('./lib/trust')({ route, db, h: helpers, mailer, dataDir: DATA_DIR }); // «Телефон подтверждён», проверенный бизнес
-require('./lib/admin')({ route, db, h: helpers, trust }); // сводка, пользователи, журнал, письма модератору
+const adminApi = require('./lib/admin')({ route, db, h: helpers, trust }); // сводка, пользователи, журнал, письма модератору
 helpers.sources = require('./lib/sources')({ route, db, h: helpers }); // откуда пришли люди (1.38)
 const oauth = require('./lib/oauth')({ route, db, h: helpers, auth, baseUrl: PUBLIC_URL || `http://localhost:${PORT}`, secureCookies: SECURE_COOKIES, adminEmails: ADMIN_EMAILS, testBase: process.env.OAUTH_TEST_BASE || '' });
 // Платные услуги для бизнеса: оплата через ЮKassa, тарифы «Магазин» и «Магазин Про», продвижение.
@@ -747,7 +747,8 @@ route('GET', '/api/listings/:id', (ctx) => {
     similar,
     market,
     promo: isOwner ? promo.currentOf(id) : null,
-    boost: isOwner ? boost.ownerView(id) : null
+    boost: isOwner ? boost.ownerView(id) : null,
+    review: isOwner && l.status === 'pending' ? adminApi.reviewEta(l) : null // 1.54.0: сколько ждать проверки
   };
 });
 
@@ -924,7 +925,8 @@ route('GET', '/api/my/listings', (ctx) => {
   return {
     items: rows.map((r) => ({
       ...cardFromRow(r), views: r.views, favCount: r.fav_count, rejectReason: r.reject_reason, publishAt: r.publish_at, expiresAt: r.expires_at,
-      appealText: r.appeal_text, appealAt: r.appeal_at, appealReply: r.appeal_reply, flags: r.flags, promo: promo.currentOf(r.id), boost: boost.ownerView(r.id)
+      appealText: r.appeal_text, appealAt: r.appeal_at, appealReply: r.appeal_reply, flags: r.flags, promo: promo.currentOf(r.id), boost: boost.ownerView(r.id),
+      review: r.status === 'pending' ? adminApi.reviewEta(r) : null
     }))
   };
 });
@@ -1153,13 +1155,23 @@ function loadConversation(u, id) {
   return c;
 }
 
+// 1.54.0: цитаты для ответов на сообщения — кто написал, начало текста, было ли фото (то же из одного диалога).
+function quotesOf(convId, ids, uid) {
+  const want = [...new Set(ids.filter(Boolean).map(Number))];
+  if (!want.length) return new Map();
+  return new Map(db.prepare(`SELECT id, sender_id, body, photo, kind FROM messages WHERE conversation_id = ? AND id IN (${want.join(',')})`).all(convId)
+    .map((q) => [q.id, { id: q.id, mine: q.sender_id === uid, body: String(q.body || '').slice(0, 160), photo: !!q.photo, kind: q.kind }]));
+}
+
 route('GET', '/api/conversations/:id', (ctx) => {
   const u = requireUser(ctx);
   const c = loadConversation(u, parseInt(ctx.params.id, 10));
   const after = parseInt(ctx.query.get('after') || '0', 10) || 0;
   db.prepare('UPDATE messages SET read_at = ? WHERE conversation_id = ? AND sender_id != ? AND read_at IS NULL').run(now(), c.id, u.id);
-  const messages = db.prepare('SELECT id, sender_id, body, photo, kind, offer_id, created_at, read_at FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id LIMIT 500')
-    .all(c.id, after).map((m) => ({ id: m.id, mine: m.sender_id === u.id, body: m.body, photo: photoUrl(m.photo), kind: m.kind, offerId: m.offer_id, createdAt: m.created_at, read: !!m.read_at }));
+  const rows = db.prepare('SELECT id, sender_id, body, photo, kind, offer_id, reply_to, created_at, read_at FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id LIMIT 500').all(c.id, after);
+  const quotes = quotesOf(c.id, rows.map((m) => m.reply_to), u.id);
+  const messages = rows.map((m) => ({ id: m.id, mine: m.sender_id === u.id, body: m.body, photo: photoUrl(m.photo), kind: m.kind, offerId: m.offer_id,
+    reply: m.reply_to ? quotes.get(m.reply_to) || null : null, createdAt: m.created_at, read: !!m.read_at }));
   const l = loadListing(c.listing_id, { deleted: true });
   const otherId = c.buyer_id === u.id ? c.seller_id : c.buyer_id;
   const other = db.prepare('SELECT id, name, avatar, created_at FROM users WHERE id = ?').get(otherId);
@@ -1188,12 +1200,14 @@ route('POST', '/api/conversations/:id/messages', async (ctx) => {
   const other = db.prepare('SELECT deactivated_at, deleted_at FROM users WHERE id = ?').get(c.buyer_id === u.id ? c.seller_id : c.buyer_id);
   if (other && (other.deactivated_at || other.deleted_at)) throw new HttpError(400, 'Собеседник удалил профиль — сообщения не доставляются');
   blocks.assertCanWrite(u.id, c.buyer_id === u.id ? c.seller_id : c.buyer_id);
+  const replyId = parseInt(input.replyTo, 10) || null; // 1.54.0: ответ — только на сообщение этого же диалога
+  if (replyId && !db.prepare('SELECT 1 FROM messages WHERE id = ? AND conversation_id = ?').get(replyId, c.id)) throw new HttpError(400, 'Сообщение для ответа не найдено');
   const t = now();
-  const info = db.prepare('INSERT INTO messages (conversation_id, sender_id, body, photo, created_at) VALUES (?, ?, ?, ?, ?)').run(c.id, u.id, body, photo, t);
+  const info = db.prepare('INSERT INTO messages (conversation_id, sender_id, body, photo, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(c.id, u.id, body, photo, replyId, t);
   db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(t, c.id);
   const l = loadListing(c.listing_id, { deleted: true });
   alerts.notify(c.buyer_id === u.id ? c.seller_id : c.buyer_id, 'messages', { title: `${u.name} · ${l.title}`, body: msgPreview(body, photo).slice(0, 180), url: `/messages/${c.id}`, tag: `chat-${c.id}`, urgent: true });
-  return { message: { id: Number(info.lastInsertRowid), mine: true, body, photo: photoUrl(photo), createdAt: t, read: false } };
+  return { message: { id: Number(info.lastInsertRowid), mine: true, body, photo: photoUrl(photo), reply: replyId ? quotesOf(c.id, [replyId], u.id).get(replyId) : null, createdAt: t, read: false } };
 });
 
 route('GET', '/api/users/:id', (ctx) => {
