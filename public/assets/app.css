@@ -3664,3 +3664,28 @@ a.ch-t:hover { color: var(--accent); }
 .cr-x { flex: none; width: 36px; height: 36px; }
 .chat-reply:not(.hidden) + .chat-form { border-top: 0; }
 @media (prefers-reduced-motion: reduce) { .msg.flash { animation: none; } }
+
+/* 1.54.1: iPhone сам приближает страницу, когда открывается клавиатура у поля со шрифтом мельче 16 px.
+   На сенсорных экранах поля ввода — 16 px (поиск в шапке, каталоге, модерации и списках, фильтры, чат); на компьютере — как было. */
+@media (hover: none) and (pointer: coarse) {
+  .search input, .sa-search input, .pick-search input, .shop-find input, .chat-form textarea,
+  .filters-body .input, .filters-body .select, .filters-body .pick-btn { font-size: 16px; }
+}
+
+/* 1.55.0: прочитано (✓ / ✓✓ синие) и «печатает…» */
+.tk { display: inline-flex; vertical-align: -1px; margin-left: 4px; color: var(--muted); }
+.tk.rd { color: var(--accent); }
+.msg.offer-reply.out .tk, .msg.offer-reply.out .tk.rd { color: #fff; }
+.conv-last .tk { margin: 0 4px 0 0; }
+.chat-typing { display: flex; align-items: center; gap: 8px; height: 0; padding: 0 20px; overflow: hidden; opacity: 0; font-size: 13.5px; color: var(--text-2); transition: height .2s ease, opacity .2s ease; }
+.chat-typing.on { height: 30px; opacity: 1; }
+.ct-dots { display: inline-flex; align-items: center; gap: 3px; }
+.ct-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: .35; animation: ct-dot 1.2s ease-in-out infinite; }
+.ct-dots i:nth-child(2) { animation-delay: .15s; }
+.ct-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes ct-dot { 0%, 60%, 100% { opacity: .35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+.ch-tp { display: none; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--accent); }
+.ch-tp .ct-dots i { width: 4px; height: 4px; }
+.is-typing .ch-m { display: none; }
+.is-typing .ch-tp { display: flex; }
+@media (prefers-reduced-motion: reduce) { .ct-dots i { animation: none; opacity: .8; } .chat-typing { transition: none; } }

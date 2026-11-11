@@ -1106,18 +1106,20 @@ route('GET', '/api/conversations', (ctx) => {
       (SELECT COALESCE(NULLIF(p.thumb, ''), p.file) FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
       ou.id AS other_id, ou.name AS other_name, ou.avatar AS other_avatar,
       (SELECT CASE WHEN body = '' AND photo != '' THEN '📷 Фото' ELSE body END FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_body,
+      (SELECT CASE WHEN m.sender_id = ? THEN (CASE WHEN m.read_at IS NULL THEN 1 ELSE 2 END) ELSE 0 END FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_mine,
       (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != ? AND m.read_at IS NULL) AS unread
     FROM conversations c
     JOIN listings l ON l.id = c.listing_id
     JOIN users ou ON ou.id = CASE WHEN c.buyer_id = ? THEN c.seller_id ELSE c.buyer_id END
     WHERE c.buyer_id = ? OR c.seller_id = ?
-    ORDER BY c.updated_at DESC`).all(u.id, u.id, u.id, u.id);
+    ORDER BY c.updated_at DESC`).all(u.id, u.id, u.id, u.id, u.id);
   const mine = new Set(blocks.hiddenFor(u.id));
   return {
     items: rows.map((r) => ({
       id: r.id, listingId: r.listing_id, title: r.title, price: r.price, priceUnit: r.price_unit, status: r.status,
       photo: photoUrl(r.photo), other: { id: r.other_id, name: r.other_name, avatar: photoUrl(r.other_avatar) }, lastBody: r.last_body || '',
-      unread: r.unread, updatedAt: r.updated_at, role: r.buyer_id === u.id ? 'buyer' : 'seller', blocked: mine.has(r.other_id)
+      unread: r.unread, updatedAt: r.updated_at, role: r.buyer_id === u.id ? 'buyer' : 'seller', blocked: mine.has(r.other_id),
+      lastMine: r.last_mine || 0 // 1.55.0: последнее — моё: 1 — отправлено, 2 — прочитано
     }))
   };
 });
@@ -1167,7 +1169,8 @@ route('GET', '/api/conversations/:id', (ctx) => {
   const u = requireUser(ctx);
   const c = loadConversation(u, parseInt(ctx.params.id, 10));
   const after = parseInt(ctx.query.get('after') || '0', 10) || 0;
-  db.prepare('UPDATE messages SET read_at = ? WHERE conversation_id = ? AND sender_id != ? AND read_at IS NULL').run(now(), c.id, u.id);
+  // 1.55.0: прочитано — только когда переписка на экране (seen=0 — вкладка свёрнута, сообщения не отмечаем).
+  if (ctx.query.get('seen') !== '0') db.prepare('UPDATE messages SET read_at = ? WHERE conversation_id = ? AND sender_id != ? AND read_at IS NULL').run(now(), c.id, u.id);
   const rows = db.prepare('SELECT id, sender_id, body, photo, kind, offer_id, reply_to, created_at, read_at FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id LIMIT 500').all(c.id, after);
   const quotes = quotesOf(c.id, rows.map((m) => m.reply_to), u.id);
   const messages = rows.map((m) => ({ id: m.id, mine: m.sender_id === u.id, body: m.body, photo: photoUrl(m.photo), kind: m.kind, offerId: m.offer_id,
@@ -1185,8 +1188,25 @@ route('GET', '/api/conversations/:id', (ctx) => {
     block: blocks.between(u.id, other.id), // 1.48.0: 'me' — я заблокировал, 'them' — меня
 
     offers: deals.offersOf(c.id), // состояния всех предложений — обновляются при каждом опросе
+    // 1.55.0: как в мессенджерах — до какого моего сообщения собеседник дочитал (✓✓) и печатает ли он сейчас
+    readUpTo: db.prepare('SELECT COALESCE(MAX(id), 0) AS n FROM messages WHERE conversation_id = ? AND sender_id = ? AND read_at IS NOT NULL').get(c.id, u.id).n,
+    typing: typingNow(c.id, otherId),
     messages
   };
+});
+
+// 1.55.0: «печатает…» — отметка в памяти на 6 секунд; страница шлёт её не чаще раза в 3 секунды, пока человек набирает текст.
+// Отправил сообщение — отметка снимается сразу.
+const TYPING_MS = 6000;
+const typingMarks = new Map();
+const typingNow = (convId, userId) => Date.now() - (typingMarks.get(`${convId}:${userId}`) || 0) < TYPING_MS;
+route('POST', '/api/conversations/:id/typing', (ctx) => {
+  const u = requireUser(ctx);
+  rateLimit(`typing:${u.id}`, 60, 60 * 1000);
+  const c = loadConversation(u, parseInt(ctx.params.id, 10));
+  typingMarks.set(`${c.id}:${u.id}`, Date.now());
+  if (typingMarks.size > 5000) for (const [k, t] of typingMarks) if (Date.now() - t > TYPING_MS) typingMarks.delete(k);
+  return { ok: true };
 });
 
 route('POST', '/api/conversations/:id/messages', async (ctx) => {
@@ -1205,6 +1225,7 @@ route('POST', '/api/conversations/:id/messages', async (ctx) => {
   const t = now();
   const info = db.prepare('INSERT INTO messages (conversation_id, sender_id, body, photo, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(c.id, u.id, body, photo, replyId, t);
   db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(t, c.id);
+  typingMarks.delete(`${c.id}:${u.id}`); // отправил — уже не «печатает»
   const l = loadListing(c.listing_id, { deleted: true });
   alerts.notify(c.buyer_id === u.id ? c.seller_id : c.buyer_id, 'messages', { title: `${u.name} · ${l.title}`, body: msgPreview(body, photo).slice(0, 180), url: `/messages/${c.id}`, tag: `chat-${c.id}`, urgent: true });
   return { message: { id: Number(info.lastInsertRowid), mine: true, body, photo: photoUrl(photo), reply: replyId ? quotesOf(c.id, [replyId], u.id).get(replyId) : null, createdAt: t, read: false } };

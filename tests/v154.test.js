@@ -119,3 +119,28 @@ test('ответ на сообщение: цитата у обоих, тольк
   const bad = await petr.post(`/api/conversations/${c3}/messages`, { body: 'тест', replyTo: q.id });
   assert.equal(bad.status, 400);
 });
+
+test('1.55.0: прочитано и «печатает»: только когда переписка на экране, отметка гаснет после отправки', async () => {
+  const lid4 = await publish(oleg, admin, { title: 'Фляга', category: 'hobby', city: 'Казань', price: 500 });
+  const c4 = (await anna.post('/api/conversations', { listingId: lid4 })).data.id;
+  const m = (await anna.post(`/api/conversations/${c4}/messages`, { body: 'Добрый вечер!' })).data.message;
+  let a = (await anna.get(`/api/conversations/${c4}`)).data;
+  assert.equal(a.readUpTo, 0, 'ещё не прочитано');
+  let list = (await anna.get('/api/conversations')).data.items.find((i) => i.id === c4);
+  assert.equal(list.lastMine, 1, 'в списке — ✓');
+  await oleg.get(`/api/conversations/${c4}?seen=0`); // вкладка свёрнута — не прочитано
+  assert.equal((await anna.get(`/api/conversations/${c4}`)).data.readUpTo, 0);
+  await oleg.get(`/api/conversations/${c4}`);
+  a = (await anna.get(`/api/conversations/${c4}`)).data;
+  assert.equal(a.readUpTo, m.id, 'Олег открыл — ✓✓');
+  assert.equal((await anna.get('/api/conversations')).data.items.find((i) => i.id === c4).lastMine, 2);
+  // печатает
+  assert.equal(a.typing, false);
+  assert.equal((await oleg.post(`/api/conversations/${c4}/typing`)).status, 200);
+  assert.equal((await anna.get(`/api/conversations/${c4}`)).data.typing, true);
+  assert.equal((await oleg.get(`/api/conversations/${c4}`)).data.typing, false, 'себя не видит');
+  await oleg.post(`/api/conversations/${c4}/messages`, { body: 'Добрый!' });
+  assert.equal((await anna.get(`/api/conversations/${c4}`)).data.typing, false, 'отправил — уже не печатает');
+  const petr3 = await registerUser(srv.base, { name: 'Пётр', email: 'petr3@test.local' });
+  assert.equal((await petr3.post(`/api/conversations/${c4}/typing`)).status, 404, 'чужой диалог');
+});
