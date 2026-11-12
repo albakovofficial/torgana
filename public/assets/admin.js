@@ -730,6 +730,7 @@ window.TorganaAdmin = function (T) {
         <details class="ai-more"><summary>Bundle ID</summary><div class="field"><label for="ap-topic">Bundle ID приложения</label><input id="ap-topic" name="topic" class="input" value="${a.topic}" autocomplete="off"></div></details>
         <div class="ai-act"><button class="btn btn-dark" type="submit">Сохранить</button><button class="btn btn-soft" type="button" id="ap-test" ${a.ready ? '' : raw('disabled')}>Проверить на моём iPhone</button>${a.ready ? html`<button class="btn btn-line" type="button" id="ap-off">Удалить ключ</button>` : ''}</div>
         <p class="muted" style="margin:0;font-size:13px">Проверка придёт на iPhone, где открыто приложение Торгана под вашим аккаунтом и разрешены уведомления${a.mine ? ` (у вас: ${a.mine})` : ''}.</p>
+        ${a.lastError ? html`<p style="margin:0;font-size:13px;color:var(--danger)">Последняя ошибка Apple (${new Date(a.lastError.at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}): ${a.lastError.text}</p>` : ''}
       </section></form>`);
     $('#apns-f').onsubmit = async (e) => {
       e.preventDefault();
@@ -738,7 +739,7 @@ window.TorganaAdmin = function (T) {
     };
     $('#ap-test').onclick = async (e) => {
       const b = e.currentTarget; b.disabled = true;
-      try { await api('POST', '/api/admin/apns/test'); toast('Отправили — посмотрите на iPhone'); } catch (ex) { toast(ex.message, true); }
+      try { await api('POST', '/api/admin/apns/test'); toast('Отправили — посмотрите на iPhone'); } catch (ex) { toast(ex.message, true); renderApnsAdmin(box); return; }
       b.disabled = false;
     };
     const off = $('#ap-off');
