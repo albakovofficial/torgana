@@ -10,7 +10,7 @@ const { startServer, registerUser, client } = require('./helpers');
 const apnsKey = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const appleKey = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const KID = 'test-kid';
-const TOKEN_OK = 'a'.repeat(64); const TOKEN_GONE = 'b'.repeat(64);
+const TOKEN_OK = 'a'.repeat(64); const TOKEN_GONE = 'b'.repeat(64); const TOKEN_BADKEY = 'c'.repeat(64);
 const got = [];
 let apnsSrv; let keysSrv; let srv; let admin; let anna; let boris;
 
@@ -28,9 +28,9 @@ test.before(async () => {
     stream.on('data', (d) => { body += d; });
     stream.on('end', () => {
       got.push({ path: headers[':path'], headers, body: JSON.parse(body) });
-      const gone = headers[':path'].endsWith(TOKEN_GONE);
-      stream.respond({ ':status': gone ? 410 : 200 });
-      stream.end(gone ? JSON.stringify({ reason: 'Unregistered' }) : '');
+      const gone = headers[':path'].endsWith(TOKEN_GONE); const badKey = headers[':path'].endsWith(TOKEN_BADKEY);
+      stream.respond({ ':status': gone ? 410 : badKey ? 403 : 200 });
+      stream.end(gone ? JSON.stringify({ reason: 'Unregistered' }) : badKey ? JSON.stringify({ reason: 'InvalidProviderToken' }) : '');
     });
   });
   await new Promise((r) => apnsSrv.listen(0, '127.0.0.1', r));
@@ -118,4 +118,17 @@ test('«Войти с Apple»: подпись, aud, одноразовый nonce
   assert.equal(lk.status, 200, JSON.stringify(lk.data));
   const n6 = (await boris.post('/api/auth/apple/nonce', { link: true })).data.nonce;
   assert.equal((await boris.post('/api/auth/apple', { identityToken: appleToken({ sub: 'apple-001', nonce: sha(n6) }), nonce: n6 })).status, 409, 'чужой Apple ID');
+});
+
+test('«Проверить»: понятная причина, если уведомление не дошло', async () => {
+  const carl = await registerUser(srv.base, { name: 'Карл', email: 'carl@test.local' });
+  let r = await carl.post('/api/push/test');
+  assert.deepEqual([r.data.ok, /не подключено/.test(r.data.error)], [false, true], JSON.stringify(r.data));
+  await carl.post('/api/push/apns', { token: TOKEN_BADKEY });
+  r = await carl.post('/api/push/test');
+  assert.equal(r.data.ok, false);
+  assert.match(r.data.error, /ключ APNs/, 'Apple не принял ключ — так и говорим');
+  const g = (await admin.get('/api/admin/apns')).data;
+  assert.equal(g.lastError.reason, 'InvalidProviderToken');
+  assert.equal((await carl.get('/api/push')).data.devices, 1, 'из-за ключа адрес устройства не удаляем');
 });

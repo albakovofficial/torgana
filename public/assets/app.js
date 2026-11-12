@@ -4099,7 +4099,7 @@
   }
 
   async function logout() {
-    if (NATIVE && apnsToken) { await api('POST', '/api/push/apns/off', { token: apnsToken.token }).catch(() => {}); try { localStorage.removeItem(apnsKey()); } catch { /* нет хранилища */ } }
+    if (NATIVE && apnsToken) { await api('POST', '/api/push/apns/off', { token: apnsToken.token }).catch(() => {}); apnsMark(''); apnsSent = ''; }
     await api('POST', '/api/auth/logout').catch(() => {});
     S.user = null; setUnread(0);
     toast('Вы вышли из аккаунта');
@@ -4401,7 +4401,7 @@
     const rl = $('[data-reload]', el); if (rl) rl.onclick = () => location.reload();
     const iset = $('[data-ios-set]', el); if (iset) iset.onclick = () => nativePost({ type: 'open.settings' });
     const off = $('[data-off]', el); if (off) off.onclick = () => act(pushOff, 'Уведомления на этом устройстве выключены');
-    const tst = $('[data-test]', el); if (tst) tst.onclick = () => act(async () => { const r = await api('POST', '/api/push/test'); if (!r.ok) throw new Error('Не получилось отправить — выключите и включите уведомления'); }, 'Отправили проверочное уведомление');
+    const tst = $('[data-test]', el); if (tst) tst.onclick = () => act(async () => { const r = await api('POST', '/api/push/test'); if (!r.ok) throw new Error(r.error || 'Не получилось отправить — выключите и снова включите уведомления'); }, 'Отправили проверочное уведомление');
   }
 
   // Для бизнеса (1.45.0): переключатель бизнес-аккаунта (для всех, открывает тарифы) и получение галочки —
@@ -5571,18 +5571,25 @@
     window.addEventListener('torgana-native', on);
     setTimeout(() => { window.removeEventListener('torgana-native', on); res(null); }, ms);
   });
-  let apnsToken = null;
+  // В хранилище: адрес устройства, если push включены, или 'off' — человек выключил их в настройках.
+  // Адрес отправляем на сервер раз за запуск: сервер мог удалить его (Apple ответил, что он устарел).
+  let apnsToken = null; let apnsErr = ''; let apnsSent = '';
   const apnsKey = () => `tg_apns_${S.user ? S.user.id : 0}`;
+  const apnsMark = (v) => { try { if (v) localStorage.setItem(apnsKey(), v); else localStorage.removeItem(apnsKey()); } catch { /* нет хранилища */ } };
+  const apnsOn = () => { try { const v = localStorage.getItem(apnsKey()); return !!v && v !== 'off'; } catch { return false; } };
   async function apnsSend(force = false) {
-    if (!NATIVE || !apnsToken || !S.user) return;
-    try { if (!force && localStorage.getItem(apnsKey()) === apnsToken.token) return; } catch { /* нет хранилища */ }
-    await api('POST', '/api/push/apns', apnsToken).catch(() => {});
-    try { localStorage.setItem(apnsKey(), apnsToken.token); } catch { /* нет хранилища */ }
+    if (!NATIVE || !apnsToken || !S.user) return false;
+    const was = (() => { try { return localStorage.getItem(apnsKey()); } catch { return null; } })();
+    if (!force && (was === 'off' || apnsSent === `${S.user.id}:${apnsToken.token}`)) return true;
+    try { await api('POST', '/api/push/apns', apnsToken); } catch { return false; }
+    apnsSent = `${S.user.id}:${apnsToken.token}`; apnsMark(apnsToken.token);
+    return true;
   }
   if (NATIVE) {
     window.addEventListener('torgana-native', (e) => {
       const m = e.detail || {};
       if (m.type === 'push.token' && m.token) { apnsToken = { token: m.token, env: m.env === 'development' ? 'development' : 'production' }; apnsSend(); }
+      if (m.type === 'push.error') apnsErr = String(m.message || '');
     });
   }
   async function pushState() {
@@ -5590,8 +5597,7 @@
       nativePost({ type: 'push.status' });
       const r = await nativeWait('push.status', 2500);
       const perm = r ? r.status : 'default';
-      let on = false; try { on = !!localStorage.getItem(apnsKey()); } catch { /* нет хранилища */ }
-      return { ok: true, native: true, sub: perm === 'granted' && on ? { native: true } : null, perm };
+      return { ok: true, native: true, sub: perm === 'granted' && apnsOn() ? { native: true } : null, perm };
     }
     const reg = await swReady();
     if (!reg) return { ok: false, ios: IOS_TAB };
@@ -5604,8 +5610,10 @@
       nativePost({ type: 'push.request' });
       const r = await nativeWait('push.status', 60000); // ждём ответа в системном окне
       if (!r || r.status !== 'granted') throw new Error('Уведомления запрещены — включите их в Настройках iPhone → Торгана → Уведомления');
-      const t = apnsToken ? apnsToken : await nativeWait('push.token', 8000);
-      if (t && t.token) { apnsToken = { token: t.token, env: t.env === 'development' ? 'development' : 'production' }; await apnsSend(true); }
+      const t = apnsToken || await nativeWait('push.token', 8000);
+      if (!t || !t.token) throw new Error(`iPhone не выдал адрес для уведомлений${apnsErr ? ` (${apnsErr})` : ''}. Закройте приложение, откройте снова и включите ещё раз`);
+      apnsToken = { token: t.token, env: t.env === 'development' ? 'development' : 'production' };
+      if (!(await apnsSend(true))) throw new Error('Не получилось подключить уведомления — проверьте интернет и попробуйте ещё раз');
       return;
     }
     if (!PUSH_OK) throw new Error(IOS_TAB ? 'В браузере на iPhone уведомления не работают — они приходят в приложении Торгана' : 'Этот браузер не поддерживает уведомления');
@@ -5618,7 +5626,7 @@
   async function pushOff() {
     if (NATIVE) { // разрешение iPhone не отзовёшь из приложения — перестаём слать на это устройство
       if (apnsToken) await api('POST', '/api/push/apns/off', { token: apnsToken.token }).catch(() => {});
-      try { localStorage.removeItem(apnsKey()); } catch { /* нет хранилища */ }
+      apnsMark('off');
       return;
     }
     const { sub } = await pushState();
