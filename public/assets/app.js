@@ -2758,7 +2758,7 @@
       ED_STEPS.forEach(([x], k) => $(`#${x}`).classList.toggle('cur', k === i));
       $$('[data-step]').forEach((x) => { const on = Number(x.dataset.step) === i; x.classList.toggle('cur', on); if (on) x.setAttribute('aria-current', 'step'); else x.removeAttribute('aria-current'); });
       const last = i === ED_STEPS.length - 1;
-      $('.ed-dock [data-prev]').style.visibility = i ? '' : 'hidden';
+      $('.ed-dock [data-prev]').classList.toggle('hidden', !i); // 1.55.0: на первом шаге «Назад» нет — «Далее» на всю ширину, без пустого места слева
       $('#dock-next').classList.toggle('hidden', last);
       $('#dock-send').classList.toggle('hidden', !l && !last);
       changed();
@@ -3124,13 +3124,21 @@
   const supportName = () => html`Поддержка Торганы<span class="name-seal" title="Официальный аккаунт Торганы">${verifiedSeal(18)}</span>`;
   const SUPPORT_TOPICS = ['Почему отклонили объявление?', 'Не приходит письмо', 'Подозреваю мошенника', 'Как удалить аккаунт?'];
 
+  // 1.55.0: галочки у своих сообщений — ✓ отправлено, ✓✓ (синие) прочитано.
+  const tickSvg = (read) => raw(read
+    ? '<svg width="17" height="11" viewBox="0 0 17 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 6l3 3 6.5-7.5"/><path d="M7.2 8.4l.6.6 6.7-7.5"/></svg>'
+    : '<svg width="12" height="11" viewBox="0 0 12 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 6l3 3 6.5-7.5"/></svg>');
+  const tickMark = (read) => html`<i class="tk ${read ? 'rd' : ''}" data-tk role="img" aria-label="${read ? 'Прочитано' : 'Отправлено'}">${tickSvg(read)}</i>`;
+
   // Один чат на весь сайт: диалоги по объявлениям, поддержка у пользователя и у модератора.
   // load(after) → { messages }, send(body) → message; сообщения { id, mine, body, createdAt }.
   // decorate(m) → { cls, body } — особый вид сообщения (предложение цены); onData(r) — после каждой загрузки;
   // tools — над полем ввода (быстрые ответы); left — кнопка слева от поля (₽ — предложить цену).
   // 1.54.0: reply — { other: имя собеседника } включает ответ на конкретное сообщение: кнопка у сообщения (мышь),
   // свайп вправо или долгое нажатие (телефон); над полем — «Ответ …», в сообщении — цитата, нажатие ведёт к оригиналу.
-  function mountChat(box, { head, below = '', load, send, scam = false, empty, placeholder = 'Сообщение…', onActivity, back = '/messages', decorate, onData, tools = '', left = '', reply = null }) {
+  // 1.55.0: как в мессенджерах — у своих сообщений ✓ (отправлено) и ✓✓ синим (прочитано, r.readUpTo), строка
+  // «… печатает» (r.typing) и отметка собеседнику, пока я набираю (typing — функция, шлёт не чаще раза в 3 секунды).
+  function mountChat(box, { head, below = '', load, send, scam = false, empty, placeholder = 'Сообщение…', onActivity, back = '/messages', decorate, onData, tools = '', left = '', reply = null, typing = null, receipts = false }) {
     box.innerHTML = String(html`
       <div class="chat-head">
         <a href="${back}" class="icon-btn chat-back" aria-label="Назад">${ic('left', 20)}</a>
@@ -3138,6 +3146,7 @@
       </div>
       ${below}
       <div class="chat-msgs" data-msgs></div>
+      ${typing && reply ? html`<div class="chat-typing" data-typing aria-live="polite"><span class="ct-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>${reply.other} печатает</span></div>` : ''}
       ${tools}
       ${reply ? html`<div class="chat-reply hidden" data-reply-bar><span class="cr-ic">${ic('reply', 18, 2.2)}</span><div class="cr-tx"><b data-rb-who></b><span data-rb-text></span></div><button type="button" class="icon-btn cr-x" data-rb-x aria-label="Отменить ответ">${ic('close', 18, 2)}</button></div>` : ''}
       <form class="chat-form" data-send>
@@ -3168,8 +3177,9 @@
         known.set(m.id, { id: m.id, mine: m.mine, body: m.body, photo: !!m.photo, kind: m.kind || '' });
         const q = reply && m.reply ? quote(m.reply) : '';
         const can = reply && m.kind !== 'offer' ? 'can-rp' : ''; // на карточку предложения не отвечают — у неё свои кнопки
-        out += d2 ? String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${d2.cls} ${can}" data-mid="${m.id}">${q}${d2.body}<span class="t">${hm(m.createdAt)}</span>${can ? rpBtn() : ''}</div>`)
-          : String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${m.photo ? 'has-photo' : ''} ${q ? 'has-q' : ''} ${can}" data-mid="${m.id}">${q}${m.photo ? html`<a class="msg-photo" href="${m.photo}" target="_blank" rel="noopener" data-pv-src="${m.photo}" data-pv-group="chat"><img src="${m.photo}" alt="Фото" loading="lazy"></a>` : ''}${m.body}<span class="t">${hm(m.createdAt)}</span>${can ? rpBtn() : ''}</div>`);
+        const tm = html`<span class="t">${hm(m.createdAt)}${receipts && m.mine ? tickMark(m.read) : ''}</span>`;
+        out += d2 ? String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${d2.cls} ${can}" data-mid="${m.id}">${q}${d2.body}${tm}${can ? rpBtn() : ''}</div>`)
+          : String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${m.photo ? 'has-photo' : ''} ${q ? 'has-q' : ''} ${can}" data-mid="${m.id}">${q}${m.photo ? html`<a class="msg-photo" href="${m.photo}" target="_blank" rel="noopener" data-pv-src="${m.photo}" data-pv-group="chat"><img src="${m.photo}" alt="Фото" loading="lazy"></a>` : ''}${m.body}${tm}${can ? rpBtn() : ''}</div>`);
         const risk = scam && !m.mine && !m.kind ? riskOf(m.body) : null;
         if (risk) out += String(html`<div class="msg-risk r-${risk.k}" role="note">${ic(risk.k === 'messenger' ? 'chat' : risk.k === 'link' ? 'link' : risk.k === 'card' ? 'card' : 'shield', 16, 2.2)}<span>${risk.text}</span></div>`);
         lastId = Math.max(lastId, m.id);
@@ -3177,8 +3187,25 @@
       msgs.insertAdjacentHTML('beforeend', out);
       if (nearBottom || list.some((m) => m.mine)) msgs.scrollTop = msgs.scrollHeight;
     };
-    const poll = async () => { const r = await load(lastId); if (r.messages.length) { append(r.messages); if (onActivity) onActivity(); } if (onData) onData(r); return r; };
-    ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`; };
+    // Прочитано: все мои сообщения до readUpTo — ✓✓. Печатает: строка над полем и класс у чата (шапка — «печатает…»).
+    const tpRow = $('[data-typing]', box);
+    const live = (r) => {
+      if (receipts && r.readUpTo) $$('.msg.out[data-mid] [data-tk]:not(.rd)', msgs).forEach((t) => { if (Number(t.closest('[data-mid]').dataset.mid) <= r.readUpTo) { t.classList.add('rd'); t.innerHTML = String(tickSvg(true)); t.setAttribute('aria-label', 'Прочитано'); } });
+      if (tpRow && r.typing !== undefined) {
+        const on = !!r.typing;
+        if (on !== tpRow.classList.contains('on')) {
+          const near = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 120;
+          tpRow.classList.toggle('on', on); box.classList.toggle('is-typing', on);
+          if (near) msgs.scrollTop = msgs.scrollHeight;
+        }
+      }
+    };
+    const poll = async () => { const r = await load(lastId); if (r.messages.length) { append(r.messages); if (onActivity) onActivity(); } live(r); if (onData) onData(r); return r; };
+    let tpSent = 0;
+    ta.oninput = () => {
+      ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`;
+      if (typing && ta.value.trim() && Date.now() - tpSent > 3000) { tpSent = Date.now(); typing().catch(() => {}); }
+    };
     ta.onkeydown = (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
       if (e.key === 'Escape' && replyTo) { e.preventDefault(); setReply(null); }
@@ -3270,18 +3297,23 @@
       const asks = b.closest('.chat-asks'); if (asks) asks.remove();
       ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); ta.oninput();
     });
-    const timer = setInterval(() => poll().catch(() => {}), 4000);
+    // Пока переписка на экране — раз в 2,5 секунды (галочки и «печатает» почти сразу); свёрнута — раз в 10 секунд.
+    let ticks = 0;
+    const timer = setInterval(() => { ticks += 1; if (!document.hidden || ticks % 4 === 0) poll().catch(() => {}); }, 2500);
+    const onVis = () => { if (!document.hidden) poll().catch(() => {}); };
+    document.addEventListener('visibilitychange', onVis);
     (async () => {
       const r = await load(0);
       if (!r.messages.length && empty) msgs.innerHTML = String(html`<div data-empty>${empty}</div>`);
       append(r.messages);
+      live(r);
       if (onData) onData(r);
       msgs.scrollTop = msgs.scrollHeight;
       if (onActivity) onActivity();
     })().catch((e) => toast(e.message, true));
     if (window.matchMedia('(min-width: 901px)').matches) $('.chat-back', box).classList.add('hidden');
     ta.focus();
-    const stop = () => clearInterval(timer);
+    const stop = () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVis); };
     stop.poll = poll;
     stop.fill = (text) => { ta.value = text; ta.focus(); ta.oninput(); };
     return stop;
@@ -3488,7 +3520,7 @@
           <span class="conv-body">
             <span class="conv-top"><span class="conv-name">${c.other.name}${c.role === 'seller' ? html` <span class="conv-role">· покупатель</span>` : ''}</span><span class="conv-when">${shortWhen(c.updatedAt)}</span></span>
             <span class="conv-title" style="display:block">${c.title} · ${c.status === 'deleted' ? 'объявление удалено' : price(c.price, c.priceUnit)}</span>
-            <span class="conv-last" style="display:block">${c.lastBody || 'Нет сообщений'}</span>
+            <span class="conv-last" style="display:block">${c.lastMine ? tickMark(c.lastMine === 2) : ''}${c.lastBody || 'Нет сообщений'}</span>
           </span>
           ${c.unread ? html`<span class="badge">${c.unread}</span>` : ''}
         </a>`)}`)
@@ -3538,9 +3570,11 @@
           <button type="button" class="icon-btn chat-more" data-chat-more aria-label="Ещё" aria-haspopup="menu">${ic('more', 20)}</button>`;
       })(),
       reply: { other: other.name },
+      receipts: true,
+      typing: () => api('POST', `/api/conversations/${convId}/typing`),
       below: html`<div data-deal-slot></div>`,
       load: async (after) => {
-        const r = await api('GET', `/api/conversations/${convId}?after=${after}`);
+        const r = await api('GET', `/api/conversations/${convId}?after=${after}&seen=${document.hidden ? 0 : 1}`);
         const slot = $('[data-deal-slot]');
         const paintDeal = (st) => {
           if (!slot || JSON.stringify(st) === slot.dataset.state) return;
