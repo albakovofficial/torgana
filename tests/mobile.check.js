@@ -245,7 +245,6 @@ function pages(d) {
     ['user', `/u/${d.seller.user.id}`, null],
     ['login', '/login', null],
     ['register', '/register', null],
-    ['app', '/app', null], // 1.51: как установить приложение
     ['help-page', '/page/help', null],
     ['safety-page', '/page/safety', null],
     ['support-page', '/page/support', null],
