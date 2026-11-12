@@ -3566,7 +3566,6 @@
           <div class="ch-tx">
             ${gone ? html`<span class="ch-t">${l.title}</span>` : html`<a href="/l/${l.id}" class="ch-t">${l.title}</a>`}
             <div class="ch-m">${gone ? '' : html`<b class="${sold ? 'off' : ''}">${price(l.price, l.priceUnit)}</b>`}${st}<i aria-hidden="true">·</i><a href="/u/${other.id}" class="ch-who">${ava(other, 'xs')}<span>${other.name}</span></a></div>
-            <div class="ch-tp" aria-hidden="true">печатает<span class="ct-dots"><i></i><i></i><i></i></span></div>
           </div>
           <button type="button" class="icon-btn chat-more" data-chat-more aria-label="Ещё" aria-haspopup="menu">${ic('more', 20)}</button>`;
       })(),

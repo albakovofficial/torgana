@@ -744,9 +744,9 @@ a.pf-num:hover { color: var(--text); box-shadow: 0 6px 18px rgba(16, 16, 16, .07
   .pf-head .btn span { display: none; }
   /* «Мой профиль» на телефоне: шестерёнка в карточке и четыре раздела плитками вместо меню. */
   .pf2.is-hub .pf-gear { display: inline-flex; }
-  .pf2.is-hub .pf-side .pf-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .pf2.is-hub .pf-side .pf-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; background: transparent; border-radius: 0; } /* 1.55.0: фон — у плиток, а не под ними (в тёмной теме просвечивал между плитками) */
   .pf2.is-hub .pf-side .pf-nav > :not([data-k="msg"]):not([data-k="fav"]):not([data-k="following"]):not([data-k="rep"]) { display: none; }
-  .pf2.is-hub .pf-side .pf-nav a { min-height: 56px; padding: 0 12px; gap: 10px; border: 1px solid var(--line); border-radius: 18px; font-weight: 600; }
+  .pf2.is-hub .pf-side .pf-nav a { min-height: 56px; padding: 0 12px; gap: 10px; border: 1px solid var(--line); border-radius: 18px; font-weight: 600; background: var(--card); }
   .pf2.is-hub .pf-side .pf-nav a > svg:first-child { color: var(--accent); }
   .pub { gap: 16px; padding-top: 12px; }
   .pub-hero { padding: 18px; border-radius: 26px; gap: 14px; }
@@ -3684,8 +3684,4 @@ a.ch-t:hover { color: var(--accent); }
 .ct-dots i:nth-child(2) { animation-delay: .15s; }
 .ct-dots i:nth-child(3) { animation-delay: .3s; }
 @keyframes ct-dot { 0%, 60%, 100% { opacity: .35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
-.ch-tp { display: none; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--accent); }
-.ch-tp .ct-dots i { width: 4px; height: 4px; }
-.is-typing .ch-m { display: none; }
-.is-typing .ch-tp { display: flex; }
 @media (prefers-reduced-motion: reduce) { .ct-dots i { animation: none; opacity: .8; } .chat-typing { transition: none; } }
