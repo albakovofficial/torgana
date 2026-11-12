@@ -131,4 +131,6 @@ test('«Проверить»: понятная причина, если увед
   const g = (await admin.get('/api/admin/apns')).data;
   assert.equal(g.lastError.reason, 'InvalidProviderToken');
   assert.equal((await carl.get('/api/push')).data.devices, 1, 'из-за ключа адрес устройства не удаляем');
+  await carl.post('/api/push/test');
+  assert.equal(new Set(got.map((x) => x.headers.authorization)).size, 1, 'вход Apple не обновляем на каждый ответ 403 — иначе TooManyProviderTokenUpdates');
 });
