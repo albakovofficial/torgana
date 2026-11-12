@@ -4099,7 +4099,8 @@
   }
 
   async function logout() {
-    if (NATIVE && apnsToken) { await api('POST', '/api/push/apns/off', { token: apnsToken.token }).catch(() => {}); apnsMark(''); apnsSent = ''; }
+    if (PUSH_APP) await appPush('push.signout', 4000);
+    else if (NATIVE && apnsToken) { await api('POST', '/api/push/apns/off', { token: apnsToken.token }).catch(() => {}); apnsMark(''); apnsSent = ''; }
     await api('POST', '/api/auth/logout').catch(() => {});
     S.user = null; setUnread(0);
     toast('Вы вышли из аккаунта');
@@ -5573,12 +5574,17 @@
   });
   // В хранилище: адрес устройства, если push включены, или 'off' — человек выключил их в настройках.
   // Адрес отправляем на сервер раз за запуск: сервер мог удалить его (Apple ответил, что он устарел).
+  // 1.56.5: в родном приложении (TorganaApp.push === 'app') push ведёт само приложение — адрес устройства странице не даёт,
+  // страница только спрашивает (push.state) и просит (push.on / push.off / push.signout). Остальное ниже — для сборок-оболочек
+  // TestFlight 1.0.0 (15) и (18); убрать, когда их сменит родное приложение.
+  const PUSH_APP = NATIVE && !!window.TorganaApp && window.TorganaApp.push === 'app';
+  const appPush = async (type, ms) => { nativePost({ type }); return (await nativeWait(type, ms)) || { ok: false, perm: 'default', on: false }; };
   let apnsToken = null; let apnsErr = ''; let apnsSent = '';
   const apnsKey = () => `tg_apns_${S.user ? S.user.id : 0}`;
   const apnsMark = (v) => { try { if (v) localStorage.setItem(apnsKey(), v); else localStorage.removeItem(apnsKey()); } catch { /* нет хранилища */ } };
   const apnsOn = () => { try { const v = localStorage.getItem(apnsKey()); return !!v && v !== 'off'; } catch { return false; } };
   async function apnsSend(force = false) {
-    if (!NATIVE || !apnsToken || !S.user) return false;
+    if (!NATIVE || PUSH_APP || !apnsToken || !S.user) return false;
     const was = (() => { try { return localStorage.getItem(apnsKey()); } catch { return null; } })();
     if (!force && (was === 'off' || apnsSent === `${S.user.id}:${apnsToken.token}`)) return true;
     try { await api('POST', '/api/push/apns', apnsToken); } catch { return false; }
@@ -5593,6 +5599,7 @@
     });
   }
   async function pushState() {
+    if (PUSH_APP) { const r = await appPush('push.state', 2500); return { ok: true, native: true, sub: r.on ? { native: true } : null, perm: r.perm }; }
     if (NATIVE) {
       nativePost({ type: 'push.status' });
       const r = await nativeWait('push.status', 2500);
@@ -5606,6 +5613,7 @@
   const b64uBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
   const deviceName = () => { const ua = navigator.userAgent; if (NATIVE) return 'iPhone · приложение Торгана'; return `${/Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iPhone' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Устройство'} · ${/YaBrowser/.test(ua) ? 'Яндекс Браузер' : /Edg\//.test(ua) ? 'Edge' : /Firefox/.test(ua) ? 'Firefox' : /Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : 'браузер'}`; };
   async function pushOn() {
+    if (PUSH_APP) { const r = await appPush('push.on', 70000); if (!r.ok) throw new Error(r.error || 'Не получилось включить уведомления — попробуйте ещё раз'); return; }
     if (NATIVE) {
       nativePost({ type: 'push.request' });
       const r = await nativeWait('push.status', 60000); // ждём ответа в системном окне
@@ -5624,6 +5632,7 @@
     await api('POST', '/api/push/subscribe', { subscription: sub.toJSON(), device: deviceName() });
   }
   async function pushOff() {
+    if (PUSH_APP) { await appPush('push.off', 8000); return; }
     if (NATIVE) { // разрешение iPhone не отзовёшь из приложения — перестаём слать на это устройство
       if (apnsToken) await api('POST', '/api/push/apns/off', { token: apnsToken.token }).catch(() => {});
       apnsMark('off');
@@ -5656,7 +5665,7 @@
   const ASK_KEY = 'tg_push_asked';
   let asking = false;
   async function pushAskOnce() {
-    if (!S.user || asking) return;
+    if (!S.user || asking || PUSH_APP) return; // родное приложение спрашивает само
     try { if (localStorage.getItem(ASK_KEY)) return; } catch { return; }
     if (['/confirm', '/login', '/register', '/reset', '/forgot'].includes(location.pathname)) return;
     asking = true;
