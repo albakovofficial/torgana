@@ -847,7 +847,7 @@
     footer.innerHTML = String(html`<div class="wrap">
       <div class="f-main">
         <div class="f-grid">
-          <div class="f-brand">${logo()}<p class="f-tag"><b>Сторгуемся!</b>Объявления по всей России — бесплатно и с проверкой модератора</p>${STANDALONE ? '' : html`<a class="f-app-link" href="/app"><span class="ab-ic">${ic('phone', 16, 2.2)}</span>Приложение${ic('right', 16, 2.2)}</a>`}</div>
+          <div class="f-brand">${logo()}<p class="f-tag"><b>Сторгуемся!</b>Объявления по всей России — бесплатно и с проверкой модератора</p></div>
           ${cols.map(([t, ls]) => html`<details class="fcol" open><summary><h4>${t}</h4>${ic('down', 18, 2)}</summary><ul>${ls.map(([href, label]) => html`<li><a href="${href}">${label}</a></li>`)}</ul></details>`)}
         </div>
         <div class="f-help">
@@ -1082,7 +1082,6 @@
     [/^\/messages(?:\/(\d+|support))?$/, viewMessages],
     [/^\/profile(?:\/(listings|settings|reputation|reviews|searches|following|stats\/\d+|business(?:\/(?:shop|stats))?))?$/, viewProfile],
     [/^\/business$/, viewBusiness],
-    [/^\/app$/, viewApp],
     [/^\/pay\/([\w-]+)$/, viewPay],
     [/^\/u\/(\d+)$/, viewUser],
     [/^\/admin$/, viewAdmin],
@@ -1099,7 +1098,6 @@
     const path = location.pathname.replace(/\/+$/, '') || '/';
     renderHeader();
     renderBottomNav();
-    appBar();
     const q = new URLSearchParams(location.search);
     const r = ROUTES.find(([re]) => re.test(path));
     const keep = S.keep; S.keep = null;
@@ -4393,7 +4391,7 @@
     const st = await pushState();
     const card = (icon, title, sub, buttons = '') => html`<div class="push-dev ${st.sub ? 'on' : ''}"><span class="push-dev-ic">${ic(icon, 22, 2)}</span><span class="push-dev-txt"><b>${title}</b><span>${sub}</span></span>${buttons}</div>`;
     el.innerHTML = String(!st.ok
-      ? card('bell', 'На этом устройстве push недоступны', st.ios ? 'На iPhone: «Поделиться» → «На экран «Домой»», откройте Торгану с экрана и включите уведомления здесь.' : 'Браузер не поддерживает уведомления. Письма на почту продолжат приходить.')
+      ? card('bell', 'На этом устройстве push недоступны', st.ios ? 'В браузере на iPhone уведомления не работают — они приходят в приложении Торгана. Письма на почту продолжат приходить.' : 'Браузер не поддерживает уведомления. Письма на почту продолжат приходить.')
       : st.sub ? card('check', 'Включены на этом устройстве', deviceName(), html`<button type="button" class="btn btn-soft btn-sm" data-test>Проверить</button><button type="button" class="btn btn-line btn-sm" data-off>Выключить</button>`)
         : st.perm === 'denied' && st.native ? card('bell', 'Уведомления запрещены', 'Разрешите их в Настройках iPhone → Торгана → Уведомления.', html`<button type="button" class="btn btn-accent" data-ios-set>Открыть настройки</button>`)
         : st.perm === 'denied' ? card('bell', 'Уведомления запрещены в браузере', 'Вы отклонили запрос. Разрешите уведомления в настройках сайта (значок замка рядом с адресом), обновите страницу и нажмите «Включить уведомления».', html`<button type="button" class="btn btn-accent" data-reload>Я разрешил — обновить</button>`)
@@ -5549,127 +5547,13 @@
     document.addEventListener('touchcancel', () => { if (state === 'pull' || state === 'maybe') { state = 'idle'; hide(); } }, { passive: true });
   }
 
-  // ================= приложение на экране (1.51) =================
-  // Полоса «Установить приложение» над шапкой (закрывается крестиком) и страница /app с инструкцией
-  // для iPhone, Android и компьютера. На Android и компьютере (Chrome, Edge, Яндекс) — системное окно установки,
-  // на iPhone — шторка «Поделиться» → «На экран «Домой»». В подвале — ссылка «Приложение» на /app. В установленной Торгане полосы и ссылки нет.
+  // Торгана открыта из приложения для iPhone или с экрана «Домой» (установлена раньше) — без адресной строки.
   const STANDALONE = NATIVE || (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  const ANDROID = /Android/i.test(navigator.userAgent);
-  const APP_BAR_KEY = 'app_bar_off';
-  const APP_BAR_PAUSE = 30 * 864e5; // закрыли — не показываем 30 дней
-  const APP_BAR_SKIP = /^\/(messages|new|edit|pay|admin|app)(\/|$)/;
-  let installEvt = null;
-  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; appBar(); appHowButton(); });
-  window.addEventListener('appinstalled', () => { installEvt = null; appBarHide(); appHowButton(); toast('Торгана установлена — открывайте её как приложение'); });
-  const canInstall = () => !STANDALONE && (!!installEvt || IOS);
-  const appBarOff = () => { try { return Date.now() - Number(localStorage.getItem(APP_BAR_KEY) || 0) < APP_BAR_PAUSE; } catch { return false; } };
-
-  async function installApp() {
-    if (installEvt) {
-      const e = installEvt;
-      e.prompt();
-      const r = await e.userChoice.catch(() => null);
-      if (r && r.outcome === 'accepted') { installEvt = null; appBarHide(); appHowButton(); }
-      return;
-    }
-    openInstallHelp();
-  }
-
-  function appBar() {
-    let bar = $('#app-bar');
-    const show = canInstall() && !appBarOff() && !APP_BAR_SKIP.test(location.pathname);
-    if (!show) { if (bar) bar.remove(); return; }
-    if (bar) return;
-    bar = document.createElement('div');
-    bar.id = 'app-bar'; bar.className = 'app-bar';
-    bar.setAttribute('role', 'region'); bar.setAttribute('aria-label', 'Приложение Торгана');
-    bar.innerHTML = String(html`<div class="wrap ab-in">
-      <span class="ab-ic"><svg width="26" height="26" viewBox="0 0 48 48" aria-hidden="true">${raw(MARK)}</svg></span>
-      <span class="ab-t"><b>Приложение Торгана</b><span>${IOS || ANDROID ? 'В одно касание с экрана телефона и с уведомлениями' : 'В своём окне, как программа, и с уведомлениями'}</span></span>
-      <button type="button" class="btn btn-accent btn-sm ab-go" data-install>${IOS ? 'Добавить' : 'Установить'}</button>
-      <button type="button" class="icon-btn ab-x" data-x aria-label="Скрыть">${ic('close', 18, 2.2)}</button>
-    </div>`);
-    $('#header').before(bar);
-    $('[data-install]', bar).onclick = installApp;
-    $('[data-x]', bar).onclick = () => { try { localStorage.setItem(APP_BAR_KEY, String(Date.now())); } catch { /* закрытое хранилище */ } appBarHide(); };
-  }
-  function appBarHide() { const bar = $('#app-bar'); if (bar) bar.remove(); }
-
-  // Шаги для каждой платформы: значок, что нажать, пояснение.
-  const APP_STEPS = {
-    ios: ['iPhone', [
-      ['share', 'Нажмите «Поделиться»', 'Кнопка внизу экрана Safari, на iPad — вверху'],
-      ['plus', 'Выберите «На экран «Домой»»', 'Пункт чуть ниже в списке — пролистайте его'],
-      ['mark', 'Нажмите «Добавить»', 'Торгана появится рядом с другими приложениями']]],
-    android: ['Android', [
-      ['more', 'Откройте меню браузера', 'Три точки справа вверху в Chrome или Яндекс Браузере'],
-      ['download', 'Выберите «Установить приложение»', 'В некоторых браузерах — «Добавить на главный экран»'],
-      ['mark', 'Подтвердите установку', 'Значок Торганы появится на главном экране']]],
-    pc: ['Компьютер', [
-      ['link', 'Откройте torgana.ru в Chrome или Edge', 'Подойдёт и Яндекс Браузер'],
-      ['download', 'Нажмите значок установки', 'Он справа в адресной строке, или меню → «Установить Торгану»'],
-      ['mark', 'Готово', 'Торгана откроется в своём окне, ярлык — на рабочем столе']]]
-  };
-  const appPlatform = () => (IOS ? 'ios' : ANDROID ? 'android' : 'pc');
-  const stepIc = (k, n) => html`<span class="as-ic${k === 'mark' ? ' brand' : ''}">${k === 'mark' ? html`<svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">${raw(MARK)}</svg>` : ic(k, 19, 2)}<i class="as-n">${n}</i></span>`;
-  const stepList = (k) => html`<ol class="as-list">${APP_STEPS[k][1].map(([icn, t, s], i) => html`<li>${stepIc(icn, i + 1)}<span class="as-t"><b>${t}</b><small>${s}</small></span></li>`)}</ol>`;
-
-  function openInstallHelp() {
-    openModal(String(html`<div class="ah-top"><span class="ab-ic lg"><svg width="34" height="34" viewBox="0 0 48 48" aria-hidden="true">${raw(MARK)}</svg></span><button type="button" class="icon-btn" data-x aria-label="Закрыть">${ic('close', 20, 2)}</button></div>
-      <h2 class="ah-h">Торгана на экране «Домой»</h2>
-      <p class="ah-p">Три касания — и Торгана откроется как приложение: без адресной строки и с уведомлениями о сообщениях.</p>
-      ${stepList(appPlatform())}
-      ${IOS ? html`<p class="ah-note">${ic('info', 16, 2)}Нет пункта «На экран «Домой»»? Откройте torgana.ru в Safari.</p>` : ''}
-      <button type="button" class="btn btn-dark btn-lg btn-block" data-ok>Понятно</button>`), (m, close) => {
-      if (window.matchMedia('(max-width: 600px)').matches) { m.classList.add('sheet'); m.parentElement.classList.add('sheet-back'); }
-      m.setAttribute('aria-label', 'Как установить Торгану');
-      $('[data-x]', m).onclick = close; $('[data-ok]', m).onclick = close;
-    });
-  }
-
-  // Страница /app (ссылка «Приложение» в подвале): зачем, вкладки iPhone / Android / Компьютер — открыта своя платформа.
-  function viewApp() {
-    setTitle('Приложение');
-    const cur = appPlatform();
-    const perk = (icn, t, sub) => html`<li><span class="as-ic">${ic(icn, 19, 2)}</span><span class="as-t"><b>${t}</b><small>${sub}</small></span></li>`;
-    app.innerHTML = String(html`<div class="wrap app-page">
-      <section class="f-app" aria-labelledby="f-app-h">
-        <div class="fa-lead">
-          <div class="fa-badge"><span class="ab-ic"><svg width="26" height="26" viewBox="0 0 48 48" aria-hidden="true">${raw(MARK)}</svg></span>Приложение</div>
-          <h1 id="f-app-h">${STANDALONE ? 'Торгана уже установлена' : 'Торгана как приложение'}</h1>
-          <p>${STANDALONE ? 'Вы открыли её с экрана — всё работает как в приложении. Включите уведомления в настройках, чтобы не пропустить сообщения.' : 'Открывается в одно касание, без адресной строки, с уведомлениями о сообщениях и снижении цен. Из магазина приложений ничего скачивать не нужно.'}</p>
-          <div class="fa-act" data-app-act>${STANDALONE ? html`<a class="btn btn-accent" href="/profile/settings">${ic('bell', 18, 2.2)}Уведомления</a>` : ''}</div>
-          <ul class="fa-perks">${perk('bolt', 'В одно касание', 'Значок на экране, как у других приложений')}${perk('bell', 'Уведомления', 'Сообщения, модерация, снижение цен')}${perk('download', 'Почти не занимает места', 'Обновляется само, без магазина приложений')}</ul>
-        </div>
-        <div class="fa-how">
-          <h2 class="fa-how-h">Как установить</h2>
-          <div class="fa-tabs" role="tablist" aria-label="Устройство">${Object.entries(APP_STEPS).map(([k, [label]]) => html`<button type="button" role="tab" data-app-tab="${k}" aria-selected="${k === cur ? 'true' : 'false'}" class="${k === cur ? 'on' : ''}">${label}</button>`)}</div>
-          <div data-app-steps>${stepList(cur)}</div>
-        </div>
-      </section>
-    </div>`);
-    bindAppHow(app);
-  }
-  function bindAppHow(root) {
-    const sec = $('.f-app', root);
-    if (!sec) return;
-    $$('[data-app-tab]', sec).forEach((b) => { b.onclick = () => {
-      $$('[data-app-tab]', sec).forEach((x) => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-selected', on ? 'true' : 'false'); });
-      $('[data-app-steps]', sec).innerHTML = String(stepList(b.dataset.appTab));
-    }; });
-    appHowButton();
-  }
-  function appHowButton() {
-    const box = $('[data-app-act]');
-    if (!box || STANDALONE) return;
-    box.innerHTML = String(canInstall() ? html`<button type="button" class="btn btn-accent" data-install>${ic('download', 18, 2.2)}${IOS ? 'Как добавить' : 'Установить'}</button>` : '');
-    const b = $('[data-install]', box); if (b) b.onclick = installApp;
-  }
 
   // ================= push-уведомления =================
   const PUSH_OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
-  // На iPhone push работает только у Торганы, добавленной на экран «Домой».
+  // В Safari на iPhone push нет: только в приложении Торгана (и у Торганы, добавленной раньше на экран «Домой»).
   const IOS_TAB = IOS && !STANDALONE;
   let swReg = null;
   function swReady() {
@@ -5724,7 +5608,7 @@
       if (t && t.token) { apnsToken = { token: t.token, env: t.env === 'development' ? 'development' : 'production' }; await apnsSend(true); }
       return;
     }
-    if (!PUSH_OK) throw new Error(IOS_TAB ? 'Добавьте Торгану на экран «Домой» — на iPhone уведомления работают оттуда' : 'Этот браузер не поддерживает уведомления');
+    if (!PUSH_OK) throw new Error(IOS_TAB ? 'В браузере на iPhone уведомления не работают — они приходят в приложении Торгана' : 'Этот браузер не поддерживает уведомления');
     if (await Notification.requestPermission() !== 'granted') throw new Error('Уведомления запрещены — разрешите их в настройках сайта в браузере');
     const reg = await swReady();
     const { key } = await api('GET', '/api/push');
@@ -5770,15 +5654,14 @@
     asking = true;
     const st = await pushState().catch(() => ({ ok: false }));
     const mark = () => { try { localStorage.setItem(ASK_KEY, String(Date.now())); } catch { /* нет хранилища */ } };
-    if ((st.ok && (st.sub || st.perm !== 'default')) || (!st.ok && !st.ios)) { mark(); asking = false; return; }
+    if (!st.ok || st.sub || st.perm !== 'default') { mark(); asking = false; return; }
     await new Promise((r) => setTimeout(r, 1200));
     if (!S.user || $('.modal-back')) { asking = false; return; } // занято другим окном — спросим при следующем заходе
     mark();
     openModal(String(html`<div class="ask-push"><span class="ask-ic">${ic('bell', 30, 1.9)}</span>
       <h2>Включить уведомления?</h2>
-      <p>${st.ios ? 'На iPhone уведомления работают, если открыть Торгану с экрана «Домой»: «Поделиться» → «На экран «Домой»».' : 'Сообщим, когда объявление опубликуют, напишут в чате или подешевеет товар из избранного. Выключить можно в настройках.'}</p>
-      <div class="ask-act">${st.ios ? html`<button class="btn btn-dark btn-lg btn-block" data-x>Понятно</button>`
-    : html`<button class="btn btn-accent btn-lg btn-block" data-ok>Включить</button><button class="btn btn-soft btn-lg btn-block" data-x>Не сейчас</button>`}</div></div>`), (m, close) => {
+      <p>Сообщим, когда объявление опубликуют, напишут в чате или подешевеет товар из избранного. Выключить можно в настройках.</p>
+      <div class="ask-act"><button class="btn btn-accent btn-lg btn-block" data-ok>Включить</button><button class="btn btn-soft btn-lg btn-block" data-x>Не сейчас</button></div></div>`), (m, close) => {
       m.classList.add('ask-modal'); m.parentElement.classList.add('ask-back');
       $('[data-x]', m).onclick = close;
       const ok = $('[data-ok]', m);
