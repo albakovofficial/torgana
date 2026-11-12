@@ -4,7 +4,7 @@
   // 1.56.0: приложение Торгана для iPhone (репозиторий torgana-ios) открывает сайт внутри себя и даёт мост
   // window.TorganaApp. В приложении нет оплаты — ни продвижения, ни тарифов, ни раздела «Для бизнеса»
   // (правило App Store 3.1.1: цифровое — только через покупки Apple, а они в России не работают);
-  // купленное на сайте работает и в приложении. Установка на экран и web-push — свои, нативные.
+  // купленное на сайте работает и в приложении. Push — свои, через Apple. Установки сайта на экран «Домой» больше нет.
   const NATIVE = !!window.TorganaApp || /TorganaApp\//.test(navigator.userAgent);
   const PAY = !NATIVE;
   const nativePost = (msg) => { try { window.TorganaApp.post(msg); return true; } catch { return false; } };
@@ -5058,8 +5058,8 @@
 
   // /pay/:id — человек вернулся со страницы ЮKassa. Пока платёж в обработке — проверяем каждые 2,5 секунды.
   const CANCEL_REASON = { expired_on_confirmation: 'Время на оплату истекло', insufficient_funds: 'Недостаточно средств', card_expired: 'Истёк срок действия карты', canceled_by_merchant: 'Платёж отменён', '3d_secure_failed': 'Банк не подтвердил оплату', permission_revoked: 'Оплата отменена', payment_method_limit_exceeded: 'Превышен лимит платежей', payment_method_restricted: 'Способ оплаты недоступен', fraud_suspected: 'Банк заподозрил мошенничество', country_forbidden: 'Оплата из этой страны недоступна' };
-  // 1.38.1: возврат с ЮKassa. Вход не обязателен — на iPhone приложение с экрана «Домой» открывает оплату
-  // во встроенном Safari, где человек не вошёл. Оплачено — коротко «что включилось» и сразу к объявлению.
+  // 1.38.1: возврат с ЮKassa. Вход не обязателен — оплата может вернуть человека в другой браузер
+  // (встроенный в почту или мессенджер), где он не вошёл. Оплачено — коротко «что включилось» и сразу к объявлению.
   const PAY_KEY = 'tg_pay';
   const payMark = (id) => { try { if (id) localStorage.setItem(PAY_KEY, JSON.stringify({ id, at: Date.now() })); else localStorage.removeItem(PAY_KEY); } catch { /* нет хранилища */ } };
   const payPending = () => { try { const p = JSON.parse(localStorage.getItem(PAY_KEY) || 'null'); return p && p.id && Date.now() - p.at < 2 * 3600 * 1000 ? p.id : ''; } catch { return ''; } };
@@ -5451,7 +5451,7 @@
   }
 
   // ================= «потянуть вниз — обновить» =================
-  // Только в установленном приложении (значок на экране «Домой»): в браузере телефона у Safari и Chrome
+  // Только на страницах сайта внутри приложения для iPhone: в браузере телефона у Safari и Chrome
   // есть свой такой жест. Жест только наблюдает за пальцем (passive) и не мешает прокрутке и нажатиям.
   // Обновление мягкое: заново берём данные и перерисовываем страницу; вышла новая версия сайта — перезагрузка.
   async function softRefresh() {
@@ -5467,7 +5467,7 @@
   }
 
   function setupPullToRefresh() {
-    if (!STANDALONE || !('ontouchstart' in window)) return;
+    if (!NATIVE || !('ontouchstart' in window)) return;
     // 1.54.0: срабатывает надёжнее — короче рывок (~125 px пальцем), не мешают текст в поиске, дробная прокрутка
     // и только что закончившаяся прокрутка; если обновить нельзя (недописанное сообщение) — говорим об этом.
     const START = 12; const TRIGGER = 80; const MAX = 120; const PULL = 0.7;
@@ -5548,14 +5548,12 @@
     document.addEventListener('touchcancel', () => { if (state === 'pull' || state === 'maybe') { state = 'idle'; hide(); } }, { passive: true });
   }
 
-  // Торгана открыта из приложения для iPhone или с экрана «Домой» (установлена раньше) — без адресной строки.
-  const STANDALONE = NATIVE || (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
   // ================= push-уведомления =================
   const PUSH_OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
-  // В Safari на iPhone push нет: только в приложении Торгана (и у Торганы, добавленной раньше на экран «Домой»).
-  const IOS_TAB = IOS && !STANDALONE;
+  // На iPhone вне приложения push нет — они приходят в приложении Торгана.
+  const IOS_TAB = IOS && !NATIVE;
   let swReg = null;
   function swReady() {
     if (!PUSH_OK) return Promise.resolve(null);
