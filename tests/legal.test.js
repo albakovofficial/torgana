@@ -153,13 +153,12 @@ describe('объявления, похожие на запрещённые', () 
   });
 });
 
-describe('иконки приложения', () => {
+describe('иконки', () => {
   const pngSize = (buf) => [buf.readUInt32BE(16), buf.readUInt32BE(20)];
-  test('PNG нужных размеров, подключены в странице и манифесте', async () => {
+  test('PNG нужных размеров; установки на экран «Домой» нет (манифест убран в 1.56.6)', async () => {
     const page = String((await guest.get('/')).data);
-    assert.match(page, /<link rel="apple-touch-icon" href="\/assets\/icons\/apple-touch-icon\.png">/);
-    const manifest = (await guest.get('/assets/site.webmanifest')).data;
-    assert.ok(manifest.icons.some((i) => i.purpose === 'maskable' && i.sizes === '512x512'));
+    assert.doesNotMatch(page, /rel="manifest"|apple-touch-icon|apple-mobile-web-app/);
+    assert.equal((await fetch(`${srv.base}/assets/site.webmanifest`)).status, 404);
     for (const [file, size] of [['apple-touch-icon.png', 180], ['icon-192.png', 192], ['icon-512.png', 512]]) {
       const r = await fetch(`${srv.base}/assets/icons/${file}`);
       assert.equal(r.headers.get('content-type'), 'image/png');

@@ -4,7 +4,7 @@
   // 1.56.0: приложение Торгана для iPhone (репозиторий torgana-ios) открывает сайт внутри себя и даёт мост
   // window.TorganaApp. В приложении нет оплаты — ни продвижения, ни тарифов, ни раздела «Для бизнеса»
   // (правило App Store 3.1.1: цифровое — только через покупки Apple, а они в России не работают);
-  // купленное на сайте работает и в приложении. Установка на экран и web-push — свои, нативные.
+  // купленное на сайте работает и в приложении. Push — свои, через Apple. Установки сайта на экран «Домой» больше нет.
   const NATIVE = !!window.TorganaApp || /TorganaApp\//.test(navigator.userAgent);
   const PAY = !NATIVE;
   const nativePost = (msg) => { try { window.TorganaApp.post(msg); return true; } catch { return false; } };
@@ -4099,7 +4099,8 @@
   }
 
   async function logout() {
-    if (NATIVE && apnsToken) { await api('POST', '/api/push/apns/off', { token: apnsToken.token }).catch(() => {}); apnsMark(''); apnsSent = ''; }
+    if (PUSH_APP) await appPush('push.signout', 4000);
+    else if (NATIVE && apnsToken) { await api('POST', '/api/push/apns/off', { token: apnsToken.token }).catch(() => {}); apnsMark(''); apnsSent = ''; }
     await api('POST', '/api/auth/logout').catch(() => {});
     S.user = null; setUnread(0);
     toast('Вы вышли из аккаунта');
@@ -5057,8 +5058,8 @@
 
   // /pay/:id — человек вернулся со страницы ЮKassa. Пока платёж в обработке — проверяем каждые 2,5 секунды.
   const CANCEL_REASON = { expired_on_confirmation: 'Время на оплату истекло', insufficient_funds: 'Недостаточно средств', card_expired: 'Истёк срок действия карты', canceled_by_merchant: 'Платёж отменён', '3d_secure_failed': 'Банк не подтвердил оплату', permission_revoked: 'Оплата отменена', payment_method_limit_exceeded: 'Превышен лимит платежей', payment_method_restricted: 'Способ оплаты недоступен', fraud_suspected: 'Банк заподозрил мошенничество', country_forbidden: 'Оплата из этой страны недоступна' };
-  // 1.38.1: возврат с ЮKassa. Вход не обязателен — на iPhone приложение с экрана «Домой» открывает оплату
-  // во встроенном Safari, где человек не вошёл. Оплачено — коротко «что включилось» и сразу к объявлению.
+  // 1.38.1: возврат с ЮKassa. Вход не обязателен — оплата может вернуть человека в другой браузер
+  // (встроенный в почту или мессенджер), где он не вошёл. Оплачено — коротко «что включилось» и сразу к объявлению.
   const PAY_KEY = 'tg_pay';
   const payMark = (id) => { try { if (id) localStorage.setItem(PAY_KEY, JSON.stringify({ id, at: Date.now() })); else localStorage.removeItem(PAY_KEY); } catch { /* нет хранилища */ } };
   const payPending = () => { try { const p = JSON.parse(localStorage.getItem(PAY_KEY) || 'null'); return p && p.id && Date.now() - p.at < 2 * 3600 * 1000 ? p.id : ''; } catch { return ''; } };
@@ -5450,7 +5451,7 @@
   }
 
   // ================= «потянуть вниз — обновить» =================
-  // Только в установленном приложении (значок на экране «Домой»): в браузере телефона у Safari и Chrome
+  // Только на страницах сайта внутри приложения для iPhone: в браузере телефона у Safari и Chrome
   // есть свой такой жест. Жест только наблюдает за пальцем (passive) и не мешает прокрутке и нажатиям.
   // Обновление мягкое: заново берём данные и перерисовываем страницу; вышла новая версия сайта — перезагрузка.
   async function softRefresh() {
@@ -5466,7 +5467,7 @@
   }
 
   function setupPullToRefresh() {
-    if (!STANDALONE || !('ontouchstart' in window)) return;
+    if (!NATIVE || !('ontouchstart' in window)) return;
     // 1.54.0: срабатывает надёжнее — короче рывок (~125 px пальцем), не мешают текст в поиске, дробная прокрутка
     // и только что закончившаяся прокрутка; если обновить нельзя (недописанное сообщение) — говорим об этом.
     const START = 12; const TRIGGER = 80; const MAX = 120; const PULL = 0.7;
@@ -5547,14 +5548,12 @@
     document.addEventListener('touchcancel', () => { if (state === 'pull' || state === 'maybe') { state = 'idle'; hide(); } }, { passive: true });
   }
 
-  // Торгана открыта из приложения для iPhone или с экрана «Домой» (установлена раньше) — без адресной строки.
-  const STANDALONE = NATIVE || (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
   // ================= push-уведомления =================
   const PUSH_OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
-  // В Safari на iPhone push нет: только в приложении Торгана (и у Торганы, добавленной раньше на экран «Домой»).
-  const IOS_TAB = IOS && !STANDALONE;
+  // На iPhone вне приложения push нет — они приходят в приложении Торгана.
+  const IOS_TAB = IOS && !NATIVE;
   let swReg = null;
   function swReady() {
     if (!PUSH_OK) return Promise.resolve(null);
@@ -5573,12 +5572,17 @@
   });
   // В хранилище: адрес устройства, если push включены, или 'off' — человек выключил их в настройках.
   // Адрес отправляем на сервер раз за запуск: сервер мог удалить его (Apple ответил, что он устарел).
+  // 1.56.5: в родном приложении (TorganaApp.push === 'app') push ведёт само приложение — адрес устройства странице не даёт,
+  // страница только спрашивает (push.state) и просит (push.on / push.off / push.signout). Остальное ниже — для сборок-оболочек
+  // TestFlight 1.0.0 (15) и (18); убрать, когда их сменит родное приложение.
+  const PUSH_APP = NATIVE && !!window.TorganaApp && window.TorganaApp.push === 'app';
+  const appPush = async (type, ms) => { nativePost({ type }); return (await nativeWait(type, ms)) || { ok: false, perm: 'default', on: false }; };
   let apnsToken = null; let apnsErr = ''; let apnsSent = '';
   const apnsKey = () => `tg_apns_${S.user ? S.user.id : 0}`;
   const apnsMark = (v) => { try { if (v) localStorage.setItem(apnsKey(), v); else localStorage.removeItem(apnsKey()); } catch { /* нет хранилища */ } };
   const apnsOn = () => { try { const v = localStorage.getItem(apnsKey()); return !!v && v !== 'off'; } catch { return false; } };
   async function apnsSend(force = false) {
-    if (!NATIVE || !apnsToken || !S.user) return false;
+    if (!NATIVE || PUSH_APP || !apnsToken || !S.user) return false;
     const was = (() => { try { return localStorage.getItem(apnsKey()); } catch { return null; } })();
     if (!force && (was === 'off' || apnsSent === `${S.user.id}:${apnsToken.token}`)) return true;
     try { await api('POST', '/api/push/apns', apnsToken); } catch { return false; }
@@ -5593,6 +5597,7 @@
     });
   }
   async function pushState() {
+    if (PUSH_APP) { const r = await appPush('push.state', 2500); return { ok: true, native: true, sub: r.on ? { native: true } : null, perm: r.perm }; }
     if (NATIVE) {
       nativePost({ type: 'push.status' });
       const r = await nativeWait('push.status', 2500);
@@ -5606,6 +5611,7 @@
   const b64uBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
   const deviceName = () => { const ua = navigator.userAgent; if (NATIVE) return 'iPhone · приложение Торгана'; return `${/Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iPhone' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Устройство'} · ${/YaBrowser/.test(ua) ? 'Яндекс Браузер' : /Edg\//.test(ua) ? 'Edge' : /Firefox/.test(ua) ? 'Firefox' : /Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : 'браузер'}`; };
   async function pushOn() {
+    if (PUSH_APP) { const r = await appPush('push.on', 70000); if (!r.ok) throw new Error(r.error || 'Не получилось включить уведомления — попробуйте ещё раз'); return; }
     if (NATIVE) {
       nativePost({ type: 'push.request' });
       const r = await nativeWait('push.status', 60000); // ждём ответа в системном окне
@@ -5624,6 +5630,7 @@
     await api('POST', '/api/push/subscribe', { subscription: sub.toJSON(), device: deviceName() });
   }
   async function pushOff() {
+    if (PUSH_APP) { await appPush('push.off', 8000); return; }
     if (NATIVE) { // разрешение iPhone не отзовёшь из приложения — перестаём слать на это устройство
       if (apnsToken) await api('POST', '/api/push/apns/off', { token: apnsToken.token }).catch(() => {});
       apnsMark('off');
@@ -5656,7 +5663,7 @@
   const ASK_KEY = 'tg_push_asked';
   let asking = false;
   async function pushAskOnce() {
-    if (!S.user || asking) return;
+    if (!S.user || asking || PUSH_APP) return; // родное приложение спрашивает само
     try { if (localStorage.getItem(ASK_KEY)) return; } catch { return; }
     if (['/confirm', '/login', '/register', '/reset', '/forgot'].includes(location.pathname)) return;
     asking = true;

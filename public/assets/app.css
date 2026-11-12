@@ -682,7 +682,7 @@ mark { background: var(--c-ffe6a3); color: var(--text); border-radius: 4px; padd
   .logo-text { font-size: 20px; }
 }
 
-/* ---------- приложение на экране «Домой»: «потянуть вниз — обновить» ---------- */
+/* ---------- страницы сайта в приложении iPhone: «потянуть вниз — обновить» ---------- */
 .ptr { position: fixed; left: 50%; top: env(safe-area-inset-top, 0px); z-index: 70; width: 40px; height: 40px; border-radius: 50%; background: var(--card); border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(16, 16, 16, .12); display: grid; place-items: center; transform: translate(-50%, -48px); opacity: 0; pointer-events: none; }
 .ptr.back { transition: transform .4s cubic-bezier(.2, .8, .2, 1), opacity .3s ease; }
 .ptr-ic { display: grid; place-items: center; color: var(--muted); transition: color .15s; }

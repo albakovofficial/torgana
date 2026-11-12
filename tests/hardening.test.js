@@ -34,12 +34,12 @@ test('www — постоянная переадресация на основн�
 });
 
 test('HSTS и Permissions-Policy; ETag и 304 у файлов', async () => {
-  const page = await raw('/assets/site.webmanifest');
+  const page = await raw('/assets/favicon.svg');
   assert.equal(page.status, 200);
   assert.equal(page.headers['strict-transport-security'], 'max-age=31536000');
   assert.match(page.headers['permissions-policy'], /camera=\(\)/);
   assert.ok(page.headers.etag);
-  const again = await raw('/assets/site.webmanifest', { 'if-none-match': page.headers.etag });
+  const again = await raw('/assets/favicon.svg', { 'if-none-match': page.headers.etag });
   assert.equal(again.status, 304);
 });
 
