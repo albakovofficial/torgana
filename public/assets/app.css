@@ -134,10 +134,10 @@ button { cursor: pointer; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-fill); flex: none; }
 
 /* ---------- шапка ---------- */
-.header { position: sticky; top: 0; z-index: 30; background: var(--glass); backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px); }
+.header { position: sticky; top: 0; z-index: 30; padding-top: env(safe-area-inset-top, 0px); background: var(--glass); backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px); }
 .header.scrolled { box-shadow: 0 1px 0 var(--line); }
 /* 1.41.2: место под шапку и страницу занято сразу — подвал и содержимое не прыгают, пока скрипт рисует страницу (CLS) */
-.header:empty { min-height: 76px; }
+.header:empty { min-height: calc(76px + env(safe-area-inset-top, 0px)); }
 #app { min-height: 100vh; }
 .header-in { display: flex; align-items: center; gap: 16px; height: 76px; }
 .logo { display: flex; align-items: center; gap: 10px; flex: none; color: var(--text); }
@@ -488,7 +488,7 @@ button { cursor: pointer; }
 }
 /* ---------- панель ≡: выезжает справа ---------- */
 .modal-back.drawer-back { justify-content: flex-end; align-items: stretch; padding: 0; }
-.modal.drawer { width: min(400px, 88vw); max-width: none; height: 100%; max-height: none; padding: 16px 12px calc(20px + env(safe-area-inset-bottom)); border-radius: 28px 0 0 28px; display: flex; flex-direction: column; gap: 12px; animation: drawer-in .22s ease-out; }
+.modal.drawer { width: min(400px, 88vw); max-width: none; height: 100%; max-height: none; padding: calc(16px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom)); border-radius: 28px 0 0 28px; display: flex; flex-direction: column; gap: 12px; animation: drawer-in .22s ease-out; }
 .drawer .pf-nav { padding: 0; border: 0; border-radius: 0; }
 .drawer .pf-nav hr { margin: 8px 14px; }
 .menu-top { display: flex; align-items: center; gap: 10px; padding: 4px 4px 4px 8px; }
@@ -539,7 +539,7 @@ button { cursor: pointer; }
 /* ---------- подвал ---------- */
 
 /* ---------- модальные окна и уведомления ---------- */
-.modal-back { position: fixed; inset: 0; z-index: 60; background: rgba(16,16,16,.4); display: flex; align-items: center; justify-content: center; padding: 20px; animation: fade .15s; }
+.modal-back { position: fixed; inset: 0; z-index: 60; background: rgba(16,16,16,.4); display: flex; align-items: center; justify-content: center; padding: max(20px, env(safe-area-inset-top, 0px)) 20px 20px; animation: fade .15s; }
 .modal { width: 100%; max-width: 480px; max-height: calc(100vh - 40px); overflow-y: auto; padding: 28px; border-radius: 32px; background: var(--card); box-shadow: var(--shadow-lg); animation: rise .2s; }
 .modal h2 { margin: 0 0 16px; font-size: 24px; font-weight: 700; letter-spacing: -0.03em; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; flex-wrap: wrap; }
@@ -647,7 +647,7 @@ mark { background: var(--c-ffe6a3); color: var(--text); border-radius: 4px; padd
   .gallery-main { border-radius: 24px; }
   .thumbs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .item-price { font-size: 36px; }
-  .inbox { height: calc(100vh - 170px); border-radius: 24px; margin-bottom: 100px; }
+  .inbox { height: calc(100vh - 170px - env(safe-area-inset-top, 0px)); border-radius: 24px; margin-bottom: 100px; }
   .inbox-list { flex: 1 1 auto; border-right: 0; }
   .inbox.has-chat .inbox-list { display: none; }
   .inbox:not(.has-chat) .chat { display: none; }
