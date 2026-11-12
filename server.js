@@ -323,7 +323,9 @@ const autoChecks = require('./lib/checks')({ db, marketEstimate });
 const goodPrice = require('./lib/goodprice')({ db }); // 1.48.0: «Хорошая цена»
 const GP_LOW = 0.85;
 const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, taxonomy, metro, video, attrsOf, setAvatar, str, now, norm, autoChecks, OWNER_EMAIL, redirect, file: fileResponse, PUBLIC_URL: PUBLIC_URL || `http://localhost:${PORT}` };
-const push = createPush({ db, subject: `mailto:${SUPPORT_EMAIL || 'support@torgana.ru'}`, allowHttp: process.env.PUSH_ALLOW_HTTP === '1' });
+// 1.56.0: push и в приложение для iPhone (Apple APNs) — вместе с web-push, одной отправкой.
+const apns = require('./lib/apns')({ db, route, h: helpers, testUrl: process.env.APNS_TEST_URL || '' });
+const push = createPush({ db, subject: `mailto:${SUPPORT_EMAIL || 'support@torgana.ru'}`, allowHttp: process.env.PUSH_ALLOW_HTTP === '1', apns });
 const alerts = require('./lib/alerts')({ route, db, mailer, push, h: helpers, categories: CATEGORIES });
 helpers.alerts = alerts; // push и подборки нужны модерации, поддержке и отзывам
 const { logEvent, audit } = require('./lib/moderation')({ route, db, mailer, h: helpers });
@@ -1098,6 +1100,7 @@ function unreadCount(userId) {
   return db.prepare(`SELECT COUNT(*) AS n FROM messages m JOIN conversations c ON c.id = m.conversation_id
     WHERE (c.buyer_id = ? OR c.seller_id = ?) AND m.sender_id != ? AND m.read_at IS NULL`).get(userId, userId, userId).n;
 }
+apns.setBadge((uid) => unreadCount(uid) + alerts.unreadNotices(uid)); // число на значке приложения
 
 route('GET', '/api/conversations', (ctx) => {
   const u = requireUser(ctx);
@@ -1426,6 +1429,14 @@ function serveStatic(req, res, pathname, search) {
   if (pathname === '/map-frame') { serveMapFrame(res); return; }
   if (pathname === '/sitemap.xml') { serveText(res, 'application/xml; charset=utf-8', seo.sitemap()); return; }
   if (pathname === '/robots.txt') { serveText(res, 'text/plain; charset=utf-8', seo.robots()); return; }
+  // 1.56.0: Universal Links — ссылки torgana.ru открываются в приложении. Team ID — из ключа Apple в модерации.
+  if (pathname === '/.well-known/apple-app-site-association' || pathname === '/apple-app-site-association') {
+    const team = apns.teamId();
+    if (!team) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('Приложение ещё не подключено'); return; }
+    const app = `${team}.${apns.topic()}`;
+    serveText(res, 'application/json', JSON.stringify({ applinks: { details: [{ appIDs: [app], components: [{ '/': '/api/*', exclude: true }, { '/': '/.well-known/*', exclude: true }, { '/': '/uploads/*', exclude: true }, { '/': '*' }] }] }, webcredentials: { apps: [app] } }));
+    return;
+  }
   // Все остальные пути — страницы приложения.
   serveIndex(res, pathname);
 }

@@ -1,6 +1,14 @@
 'use strict';
 /* Торгана — клиентское приложение (одностраничное, без зависимостей). */
 (() => {
+  // 1.56.0: приложение Торгана для iPhone (репозиторий torgana-ios) открывает сайт внутри себя и даёт мост
+  // window.TorganaApp. В приложении нет оплаты — ни продвижения, ни тарифов, ни раздела «Для бизнеса»
+  // (правило App Store 3.1.1: цифровое — только через покупки Apple, а они в России не работают);
+  // купленное на сайте работает и в приложении. Установка на экран и web-push — свои, нативные.
+  const NATIVE = !!window.TorganaApp || /TorganaApp\//.test(navigator.userAgent);
+  const PAY = !NATIVE;
+  const nativePost = (msg) => { try { window.TorganaApp.post(msg); return true; } catch { return false; } };
+
   // ================= утилиты =================
   class Raw { constructor(s) { this.s = s; } toString() { return this.s; } }
   const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -770,8 +778,11 @@
 
   // ================= уведомления (1.22) =================
   // Колокольчик: решения модерации, оплата, продвижение, снижение цен. Панель справа, по дням.
+  // 1.56.0: в приложении — число на значке: непрочитанные сообщения и уведомления.
+  const appBadge = () => { if (NATIVE) nativePost({ type: 'badge', count: (S.unread || 0) + (S.notices || 0) }); };
   function setNotices(n) {
     S.notices = n || 0;
+    appBadge();
     $$('[data-notices]').forEach((el) => { el.textContent = S.notices > 99 ? '99+' : S.notices; el.classList.toggle('hidden', !S.notices); });
   }
   // 1.47.2: у всех уведомлений один вид — картинка (фото объявления или знак Торганы) и цветной значок события в углу.
@@ -821,7 +832,7 @@
   // Подвал: знак и кнопка поддержки, разделы (на телефоне раскрываются), контакты, © с реквизитами оператора, документы. Последняя колонка FOOTER_COLS — документы (их же показывает меню ≡).
   const FOOTER_COLS = [
     ['Покупателям', [['/page/help', 'Как искать'], ['/page/safety', 'Безопасность'], ['/favorites', 'Избранное']]],
-    ['Продавцам', [['/new', 'Разместить объявление'], ['/business', 'Для бизнеса'], ['/page/rules', 'Правила площадки']]],
+    ['Продавцам', [['/new', 'Разместить объявление'], ...(PAY ? [['/business', 'Для бизнеса']] : []), ['/page/rules', 'Правила площадки']]],
     ['Помощь', [['/page/support', 'Поддержка'], ['/page/contacts', 'Реквизиты и контакты']]],
     ['Документы', [['/page/terms', 'Пользовательское соглашение'], ['/page/privacy', 'Конфиденциальность'], ['/page/consent', 'Согласие на обработку данных']]]
   ];
@@ -859,6 +870,7 @@
 
   function setUnread(n) {
     S.unread = n;
+    appBadge();
     $$('[data-unread]').forEach((el) => { el.textContent = n; el.classList.toggle('hidden', !n); });
   }
   // Новое у продавцов, на которых подписан, — значок у пункта «Подписки».
@@ -942,7 +954,7 @@
     openModal(String(html`<h2>Реклама</h2>
       <div class="adm-facts ad-facts"><div><span>Рекламодатель</span><b>${b.dataset.adv}</b></div>${b.dataset.inn ? html`<div><span>ИНН</span><b>${b.dataset.inn}</b></div>` : ''}</div>
       <p class="muted" style="margin:14px 0 0;font-size:14px">Продавец оплатил показ объявления в блоке «Реклама». Объявление подобрано по вашему запросу, фильтрам и городу — мы не собираем сведения о ваших предпочтениях. Обычная выдача от рекламы не меняется.</p>
-      <div class="modal-actions"><a class="btn btn-soft" href="/business">Как это работает</a><button class="btn btn-dark" data-x>Понятно</button></div>`), (m, close) => { $('[data-x]', m).onclick = close; m.addEventListener('click', (ev) => { if (ev.target.closest('a[href]')) close(); }); });
+      <div class="modal-actions">${PAY ? html`<a class="btn btn-soft" href="/business">Как это работает</a>` : ''}<button class="btn btn-dark" data-x>Понятно</button></div>`), (m, close) => { $('[data-x]', m).onclick = close; m.addEventListener('click', (ev) => { if (ev.target.closest('a[href]')) close(); }); });
   });
   // Переход из блока «Реклама» — запоминаем, чтобы статистика записала источник «Реклама».
   document.addEventListener('click', (e) => { const a = e.target.closest('a[data-adid]'); if (a) S.adClick = a.getAttribute('href'); }, true);
@@ -1097,6 +1109,7 @@
     window.scrollTo(0, 0);
     // Профиль временно удалён — после входа открыт только экран восстановления (и правила).
     if (S.user && S.user.deactivatedAt && !path.startsWith('/page/')) { viewDeactivated(); return; }
+    if (!PAY && /^\/(business|pay|profile\/business)(\/|$)/.test(path)) { history.replaceState(null, '', '/profile'); render(); return; } // в приложении оплаты нет
     if (!r) { viewNotFound(); return; }
     const m = path.match(r[0]);
     try {
@@ -1822,11 +1835,7 @@
       };
     }
     if ($('[data-vin-copy]')) vinCopy($('[data-vin-copy]'));
-    $('[data-share]').onclick = async () => {
-      const url = location.href;
-      if (navigator.share) { try { await navigator.share({ title: l.title, url }); return; } catch { /* отмена */ } }
-      try { await navigator.clipboard.writeText(url); toast('Ссылка скопирована'); } catch { toast(url); }
-    };
+    $('[data-share]').onclick = () => shareLink(location.href, l.title); // одна функция «Поделиться» на сайт (в приложении — окно iPhone)
 
     const of = $('[data-offer]');
     if (of) {
@@ -1969,7 +1978,7 @@
   // Один выбор для формы объявления и окна «Продвинуть»: XL-карточка, рамка, метки (до двух) и пакет «Всё в одном».
   // Цена считается так же, как на сервере (lib/boost.js): все три — по цене пакета, если он дешевле суммы.
   const BOOST = [['xl', 'xl', 'XL-карточка', 'Две ячейки, три фото и описание'], ['frame', 'frame', 'Яркая рамка', 'Синяя обводка карточки'], ['tags', 'tag', 'Метки на фото', 'Одна или две прямо на фото']];
-  const boostOn = () => !!(S.config.billing && S.config.billing.ready);
+  const boostOn = () => PAY && !!(S.config.billing && S.config.billing.ready);
   const boostPrices = () => (S.config.billing && S.config.billing.prices && S.config.billing.prices.boost) || { xl: 99, frame: 39, tags: 29, all: 129 };
   function boostQuote(b) {
     const pr = boostPrices();
@@ -2967,7 +2976,11 @@
   // Вход через Яндекс ID и VK ID — кнопки для страниц входа и регистрации (если модератор подключил сервис).
   const OAUTH = [['yandex', 'Яндекс ID', 'Войти с Яндекс ID'], ['vk', 'VK ID', 'Войти через VK ID']];
   const oauthOn = () => OAUTH.filter(([k]) => S.config.oauth && S.config.oauth[k]);
-  const oauthButtons = () => (oauthOn().length ? html`<div class="oauth">
+  // 1.56.0: в приложении для iPhone — первой кнопкой «Войти с Apple» (правило App Store 4.8). Значок Apple — символ
+  // системного шрифта iPhone (U+F8FF), кнопка чёрная, как требует Apple.
+  const appleButton = (label = 'Войти с Apple') => (NATIVE ? html`<button type="button" class="btn btn-lg btn-block oauth-btn oauth-apple" data-apple><span class="apple-glyph" aria-hidden="true">\uF8FF</span>${label}</button>` : '');
+  const oauthButtons = () => (oauthOn().length || NATIVE ? html`<div class="oauth">
+      ${appleButton()}
       ${oauthOn().map(([k, , label]) => html`<button type="button" class="btn btn-line btn-lg btn-block oauth-btn oauth-${k}" data-oauth="${k}"><span class="oauth-mark" aria-hidden="true">${k === 'vk' ? 'VK' : 'Я'}</span>${label}</button>`)}
       <p class="oauth-note">Продолжая, вы принимаете <a href="/page/terms" target="_blank">соглашение</a> и даёте <a href="/page/consent" target="_blank">согласие на обработку данных</a>. Телефон из сервиса отметим как подтверждённый.</p>
       <div class="or"><span>или по email</span></div></div>` : '');
@@ -2975,7 +2988,27 @@
   async function oauthGo(provider, { next = '/', link = false } = {}) {
     try { const { url } = await api('POST', `/api/auth/oauth/${provider}/start`, { next, link, consent: !link, src: srcOf() }); location.href = url; } catch (e) { toast(e.message, true); }
   }
-  function bindOauth(root, next) { $$('[data-oauth]', root).forEach((b) => { b.onclick = () => oauthGo(b.dataset.oauth, { next: next || '/profile' }); }); }
+  function bindOauth(root, next) {
+    $$('[data-oauth]', root).forEach((b) => { b.onclick = () => oauthGo(b.dataset.oauth, { next: next || '/profile' }); });
+    $$('[data-apple]', root).forEach((b) => { b.onclick = () => appleGo({ next: next || '/profile' }); });
+  }
+  // «Войти с Apple»: одноразовый nonce с сервера → системное окно Apple в приложении → токен на сервер.
+  async function appleGo({ next = '/profile', link = false } = {}) {
+    try {
+      const { nonce } = await api('POST', '/api/auth/apple/nonce', { next, link, src: srcOf() });
+      const wait = new Promise((res) => {
+        const on = (e) => { const m = e.detail || {}; if (m.type === 'auth.apple' || m.type === 'auth.apple.error') { window.removeEventListener('torgana-native', on); res(m); } };
+        window.addEventListener('torgana-native', on);
+        setTimeout(() => { window.removeEventListener('torgana-native', on); res({ type: 'auth.apple.error', code: 'timeout' }); }, 180000);
+      });
+      if (!nativePost({ type: 'auth.apple', nonce })) throw new Error('Войти с Apple можно в приложении Торгана для iPhone');
+      const m = await wait;
+      if (m.type === 'auth.apple.error') { if (m.code !== 'canceled') toast('Apple не подтвердил вход — попробуйте ещё раз', true); return; }
+      const r = await api('POST', '/api/auth/apple', { identityToken: m.identityToken, nonce, name: m.name || '', consent: !link });
+      if (link) { toast('Apple ID привязан'); await refreshMe(); render(); return; }
+      location.href = r.next || next; // полная загрузка — подтянуть вошедшего человека везде
+    } catch (e) { toast(e.message, true); }
+  }
 
   // 1.51.1: пустые и неверные поля ловим до запроса — подсвечиваем и говорим, что исправить.
   function fieldProblem(f) {
@@ -4001,7 +4034,7 @@
   // Разделы аккаунта и «Выйти» — одно меню для левой колонки профиля (на компьютере) и для панели ≡ (full).
   // В панели вместо пункта «Настройки» — все группы настроек, публичный профиль и помощь.
   const FOOTER_LABEL = Object.fromEntries(FOOTER_COLS.flatMap((c) => c[1]));
-  const HELP_LINKS = [['/page/help', 'search'], ['/page/safety', 'shield'], ['/page/rules', 'flag'], ['/business', 'store']];
+  const HELP_LINKS = [['/page/help', 'search'], ['/page/safety', 'shield'], ['/page/rules', 'flag'], ...(PAY ? [['/business', 'store']] : [])];
   function navKey() {
     const p = location.pathname;
     if (p === '/profile' || p.startsWith('/profile/listings') || p.startsWith('/profile/stats')) return 'listings';
@@ -4032,7 +4065,7 @@
       ${item('/favorites', 'heart', 'Избранное', 'fav')}
       ${item('/profile/following', 'users', 'Подписки', 'following', html`<span class="badge ${S.fresh && S.fresh.follow ? '' : 'hidden'}" data-fresh-follow>${S.fresh ? S.fresh.follow || 0 : 0}</span>`)}
       ${item('/profile/reputation', 'star', 'Репутация', 'rep', u.rep && u.rep.level ? html`<span class="nav-rating">${levelMedal(u.rep.level, 14)}</span>` : '')}
-      ${item('/profile/business', 'store', 'Для бизнеса', 'business')}
+      ${PAY ? item('/profile/business', 'store', 'Для бизнеса', 'business') : ''}
       ${full ? '' : html`<hr>${item('/profile/settings', 'gear', 'Настройки', 'settings')}`}
       ${item('/messages/support', 'headset', 'Поддержка', 'support')}
       ${u.isAdmin ? item('/admin', 'shield', 'Модерация', 'admin') : ''}
@@ -4068,6 +4101,7 @@
   }
 
   async function logout() {
+    if (NATIVE && apnsToken) { await api('POST', '/api/push/apns/off', { token: apnsToken.token }).catch(() => {}); try { localStorage.removeItem(apnsKey()); } catch { /* нет хранилища */ } }
     await api('POST', '/api/auth/logout').catch(() => {});
     S.user = null; setUnread(0);
     toast('Вы вышли из аккаунта');
@@ -4097,6 +4131,7 @@
   }
 
   async function shareLink(url, title) {
+    if (NATIVE && nativePost({ type: 'share', url, text: title })) return; // системное «Поделиться» iPhone
     if (navigator.share) { try { await navigator.share({ title, url }); return; } catch { /* отмена */ } }
     try { await navigator.clipboard.writeText(url); toast('Ссылка скопирована'); } catch { toast(url); }
   }
@@ -4229,7 +4264,7 @@
         if (i.status === 'sold' || i.status === 'archived') acts.push({ icon: 'refresh', label: 'Опубликовать снова', run: () => setStatus(i, 'active', 'Снова опубликовано') });
         if (i.status === 'scheduled') acts.push({ icon: 'refresh', label: 'Опубликовать сейчас', run: () => setStatus(i, 'active', 'Опубликовано') }, { icon: 'pause', label: 'Не публиковать', run: () => setStatus(i, 'archived', 'Публикация отменена') });
         if (i.status === 'rejected' && !i.appealAt && !i.appealReply) acts.push({ icon: 'chat', label: 'Подать апелляцию', run: () => appealModal(i.id, reload) });
-        if (['active', 'pending', 'scheduled'].includes(i.status) && (boostOn() || i.promo || (i.boost || []).length)) acts.splice(1, 0, { icon: 'trend', label: 'Продвинуть', run: () => boostModal(i.id, i.title, i.promo) });
+        if (PAY && ['active', 'pending', 'scheduled'].includes(i.status) && (boostOn() || i.promo || (i.boost || []).length)) acts.splice(1, 0, { icon: 'trend', label: 'Продвинуть', run: () => boostModal(i.id, i.title, i.promo) });
         if (i.status === 'active') acts.push({ icon: 'share', label: 'Поделиться', run: () => shareLink(`${location.origin}${lpath(i)}`, i.title) });
         // 1.49.0: «Магазин Про» — до 3 объявлений в начале витрины.
         if (i.status === 'active' && canPin()) {
@@ -4360,11 +4395,13 @@
     el.innerHTML = String(!st.ok
       ? card('bell', 'На этом устройстве push недоступны', st.ios ? 'На iPhone: «Поделиться» → «На экран «Домой»», откройте Торгану с экрана и включите уведомления здесь.' : 'Браузер не поддерживает уведомления. Письма на почту продолжат приходить.')
       : st.sub ? card('check', 'Включены на этом устройстве', deviceName(), html`<button type="button" class="btn btn-soft btn-sm" data-test>Проверить</button><button type="button" class="btn btn-line btn-sm" data-off>Выключить</button>`)
+        : st.perm === 'denied' && st.native ? card('bell', 'Уведомления запрещены', 'Разрешите их в Настройках iPhone → Торгана → Уведомления.', html`<button type="button" class="btn btn-accent" data-ios-set>Открыть настройки</button>`)
         : st.perm === 'denied' ? card('bell', 'Уведомления запрещены в браузере', 'Вы отклонили запрос. Разрешите уведомления в настройках сайта (значок замка рядом с адресом), обновите страницу и нажмите «Включить уведомления».', html`<button type="button" class="btn btn-accent" data-reload>Я разрешил — обновить</button>`)
           : card('bell', 'Уведомления выключены', 'Сообщим о новых сообщениях, решениях модерации, снижении цен и новом у продавцов из подписок.', html`<button type="button" class="btn btn-accent" data-on>${ic('bell', 18, 2)}Включить уведомления</button>`));
     const act = async (fn, okText) => { try { await fn(); if (okText) toast(okText); renderPushDevice(el); } catch (e) { toast(e.message, true); } };
     const on = $('[data-on]', el); if (on) on.onclick = () => act(pushOn, 'Уведомления включены');
     const rl = $('[data-reload]', el); if (rl) rl.onclick = () => location.reload();
+    const iset = $('[data-ios-set]', el); if (iset) iset.onclick = () => nativePost({ type: 'open.settings' });
     const off = $('[data-off]', el); if (off) off.onclick = () => act(pushOff, 'Уведомления на этом устройстве выключены');
     const tst = $('[data-test]', el); if (tst) tst.onclick = () => act(async () => { const r = await api('POST', '/api/push/test'); if (!r.ok) throw new Error('Не получилось отправить — выключите и включите уведомления'); }, 'Отправили проверочное уведомление');
   }
@@ -4376,8 +4413,8 @@
   const TM_REGISTRY = 'https://fips.ru/registers-web/';
   const dateIn = (ts) => (ts ? new Date(ts).toISOString().slice(0, 10) : '');
   function bizBlock(b, on, hasPlan, tm) {
-    const acc = html`<label class="switch biz-switch"><span>Бизнес-аккаунт<small>${on ? 'Включён — тарифы для магазина доступны' : 'Бесплатно. Открывает тарифы: витрину и статистику магазина'}</small></span><input type="checkbox" data-biz-acc ${on ? raw('checked') : ''} ${on && hasPlan ? raw('disabled') : ''}><span class="track"></span></label>
-      ${on ? html`<div class="set-btns"><a class="btn btn-soft btn-sm" href="/business">${ic('store', 16, 2)}Тарифы</a><a class="btn btn-soft btn-sm" href="/profile/business">Мой магазин</a></div>` : ''}`;
+    const acc = html`<label class="switch biz-switch"><span>Бизнес-аккаунт<small>${!PAY ? (on ? 'Включён' : 'Бесплатно') : on ? 'Включён — тарифы для магазина доступны' : 'Бесплатно. Открывает тарифы: витрину и статистику магазина'}</small></span><input type="checkbox" data-biz-acc ${on ? raw('checked') : ''} ${on && hasPlan ? raw('disabled') : ''}><span class="track"></span></label>
+      ${on && PAY ? html`<div class="set-btns"><a class="btn btn-soft btn-sm" href="/business">${ic('store', 16, 2)}Тарифы</a><a class="btn btn-soft btn-sm" href="/profile/business">Мой магазин</a></div>` : ''}`;
     const bizDone = b && b.status === 'verified';
     const bizSent = b && ['pending', 'verified'].includes(b.status);
     const tmDone = tm && tm.live;
@@ -4635,6 +4672,8 @@
         </table>
         ${S.config.mail ? html`<p class="set-small">Письма приходят на ${u.email}</p>` : ''}`,
       sp: () => html`${head('Пароль и вход', oauth.length ? `Входите по паролю или в одно касание через ${names}` : 'Пароль для входа на Торгану')}
+        ${NATIVE || u.oauth.includes('apple') ? html`<div class="set-block"><h3>Apple ID</h3><div class="set-list"><div class="set-row oauth-apple"><span class="oauth-mark" aria-hidden="true"><span class="apple-glyph">\uF8FF</span></span><div><span class="set-v">Войти с Apple</span><span class="set-k">${u.oauth.includes('apple') ? 'Привязан' : 'Не привязан'}</span></div>
+          ${u.oauth.includes('apple') ? html`<button type="button" class="btn btn-line btn-sm" data-unlink="apple">Отвязать</button>` : NATIVE ? html`<button type="button" class="btn btn-soft btn-sm" data-link-apple>Привязать</button>` : ''}</div></div></div>` : ''}
         ${oauth.length ? html`<div class="set-block"><h3>Быстрый вход</h3><div class="set-list">${oauth.map(([k, name]) => {
     const on = u.oauth.includes(k);
     return html`<div class="set-row oauth-${k}"><span class="oauth-mark" aria-hidden="true">${k === 'vk' ? 'VK' : 'Я'}</span><div><span class="set-v">${name}</span><span class="set-k">${on ? `Привязан${u.phoneVia === k ? ' · телефон подтверждён' : ''}` : 'Не привязан'}</span></div>
@@ -4712,6 +4751,7 @@
     }
     if (sec === 'sp') {
       $$('[data-link]').forEach((b) => { b.onclick = () => oauthGo(b.dataset.link, { link: true }); });
+      $$('[data-link-apple]').forEach((b) => { b.onclick = () => appleGo({ link: true }); });
       $$('[data-unlink]').forEach((b) => {
         b.onclick = async () => { try { await api('POST', `/api/auth/oauth/${b.dataset.unlink}/unlink`); toast('Отвязано'); await refreshMe(); reload(); } catch (e) { toast(e.message, true); } };
       });
@@ -5513,7 +5553,7 @@
   // Полоса «Установить приложение» над шапкой (закрывается крестиком) и страница /app с инструкцией
   // для iPhone, Android и компьютера. На Android и компьютере (Chrome, Edge, Яндекс) — системное окно установки,
   // на iPhone — шторка «Поделиться» → «На экран «Домой»». В подвале — ссылка «Приложение» на /app. В установленной Торгане полосы и ссылки нет.
-  const STANDALONE = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  const STANDALONE = NATIVE || (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const ANDROID = /Android/i.test(navigator.userAgent);
   const APP_BAR_KEY = 'app_bar_off';
@@ -5640,14 +5680,50 @@
     }
     return swReg;
   }
+  // 1.56.0: в приложении push — через Apple (APNs): разрешение спрашивает iPhone, адрес устройства (token) приходит
+  // событием push.token после каждой загрузки страницы — сохраняем на сервере для вошедшего человека.
+  const nativeWait = (type, ms = 4000) => new Promise((res) => {
+    const on = (e) => { if (e.detail && e.detail.type === type) { window.removeEventListener('torgana-native', on); res(e.detail); } };
+    window.addEventListener('torgana-native', on);
+    setTimeout(() => { window.removeEventListener('torgana-native', on); res(null); }, ms);
+  });
+  let apnsToken = null;
+  const apnsKey = () => `tg_apns_${S.user ? S.user.id : 0}`;
+  async function apnsSend(force = false) {
+    if (!NATIVE || !apnsToken || !S.user) return;
+    try { if (!force && localStorage.getItem(apnsKey()) === apnsToken.token) return; } catch { /* нет хранилища */ }
+    await api('POST', '/api/push/apns', apnsToken).catch(() => {});
+    try { localStorage.setItem(apnsKey(), apnsToken.token); } catch { /* нет хранилища */ }
+  }
+  if (NATIVE) {
+    window.addEventListener('torgana-native', (e) => {
+      const m = e.detail || {};
+      if (m.type === 'push.token' && m.token) { apnsToken = { token: m.token, env: m.env === 'development' ? 'development' : 'production' }; apnsSend(); }
+    });
+  }
   async function pushState() {
+    if (NATIVE) {
+      nativePost({ type: 'push.status' });
+      const r = await nativeWait('push.status', 2500);
+      const perm = r ? r.status : 'default';
+      let on = false; try { on = !!localStorage.getItem(apnsKey()); } catch { /* нет хранилища */ }
+      return { ok: true, native: true, sub: perm === 'granted' && on ? { native: true } : null, perm };
+    }
     const reg = await swReady();
     if (!reg) return { ok: false, ios: IOS_TAB };
     return { ok: true, sub: await reg.pushManager.getSubscription(), perm: Notification.permission };
   }
   const b64uBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
-  const deviceName = () => { const ua = navigator.userAgent; return `${/Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iPhone' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Устройство'} · ${/YaBrowser/.test(ua) ? 'Яндекс Браузер' : /Edg\//.test(ua) ? 'Edge' : /Firefox/.test(ua) ? 'Firefox' : /Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : 'браузер'}`; };
+  const deviceName = () => { const ua = navigator.userAgent; if (NATIVE) return 'iPhone · приложение Торгана'; return `${/Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iPhone' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Устройство'} · ${/YaBrowser/.test(ua) ? 'Яндекс Браузер' : /Edg\//.test(ua) ? 'Edge' : /Firefox/.test(ua) ? 'Firefox' : /Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : 'браузер'}`; };
   async function pushOn() {
+    if (NATIVE) {
+      nativePost({ type: 'push.request' });
+      const r = await nativeWait('push.status', 60000); // ждём ответа в системном окне
+      if (!r || r.status !== 'granted') throw new Error('Уведомления запрещены — включите их в Настройках iPhone → Торгана → Уведомления');
+      const t = apnsToken ? apnsToken : await nativeWait('push.token', 8000);
+      if (t && t.token) { apnsToken = { token: t.token, env: t.env === 'development' ? 'development' : 'production' }; await apnsSend(true); }
+      return;
+    }
     if (!PUSH_OK) throw new Error(IOS_TAB ? 'Добавьте Торгану на экран «Домой» — на iPhone уведомления работают оттуда' : 'Этот браузер не поддерживает уведомления');
     if (await Notification.requestPermission() !== 'granted') throw new Error('Уведомления запрещены — разрешите их в настройках сайта в браузере');
     const reg = await swReady();
@@ -5656,6 +5732,11 @@
     await api('POST', '/api/push/subscribe', { subscription: sub.toJSON(), device: deviceName() });
   }
   async function pushOff() {
+    if (NATIVE) { // разрешение iPhone не отзовёшь из приложения — перестаём слать на это устройство
+      if (apnsToken) await api('POST', '/api/push/apns/off', { token: apnsToken.token }).catch(() => {});
+      try { localStorage.removeItem(apnsKey()); } catch { /* нет хранилища */ }
+      return;
+    }
     const { sub } = await pushState();
     if (!sub) return;
     await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
@@ -5673,7 +5754,7 @@
     return changed;
   }
   async function refreshMe() {
-    try { if (applyMe(await api('GET', '/api/me'))) { renderHeader(); renderBottomNav(); pushAskOnce(); } } catch { /* офлайн */ }
+    try { if (applyMe(await api('GET', '/api/me'))) { renderHeader(); renderBottomNav(); pushAskOnce(); apnsSend(); } } catch { /* офлайн */ }
   }
 
   // Разовый вопрос про уведомления (1.23): при первом заходе вошедшего человека — один раз на устройство и навсегда,

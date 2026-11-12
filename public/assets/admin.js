@@ -59,7 +59,7 @@ window.TorganaAdmin = function (T) {
   // Подразделы → пункт меню, который подсвечивается.
   const ADMIN_PARENT = { rejected: 'active', sold: 'active', archived: 'active', billing: 'payments', notify: 'settings', mail: 'settings', oauth: 'settings', ai: 'settings', seo: 'settings', backup: 'settings', site: 'settings' };
   const LISTING_STATUS_TABS = [['active', 'Опубликованные'], ['rejected', 'Отклонённые'], ['sold', 'Проданные'], ['archived', 'Снятые']];
-  const ADMIN_SETTINGS = [['notify', 'bell', 'Мои уведомления', 'Push и письма о новом'], ['mail', 'mail', 'Почта', 'Отправка писем, коды, очередь'], ['oauth', 'lock', 'Вход через сервисы', 'Яндекс ID и VK ID'],
+  const ADMIN_SETTINGS = [['notify', 'bell', 'Мои уведомления', 'Push и письма о новом'], ['mail', 'mail', 'Почта', 'Отправка писем, коды, очередь'], ['oauth', 'lock', 'Вход через сервисы', 'Яндекс ID и VK ID'], ['apns', 'phone', 'Приложение iPhone', 'Push через Apple, ссылки в приложение'],
     ['ai', 'sparkle', 'ИИ по фото', 'Заполнение объявления по фото'], ['seo', 'search', 'Поиск и статистика', 'Вебмастер, Метрика, карта сайта'], ['backup', 'shield', 'Копии и безопасность', 'Резервные копии базы, защита входа'], ['site', 'refresh', 'Версия сайта', 'Обновления и откат']];
   const adminLabel = (k) => { const x = ADMIN_NAV.flatMap((g) => g[1]).find(([key]) => key === k) || ADMIN_SETTINGS.find(([key]) => key === k); return x ? x[2] : ({ rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые', billing: 'Настройки оплаты' }[k] || 'Модерация'); };
   const LISTING_TABS = ['pending', 'reports', 'appeals', 'active', 'rejected', 'sold', 'archived'];
@@ -140,6 +140,7 @@ window.TorganaAdmin = function (T) {
       biz: () => renderUsersAdmin(box, new URLSearchParams({ f: 'biz' }), 'Проверка бизнеса'),
       oauth: () => renderOauthAdmin(box),
       ai: () => renderAiAdmin(box),
+      apns: () => renderApnsAdmin(box),
       sources: () => renderSourcesAdmin(box, q),
       seo: () => renderSeoAdmin(box),
       backup: () => renderBackupAdmin(box),
@@ -709,6 +710,41 @@ window.TorganaAdmin = function (T) {
   }
 
   // ---------- ИИ по фото: Яндекс AI Studio ----------
+  // 1.56.0: приложение для iPhone — ключ Apple для push (APNs). Он же даёт Team ID для ссылок torgana.ru → приложение.
+  async function renderApnsAdmin(box) {
+    const a = await api('GET', '/api/admin/apns');
+    box.innerHTML = String(html`<div class="adm-head"><h1>Приложение iPhone</h1><span class="pf-badge ${a.ready ? 'ok' : ''}">${a.ready ? 'push подключены' : 'не подключено'}</span></div>
+      <p class="muted" style="margin:0;max-width:720px">Push в приложение Торгана приходят через Apple. Нужен ключ APNs из Apple Developer — один на все приложения команды.
+        С ним же ссылки torgana.ru открываются сразу в приложении. Устройств с приложением: <b>${NF.format(a.devices)}</b>.</p>
+      <form id="apns-f" class="oa-grid"><section class="panel oa-card">
+        <div class="oa-head"><h2 class="h2">Ключ Apple Push</h2><span class="pf-badge ${a.ready ? 'ok' : ''}">${a.ready ? 'сохранён' : 'нет ключа'}</span></div>
+        <ol class="ai-steps">
+          <li><a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noopener">Certificates, Identifiers &amp; Profiles → Keys</a> → «+».</li>
+          <li>Имя «Torgana Push», галочка <b>Apple Push Notifications service (APNs)</b> → Continue → Register.</li>
+          <li>Скачайте файл <code>AuthKey_….p8</code> (его дают один раз), откройте в Блокноте и вставьте ниже целиком. Key ID — рядом с ключом.</li>
+          <li>Team ID — <a href="https://developer.apple.com/account#MembershipDetailsCard" target="_blank" rel="noopener">Membership details</a>.</li>
+        </ol>
+        <div class="row stack-m"><div class="field" style="flex:1"><label for="ap-team">Team ID</label><input id="ap-team" name="teamId" class="input" value="${a.teamId}" autocomplete="off" maxlength="10" placeholder="10 символов"></div>
+          <div class="field" style="flex:1"><label for="ap-kid">Key ID</label><input id="ap-kid" name="keyId" class="input" value="${a.keyId}" autocomplete="off" maxlength="10" placeholder="10 символов"></div></div>
+        <div class="field"><label for="ap-key">Ключ .p8</label><textarea id="ap-key" name="key" class="input" rows="5" autocomplete="off" spellcheck="false" style="height:auto;font-family:ui-monospace,monospace;font-size:13px" placeholder="${a.hasKey ? 'сохранён — оставьте пустым, чтобы не менять' : '-----BEGIN PRIVATE KEY-----'}"></textarea></div>
+        <details class="ai-more"><summary>Bundle ID</summary><div class="field"><label for="ap-topic">Bundle ID приложения</label><input id="ap-topic" name="topic" class="input" value="${a.topic}" autocomplete="off"></div></details>
+        <div class="ai-act"><button class="btn btn-dark" type="submit">Сохранить</button><button class="btn btn-soft" type="button" id="ap-test" ${a.ready ? '' : raw('disabled')}>Проверить на моём iPhone</button>${a.ready ? html`<button class="btn btn-line" type="button" id="ap-off">Удалить ключ</button>` : ''}</div>
+        <p class="muted" style="margin:0;font-size:13px">Проверка придёт на iPhone, где открыто приложение Торгана под вашим аккаунтом и разрешены уведомления${a.mine ? ` (у вас: ${a.mine})` : ''}.</p>
+      </section></form>`);
+    $('#apns-f').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      try { await api('PUT', '/api/admin/apns', { teamId: f.teamId.value, keyId: f.keyId.value, key: f.key.value, topic: f.topic.value }); toast('Ключ сохранён'); renderApnsAdmin(box); } catch (ex) { toast(ex.message, true); }
+    };
+    $('#ap-test').onclick = async (e) => {
+      const b = e.currentTarget; b.disabled = true;
+      try { await api('POST', '/api/admin/apns/test'); toast('Отправили — посмотрите на iPhone'); } catch (ex) { toast(ex.message, true); }
+      b.disabled = false;
+    };
+    const off = $('#ap-off');
+    if (off) off.onclick = async () => { if (!(await confirmModal('Удалить ключ Apple?', 'Push в приложение перестанут приходить, ссылки torgana.ru перестанут открываться в приложении.', 'Удалить', true))) return; try { await api('PUT', '/api/admin/apns', { clear: true }); toast('Ключ удалён'); renderApnsAdmin(box); } catch (ex) { toast(ex.message, true); } };
+  }
+
   async function renderAiAdmin(box) {
     const a = await api('GET', '/api/admin/ai');
     const state = a.off ? ['', 'выключено'] : a.provider === 'yandex' ? ['ok', 'подключено'] : a.provider ? ['ok', 'работает через Claude'] : ['', 'не подключено'];
