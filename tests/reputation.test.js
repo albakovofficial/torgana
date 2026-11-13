@@ -85,18 +85,22 @@ test('защита: та же пара за 30 дней не засчитыва�
   assert.equal((await rep(b)).deals, 0);
 });
 
-test('уровень «Надёжный» — задания: телефон, фото, 3 сделки, ответ; фильтр «Надёжные продавцы»; подтверждённая жалоба — уровень ниже', async () => {
+test('уровень «Надёжный» — задания: телефон, фото, 5 сделок, 3 комплимента, ответ; фильтр «Надёжные продавцы»; подтверждённая жалоба — уровень ниже', async () => {
+  let last;
   for (const b of buyers.slice(1, 5)) {
     const x = await chat(b, `Товар для ${b.user.name}`);
     await say(b, x.cid, 3); await say(seller, x.cid, 3);
     await deal(b, x.cid); await deal(seller, x.cid);
+    last = { b, cid: x.cid };
   }
-  // 1.59.0: сделок хватает, но телефон и фото не добавлены — уровня ещё нет, задания видны на своей странице.
+  // 1.59.0: сделок хватает, но телефона, фото и третьего комплимента нет — уровня ещё нет, задания видны на своей странице.
   assert.equal((await rep(seller)).level, 0);
   const my = (await seller.get('/api/my/reputation')).data;
   assert.equal(my.next.name, 'Надёжный');
-  assert.deepEqual(my.next.tasks.map((t) => [t.key, t.done]), [['phone', false], ['photo', false], ['deals', true], ['reply', true]]);
-  assert.equal(my.next.tasks[2].have, 3); assert.equal(my.next.tasks[2].need, 3);
+  assert.deepEqual(my.next.tasks.map((t) => [t.key, t.done]), [['phone', false], ['photo', false], ['deals', true], ['praise', false], ['reply', true]]);
+  assert.equal(my.next.tasks[2].have, 5); assert.equal(my.next.tasks[2].need, 5);
+  assert.equal(my.next.tasks[3].have, 2); assert.equal(my.next.tasks[3].need, 3);
+  assert.equal((await last.b.post(`/api/conversations/${last.cid}/praise`, { tags: ['Быстро отвечает'] })).status, 200);
   const { DatabaseSync } = require('node:sqlite');
   const xdb = new DatabaseSync(require('node:path').join(srv.tmp, 'data', 'torgana.db'));
   xdb.prepare('UPDATE users SET phone_verified = 1, avatar = ? WHERE id = ?').run('ava.jpg', seller.user.id);
