@@ -3201,7 +3201,7 @@
     // 1.57.0: видео и файл (присылают из приложения для iPhone), «изменено» у поправленного сообщения.
     const kb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1).replace('.', ',')} МБ` : `${Math.max(1, Math.round(n / 1024))} КБ`);
     const attachHtml = (m) => html`${m.video ? html`<video class="msg-video" src="${m.video}" controls playsinline preload="metadata"></video>` : ''}${m.file ? html`<a class="msg-file" href="${m.file.url}" target="_blank" rel="noopener" download="${m.file.name}">${ic('download', 20, 2)}<span><b>${m.file.name}</b><small>${kb(m.file.size)}</small></span></a>` : ''}`;
-    const edMark = (m) => (m.editedAt ? html`<span class="ed" data-ed>изменено · </span>` : html`<span class="ed hidden" data-ed>изменено · </span>`);
+    const edMark = (m) => html`<span class="msg-ed ${m.editedAt ? '' : 'hidden'}" data-ed>изменено · </span>`; // не .ed — это форма объявления
     const quote = (q) => html`<button type="button" class="msg-q" data-goto="${q.id}"><b>${q.mine ? 'Вы' : reply.other}</b><span>${q.photo ? ic('camera', 13, 2) : ''}${qText(q)}</span></button>`;
     const rpBtn = () => (reply ? html`<button type="button" class="msg-rp" data-rp aria-label="Ответить">${ic('reply', 16, 2.2)}</button>` : '');
     const append = (list) => {
