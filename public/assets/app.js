@@ -3711,17 +3711,21 @@
   }
 
   // ================= репутация (1.46.0): сделки, а не оценки =================
-  // Уровень — объёмный шестигранник своего цвета: серый, зелёный, синий, золотой.
+  // Уровень — кружок с градиентом и белым знаком, как в приложении (LevelPill): Новичок — листок, Надёжный — щит
+  // с галочкой, Опытный — звезда, Мастер Торганы — корона.
   let medalN = 0;
-  const MEDAL = [['#D9DCD8', '#8E948F'], ['#7DDBB4', '#1F7A5A'], ['#7FB2FF', '#3646D8'], ['#FFD978', '#B8650A']];
-  const MEDAL_MARK = ['<circle cx="12" cy="12.5" r="2.6" fill="#fff"/>', '<path d="M8.5 12.5l2.5 2.5 4.5-5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>',
-    '<path d="M12 7.5l1.4 2.9 3.1.4-2.3 2.2.6 3.1-2.8-1.5-2.8 1.5.6-3.1-2.3-2.2 3.1-.4z" fill="#fff"/>', '<path d="M7 14.5l1.2-5 2.4 2.6L12 8l1.4 4.1 2.4-2.6 1.2 5z" fill="#fff"/>'];
+  const MEDAL = [['#8FB3E8', '#6E8FC9'], ['#4C86E0', '#3D67D0'], ['#7B7FF0', '#5B3DF5'], ['#F6C453', '#E08A1E']];
+  const MEDAL_MARK = [
+    '<path d="M16.8 7.2c-5.6-.2-9.4 2.3-9.6 6.6 0 .9.2 1.7.6 2.4 1.1-2.6 3.2-4.3 5.9-5.4-2.4 1.5-4.2 3.4-5.1 5.9.7.4 1.5.5 2.3.5 4.4-.1 6.2-4 5.9-10z" fill="#fff"/>',
+    '<path d="M12 6.3l5.2 1.9v3.7c0 3.2-2.2 5.6-5.2 6.6-3-1-5.2-3.4-5.2-6.6V8.2z" fill="#fff"/><path d="M9.6 12.2l1.7 1.7 3.2-3.3" fill="none" stroke="#3D67D0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+    '<path d="M12 6.6l1.7 3.4 3.8.6-2.7 2.6.6 3.7L12 15.1l-3.4 1.8.6-3.7-2.7-2.6 3.8-.6z" fill="#fff"/>',
+    '<path d="M7.2 15l-.7-5.8 3.3 2.5L12 7.6l2.2 4.1 3.3-2.5-.7 5.8z" fill="#fff"/><rect x="7.3" y="15.9" width="9.4" height="1.6" rx=".8" fill="#fff"/>'];
   function levelMedal(level = 0, size = 20) {
     const k = `md${++medalN}`; const [a, b] = MEDAL[level] || MEDAL[0];
-    return raw(`<svg class="medal" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="${k}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><path d="M12 2l8.5 5v10L12 22 3.5 17V7z" fill="url(#${k})"/><path d="M12 2l8.5 5L12 12 3.5 7z" fill="#fff" opacity=".3"/>${MEDAL_MARK[level] || MEDAL_MARK[0]}</svg>`);
+    return raw(`<svg class="medal" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="${k}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><circle cx="12" cy="12" r="11" fill="url(#${k})"/>${MEDAL_MARK[level] || MEDAL_MARK[0]}</svg>`);
   }
   const dealsWord = (n) => `${NF.format(n)}\u00a0${plural(n, 'сделка', 'сделки', 'сделок')}`; // «5 сделок» не разрывается
-  // Строка под именем: «⬢ Опытный · 27 сделок». 1.49.0: shop — у магазина без уровня «Новый магазин» вместо «Новичок»;
+  // Строка под именем: «● Опытный · 27 сделок». 1.49.0: shop — у магазина без уровня «Новый магазин» вместо «Новичок»;
   // deals: false — без числа сделок (в публичном профиле оно в счётчиках рядом).
   // 1.52.0: first — медаль «Один из первых» (badges.first): стоит в той же строке, справа от уровня.
   const repLine = (r, href = '', { shop = false, deals = true, first = null, who = '', kind = '' } = {}) => {
