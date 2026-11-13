@@ -382,10 +382,12 @@ function aiCfg() {
 }
 const seoSetting = (key) => { const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(key); try { return r ? JSON.parse(r.value) : null; } catch { return null; } };
 const seo = require('./lib/seo')({ db, base: PUBLIC_URL || `http://localhost:${PORT}`, getSetting: seoSetting });
+// 1.58.0: IndexNow — Яндекс узнаёт о новых, изменённых и снятых объявлениях за минуты (lib/indexnow.js).
+const indexnow = require('./lib/indexnow')({ db, base: PUBLIC_URL, listingPath: seo.listingPath, endpoint: process.env.INDEXNOW_URL ?? 'https://yandex.com/indexnow', every: Number(process.env.INDEXNOW_EVERY) || 5 * 60 * 1000 });
 route('GET', '/api/admin/seo', (ctx) => {
   requireAdmin(ctx);
   const base = PUBLIC_URL || `http://localhost:${PORT}`;
-  return { seo: { yandex: '', google: '', metrika: '', mapsKey: '', ...(seoSetting('seo') || {}) }, sitemap: `${base}/sitemap.xml`, robots: `${base}/robots.txt` };
+  return { seo: { yandex: '', google: '', metrika: '', mapsKey: '', ...(seoSetting('seo') || {}) }, sitemap: `${base}/sitemap.xml`, robots: `${base}/robots.txt`, feed: `${base}/feeds/yandex.yml`, indexnow: indexnow.status() };
 });
 route('PUT', '/api/admin/seo', async (ctx) => {
   const admin = requireAdmin(ctx);
@@ -1422,9 +1424,10 @@ const INDEX_HTML = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
   .replace(/(\/assets\/(?:app\.(?:css|js)|theme\.js))"/g, `$1?v=${ASSET_VERSION}"`);
 
 // Страница приложения: заголовок, описание, карточка для мессенджеров и снимок содержимого для поисковиков (lib/seo.js).
-function serveIndex(res, pathname) {
+function serveIndex(res, pathname, search = '') {
   let page;
   try { page = seo.inject(INDEX_HTML, pathname); } catch (e) { console.error('seo:', e.message); page = { status: 200, html: INDEX_HTML }; }
+  if (page.location) { res.writeHead(301, { Location: page.location + (search || ''), 'Cache-Control': 'public, max-age=3600' }); res.end(); return; }
   const body = Buffer.from(page.html);
   res.writeHead(page.status, {
     'Content-Type': 'text/html; charset=utf-8',
@@ -1462,6 +1465,10 @@ function serveStatic(req, res, pathname, search) {
   if (pathname === '/map-frame') { serveMapFrame(res); return; }
   if (pathname === '/sitemap.xml') { serveText(res, 'application/xml; charset=utf-8', seo.sitemap()); return; }
   if (pathname === '/robots.txt') { serveText(res, 'text/plain; charset=utf-8', seo.robots()); return; }
+  // 1.58.0: фид для Яндекс Товаров, ключ IndexNow, значок для поисковиков, которые спрашивают /favicon.ico.
+  if (pathname === '/feeds/yandex.yml') { serveText(res, 'application/xml; charset=utf-8', seo.feed()); return; }
+  if (pathname === `/${indexnow.key}.txt`) { serveText(res, 'text/plain; charset=utf-8', indexnow.key); return; }
+  if (pathname === '/favicon.ico') { res.writeHead(301, { Location: '/assets/icons/icon-192.png', 'Cache-Control': 'public, max-age=86400' }); res.end(); return; }
   // 1.56.0: Universal Links — ссылки torgana.ru открываются в приложении. Team ID — из ключа Apple в модерации.
   if (pathname === '/.well-known/apple-app-site-association' || pathname === '/apple-app-site-association') {
     const team = apns.teamId();
@@ -1471,7 +1478,7 @@ function serveStatic(req, res, pathname, search) {
     return;
   }
   // Все остальные пути — страницы приложения.
-  serveIndex(res, pathname);
+  serveIndex(res, pathname, search);
 }
 
 // ---------- сервер ----------

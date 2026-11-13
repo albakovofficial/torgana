@@ -54,7 +54,7 @@ test('раздел по городу и по России; несуществу�
   assert.equal(p.status, 200);
   assert.match(p.html, /<h1>Хобби и отдых в Казани<\/h1>/);
   assert.match(p.html, new RegExp(`href="/l/${id}-velosiped-stels-navigator-26"`));
-  assert.match(p.html, /<title>Хобби и отдых в Казани — 1 объявление на Торгане<\/title>/);
+  assert.match(p.html, /<title>Хобби и отдых в Казани: купить, 1 объявление, цена 15\s000\s₽ \| Торгана<\/title>/);
   assert.match((await page('/c/hobby')).html, /<h1>Хобби и отдых по всей России<\/h1>/);
   assert.match((await page('/c/home/kazan')).html, /<meta name="robots" content="noindex">/, 'пустой раздел не индексируем');
   assert.equal((await page('/c/hobby/atlantida')).status, 404);
@@ -110,7 +110,7 @@ test('1.33: разделы второго уровня, страницы пом�
   assert.equal(s1.status, 200);
   assert.match(s1.html, /<h1>Автомобили по всей России<\/h1>/);
   const s2 = await page('/c/transport/cars/moskva');
-  assert.match(s2.html, /<title>Автомобили в Москве — 1 объявление на Торгане<\/title>/);
+  assert.match(s2.html, /<title>Автомобили в Москве: купить, 1 объявление, цена 2\s350\s000\s₽ \| Торгана<\/title>/);
   assert.match(s2.html, /"@type":"ItemList"/);
   assert.equal((await page('/c/transport/flats')).status, 404, 'раздел другой категории — 404');
   assert.equal((await page('/c/transport/cars/atlantida')).status, 404);
