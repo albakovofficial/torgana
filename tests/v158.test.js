@@ -30,9 +30,9 @@ test('раздел: заголовок под запрос и «Частые в�
   const info = (await client(srv.base).get('/api/sections/info?category=electronics&sub=phones&city=Казань')).data;
   const q = Object.fromEntries(info.faq.map((x) => [x.q, x.a]));
   assert.deepEqual(Object.keys(q), ['Можно ли купить с доставкой?', 'Можно ли торговаться?', 'Как связаться с продавцом?', 'Как понять, что продавцу можно доверять?', 'Объявления проверяются?', 'Как не пропустить снижение цены?', 'Сколько стоит разместить объявление?', 'Как купить безопасно?']);
-  assert.match(q['Можно ли купить с доставкой?'], /доставку указали в 1 объявлении этого раздела/);
-  assert.match(q['Можно ли торговаться?'], /в 2 объявлениях торг уместен/);
-  // без доставки в разделе — вопроса о доставке нет; у вакансий — свои вопросы
+  assert.match(q['Можно ли торговаться?'], /^Да\. Предложите свою цену/);
+  assert.ok(!Object.values(q).some((x) => /\d/.test(x)), 'общими словами, без чисел раздела');
+  // у вакансий — свои вопросы
   const jobs = await publish(seller, admin, { title: 'Курьер', category: 'jobs', subcategory: 'vacancies', attrs: { schedule: 'Сменный' }, city: 'Казань', price: 60000, description: 'Работа курьером.' });
   assert.ok(jobs); assert.ok((await client(srv.base).get('/api/sections/info?category=jobs')).data.faq.some((x) => x.q === 'Вакансии проверяются?'));
   const p = await page('/c/electronics/phones/kazan');
