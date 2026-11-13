@@ -1119,6 +1119,13 @@ a.rep-line:hover { color: var(--text); text-decoration: underline; }
 .msg.has-photo { padding: 4px 4px 8px; }
 .msg-photo { display: block; margin: 0 0 6px; border-radius: 16px; overflow: hidden; max-width: 260px; }
 .msg-photo img { display: block; width: 100%; max-height: 320px; object-fit: cover; }
+/* 1.57.0: видео и файл в сообщении, «изменено» */
+.msg-video { display: block; width: 100%; max-width: 260px; max-height: 360px; border-radius: 16px; margin: 0 0 6px; background: #000; }
+.msg-file { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; padding: 10px 12px; border-radius: 14px; background: var(--card); color: var(--text); text-decoration: none; max-width: 260px; }
+.msg-file span { display: flex; flex-direction: column; min-width: 0; }
+.msg-file b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msg-file small { font-size: 12px; color: var(--muted); }
+.msg .ed.hidden { display: none; }
 .msg.has-photo .t, .msg.has-photo { overflow-wrap: anywhere; }
 
 @media (max-width: 600px) {

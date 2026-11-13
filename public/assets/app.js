@@ -3193,7 +3193,11 @@
     let lastId = 0;
     let lastDay = '';
     const known = new Map(); // id → сообщение (для цитаты в ответе)
-    const qText = (q) => (q.body ? q.body : q.photo ? 'Фото' : q.kind === 'offer' ? 'Предложение цены' : 'Сообщение');
+    const qText = (q) => (q.body ? q.body : q.photo ? 'Фото' : q.video ? 'Видео' : q.file ? 'Файл' : q.kind === 'offer' ? 'Предложение цены' : 'Сообщение');
+    // 1.57.0: видео и файл (присылают из приложения для iPhone), «изменено» у поправленного сообщения.
+    const kb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1).replace('.', ',')} МБ` : `${Math.max(1, Math.round(n / 1024))} КБ`);
+    const attachHtml = (m) => html`${m.video ? html`<video class="msg-video" src="${m.video}" controls playsinline preload="metadata"></video>` : ''}${m.file ? html`<a class="msg-file" href="${m.file.url}" target="_blank" rel="noopener" download="${m.file.name}">${ic('download', 20, 2)}<span><b>${m.file.name}</b><small>${kb(m.file.size)}</small></span></a>` : ''}`;
+    const edMark = (m) => (m.editedAt ? html`<span class="ed" data-ed>изменено · </span>` : html`<span class="ed hidden" data-ed>изменено · </span>`);
     const quote = (q) => html`<button type="button" class="msg-q" data-goto="${q.id}"><b>${q.mine ? 'Вы' : reply.other}</b><span>${q.photo ? ic('camera', 13, 2) : ''}${qText(q)}</span></button>`;
     const rpBtn = () => (reply ? html`<button type="button" class="msg-rp" data-rp aria-label="Ответить">${ic('reply', 16, 2.2)}</button>` : '');
     const append = (list) => {
@@ -3205,12 +3209,12 @@
         const d = new Date(m.createdAt).toDateString();
         if (d !== lastDay) { lastDay = d; out += String(html`<div class="chat-day">${shortWhen(m.createdAt)}</div>`); }
         const d2 = decorate ? decorate(m) : null;
-        known.set(m.id, { id: m.id, mine: m.mine, body: m.body, photo: !!m.photo, kind: m.kind || '' });
+        known.set(m.id, { id: m.id, mine: m.mine, body: m.body, photo: !!m.photo, video: !!m.video, file: !!m.file, kind: m.kind || '' });
         const q = reply && m.reply ? quote(m.reply) : '';
         const can = reply && m.kind !== 'offer' ? 'can-rp' : ''; // на карточку предложения не отвечают — у неё свои кнопки
-        const tm = html`<span class="t">${hm(m.createdAt)}${receipts && m.mine ? tickMark(m.read) : ''}</span>`;
+        const tm = html`<span class="t">${edMark(m)}${hm(m.createdAt)}${receipts && m.mine ? tickMark(m.read) : ''}</span>`;
         out += d2 ? String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${d2.cls} ${can}" data-mid="${m.id}">${q}${d2.body}${tm}${can ? rpBtn() : ''}</div>`)
-          : String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${m.photo ? 'has-photo' : ''} ${q ? 'has-q' : ''} ${can}" data-mid="${m.id}">${q}${m.photo ? html`<a class="msg-photo" href="${m.photo}" target="_blank" rel="noopener" data-pv-src="${m.photo}" data-pv-group="chat"><img src="${m.photo}" alt="Фото" loading="lazy"></a>` : ''}${m.body}${tm}${can ? rpBtn() : ''}</div>`);
+          : String(html`<div class="msg ${m.mine ? 'out' : 'in'} ${m.photo ? 'has-photo' : ''} ${q ? 'has-q' : ''} ${can}" data-mid="${m.id}">${q}${m.photo ? html`<a class="msg-photo" href="${m.photo}" target="_blank" rel="noopener" data-pv-src="${m.photo}" data-pv-group="chat"><img src="${m.photo}" alt="Фото" loading="lazy"></a>` : ''}${attachHtml(m)}<span data-mb>${m.body}</span>${tm}${can ? rpBtn() : ''}</div>`);
         const risk = scam && !m.mine && !m.kind ? riskOf(m.body) : null;
         if (risk) out += String(html`<div class="msg-risk r-${risk.k}" role="note">${ic(risk.k === 'messenger' ? 'chat' : risk.k === 'link' ? 'link' : risk.k === 'card' ? 'card' : 'shield', 16, 2.2)}<span>${risk.text}</span></div>`);
         lastId = Math.max(lastId, m.id);
@@ -3231,7 +3235,16 @@
         }
       }
     };
-    const poll = async () => { const r = await load(lastId); if (r.messages.length) { append(r.messages); if (onActivity) onActivity(); } live(r); if (onData) onData(r); return r; };
+    // Правки: сервер присылает изменённые после прошлого опроса (r.edited; время — r.now).
+    let editsSince = 0;
+    const applyEdits = (list) => (list || []).forEach((e) => {
+      const el = $(`[data-mid="${e.id}"]`, msgs);
+      const k = known.get(e.id); if (k) k.body = e.body;
+      if (!el) return;
+      const b = $('[data-mb]', el); if (b) b.textContent = e.body;
+      const ed = $('[data-ed]', el); if (ed) ed.classList.remove('hidden');
+    });
+    const poll = async () => { const r = await load(lastId, editsSince); if (r.messages.length) { append(r.messages); if (onActivity) onActivity(); } applyEdits(r.edited); if (r.now) editsSince = r.now; live(r); if (onData) onData(r); return r; };
     let tpSent = 0;
     ta.oninput = () => {
       ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`;
@@ -3604,8 +3617,8 @@
       receipts: true,
       typing: () => api('POST', `/api/conversations/${convId}/typing`),
       below: html`<div data-deal-slot></div>`,
-      load: async (after) => {
-        const r = await api('GET', `/api/conversations/${convId}?after=${after}&seen=${document.hidden ? 0 : 1}`);
+      load: async (after, edits) => {
+        const r = await api('GET', `/api/conversations/${convId}?after=${after}&seen=${document.hidden ? 0 : 1}&edits=${edits || 0}`);
         const slot = $('[data-deal-slot]');
         const paintDeal = (st) => {
           if (!slot || JSON.stringify(st) === slot.dataset.state) return;
