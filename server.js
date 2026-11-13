@@ -317,12 +317,13 @@ function route(method, pattern, handler) {
 const taxonomy = require('./lib/taxonomy');
 const metro = require('./lib/metro')({ dataDir: DATA_DIR });
 const video = require('./lib/video')({ route, db, h: { HttpError, requireUser, readJson, rateLimit, now }, dir: UPLOAD_DIR });
+const attach = require('./lib/attach')({ route, db, h: { HttpError, requireUser, rateLimit, now }, dir: UPLOAD_DIR, video });
 
 // Модерация (очередь, проверка «от и до», жалобы, история) и чат поддержки — в отдельных модулях.
 const autoChecks = require('./lib/checks')({ db, marketEstimate });
 const goodPrice = require('./lib/goodprice')({ db }); // 1.48.0: «Хорошая цена»
 const GP_LOW = 0.85;
-const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, taxonomy, metro, video, attrsOf, setAvatar, str, now, norm, autoChecks, OWNER_EMAIL, redirect, file: fileResponse, PUBLIC_URL: PUBLIC_URL || `http://localhost:${PORT}` };
+const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, taxonomy, metro, video, attach, attrsOf, setAvatar, str, now, norm, autoChecks, OWNER_EMAIL, redirect, file: fileResponse, PUBLIC_URL: PUBLIC_URL || `http://localhost:${PORT}` };
 // 1.56.0: push и в приложение для iPhone (Apple APNs) — вместе с web-push, одной отправкой.
 const apns = require('./lib/apns')({ db, route, h: helpers, testUrl: process.env.APNS_TEST_URL || '' });
 const push = createPush({ db, subject: `mailto:${SUPPORT_EMAIL || 'support@torgana.ru'}`, allowHttp: process.env.PUSH_ALLOW_HTTP === '1', apns });
@@ -1108,7 +1109,7 @@ route('GET', '/api/conversations', (ctx) => {
     SELECT c.id, c.listing_id, c.buyer_id, c.seller_id, c.updated_at, l.title, l.price, l.price_unit, l.status,
       (SELECT COALESCE(NULLIF(p.thumb, ''), p.file) FROM uploads p WHERE p.listing_id = l.id ORDER BY p.position LIMIT 1) AS photo,
       ou.id AS other_id, ou.name AS other_name, ou.avatar AS other_avatar,
-      (SELECT CASE WHEN body = '' AND photo != '' THEN '📷 Фото' ELSE body END FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_body,
+      (SELECT CASE WHEN body != '' THEN body WHEN photo != '' THEN '📷 Фото' WHEN video != '' THEN '🎬 Видео' WHEN file != '' THEN '📎 Файл' ELSE '' END FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_body,
       (SELECT CASE WHEN m.sender_id = ? THEN (CASE WHEN m.read_at IS NULL THEN 1 ELSE 2 END) ELSE 0 END FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_mine,
       (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != ? AND m.read_at IS NULL) AS unread
     FROM conversations c
@@ -1152,7 +1153,6 @@ function chatPhoto(u, file) {
   return f;
 }
 helpers.chatPhoto = chatPhoto;
-const msgPreview = (body, photo) => body || (photo ? '📷 Фото' : '');
 
 function loadConversation(u, id) {
   const c = db.prepare('SELECT * FROM conversations WHERE id = ?').get(id);
@@ -1164,8 +1164,8 @@ function loadConversation(u, id) {
 function quotesOf(convId, ids, uid) {
   const want = [...new Set(ids.filter(Boolean).map(Number))];
   if (!want.length) return new Map();
-  return new Map(db.prepare(`SELECT id, sender_id, body, photo, kind FROM messages WHERE conversation_id = ? AND id IN (${want.join(',')})`).all(convId)
-    .map((q) => [q.id, { id: q.id, mine: q.sender_id === uid, body: String(q.body || '').slice(0, 160), photo: !!q.photo, kind: q.kind }]));
+  return new Map(db.prepare(`SELECT id, sender_id, body, photo, video, file, kind FROM messages WHERE conversation_id = ? AND id IN (${want.join(',')})`).all(convId)
+    .map((q) => [q.id, { id: q.id, mine: q.sender_id === uid, body: String(q.body || '').slice(0, 160), photo: !!q.photo, ...(q.video ? { video: true } : {}), ...(q.file ? { file: true } : {}), kind: q.kind }]));
 }
 
 route('GET', '/api/conversations/:id', (ctx) => {
@@ -1174,10 +1174,13 @@ route('GET', '/api/conversations/:id', (ctx) => {
   const after = parseInt(ctx.query.get('after') || '0', 10) || 0;
   // 1.55.0: прочитано — только когда переписка на экране (seen=0 — вкладка свёрнута, сообщения не отмечаем).
   if (ctx.query.get('seen') !== '0') db.prepare('UPDATE messages SET read_at = ? WHERE conversation_id = ? AND sender_id != ? AND read_at IS NULL').run(now(), c.id, u.id);
-  const rows = db.prepare('SELECT id, sender_id, body, photo, kind, offer_id, reply_to, created_at, read_at FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id LIMIT 500').all(c.id, after);
+  const rows = db.prepare('SELECT * FROM messages WHERE conversation_id = ? AND id > ? ORDER BY id LIMIT 500').all(c.id, after);
   const quotes = quotesOf(c.id, rows.map((m) => m.reply_to), u.id);
-  const messages = rows.map((m) => ({ id: m.id, mine: m.sender_id === u.id, body: m.body, photo: photoUrl(m.photo), kind: m.kind, offerId: m.offer_id,
-    reply: m.reply_to ? quotes.get(m.reply_to) || null : null, createdAt: m.created_at, read: !!m.read_at }));
+  const messages = rows.map((m) => msgView(m, u.id, quotes));
+  // 1.57.0: изменённые сообщения — те, что поправили после ?edits= (время сервера из прошлого ответа, поле now).
+  const since = parseInt(ctx.query.get('edits') || '0', 10) || 0;
+  const edited = since ? db.prepare('SELECT id, body, edited_at FROM messages WHERE conversation_id = ? AND edited_at > ? AND id <= ?').all(c.id, since, after)
+    .map((m) => ({ id: m.id, body: m.body, editedAt: m.edited_at })) : [];
   const l = loadListing(c.listing_id, { deleted: true });
   const otherId = c.buyer_id === u.id ? c.seller_id : c.buyer_id;
   const other = db.prepare('SELECT id, name, avatar, created_at FROM users WHERE id = ?').get(otherId);
@@ -1194,8 +1197,34 @@ route('GET', '/api/conversations/:id', (ctx) => {
     // 1.55.0: как в мессенджерах — до какого моего сообщения собеседник дочитал (✓✓) и печатает ли он сейчас
     readUpTo: db.prepare('SELECT COALESCE(MAX(id), 0) AS n FROM messages WHERE conversation_id = ? AND sender_id = ? AND read_at IS NOT NULL').get(c.id, u.id).n,
     typing: typingNow(c.id, otherId),
-    messages
+    messages,
+    edited,
+    now: now()
   };
+});
+
+// Сообщение в ответе: текст, фото, видео, файл, ответ на сообщение, когда изменено.
+function msgView(m, uid, quotes) {
+  return { id: m.id, mine: m.sender_id === uid, body: m.body, photo: photoUrl(m.photo), ...attach.view(m), kind: m.kind, offerId: m.offer_id,
+    reply: m.reply_to ? quotes.get(m.reply_to) || null : null, createdAt: m.created_at, read: !!m.read_at, editedAt: m.edited_at || null };
+}
+
+// 1.57.0: изменить своё сообщение — текст, в течение 48 часов; предложение цены не меняется.
+const EDIT_MS = 48 * 3600 * 1000;
+route('PATCH', '/api/conversations/:id/messages/:mid', async (ctx) => {
+  const u = requireUser(ctx);
+  rateLimit(`msg-edit:${u.id}`, 60, 60 * 1000);
+  const c = loadConversation(u, parseInt(ctx.params.id, 10));
+  const m = db.prepare('SELECT * FROM messages WHERE id = ? AND conversation_id = ?').get(parseInt(ctx.params.mid, 10), c.id);
+  if (!m || m.sender_id !== u.id) throw new HttpError(404, 'Сообщение не найдено');
+  if (m.kind) throw new HttpError(400, 'Предложение цены не меняется — отзовите его и предложите новое');
+  if (now() - m.created_at > EDIT_MS) throw new HttpError(400, 'Изменить можно в течение 48 часов после отправки');
+  const body = str((await readJson(ctx.req)).body, 2000);
+  if (!body && !m.photo && !m.video && !m.file) throw new HttpError(400, 'Пустое сообщение');
+  if (body === m.body) return { message: msgView(m, u.id, quotesOf(c.id, [m.reply_to], u.id)) };
+  db.prepare('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?').run(body, now(), m.id);
+  const row = db.prepare('SELECT * FROM messages WHERE id = ?').get(m.id);
+  return { message: msgView(row, u.id, quotesOf(c.id, [row.reply_to], u.id)) };
 });
 
 // 1.55.0: «печатает…» — отметка в памяти на 6 секунд; страница шлёт её не чаще раза в 3 секунды, пока человек набирает текст.
@@ -1219,19 +1248,22 @@ route('POST', '/api/conversations/:id/messages', async (ctx) => {
   const input = await readJson(ctx.req);
   const body = str(input.body, 2000);
   const photo = chatPhoto(u, input.photo);
-  if (!body && !photo) throw new HttpError(400, 'Пустое сообщение');
+  const extra = attach.take(u, input); // 1.57.0: видео и файл
+  if (!body && !photo && !extra.video && !extra.file) throw new HttpError(400, 'Пустое сообщение');
   const other = db.prepare('SELECT deactivated_at, deleted_at FROM users WHERE id = ?').get(c.buyer_id === u.id ? c.seller_id : c.buyer_id);
   if (other && (other.deactivated_at || other.deleted_at)) throw new HttpError(400, 'Собеседник удалил профиль — сообщения не доставляются');
   blocks.assertCanWrite(u.id, c.buyer_id === u.id ? c.seller_id : c.buyer_id);
   const replyId = parseInt(input.replyTo, 10) || null; // 1.54.0: ответ — только на сообщение этого же диалога
   if (replyId && !db.prepare('SELECT 1 FROM messages WHERE id = ? AND conversation_id = ?').get(replyId, c.id)) throw new HttpError(400, 'Сообщение для ответа не найдено');
   const t = now();
-  const info = db.prepare('INSERT INTO messages (conversation_id, sender_id, body, photo, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(c.id, u.id, body, photo, replyId, t);
+  const info = db.prepare('INSERT INTO messages (conversation_id, sender_id, body, photo, video, file, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(c.id, u.id, body, photo, extra.video, extra.file, replyId, t);
+  attach.markUsed(extra.file);
   db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(t, c.id);
   typingMarks.delete(`${c.id}:${u.id}`); // отправил — уже не «печатает»
   const l = loadListing(c.listing_id, { deleted: true });
-  alerts.notify(c.buyer_id === u.id ? c.seller_id : c.buyer_id, 'messages', { title: `${u.name} · ${l.title}`, body: msgPreview(body, photo).slice(0, 180), url: `/messages/${c.id}`, tag: `chat-${c.id}`, urgent: true });
-  return { message: { id: Number(info.lastInsertRowid), mine: true, body, photo: photoUrl(photo), reply: replyId ? quotesOf(c.id, [replyId], u.id).get(replyId) : null, createdAt: t, read: false } };
+  const row = db.prepare('SELECT * FROM messages WHERE id = ?').get(info.lastInsertRowid);
+  alerts.notify(c.buyer_id === u.id ? c.seller_id : c.buyer_id, 'messages', { title: `${u.name} · ${l.title}`, body: attach.preview(row).slice(0, 180), url: `/messages/${c.id}`, tag: `chat-${c.id}`, urgent: true });
+  return { message: msgView(row, u.id, quotesOf(c.id, [replyId], u.id)) };
 });
 
 route('GET', '/api/users/:id', (ctx) => {
@@ -1412,6 +1444,7 @@ function serveStatic(req, res, pathname, search) {
   if (pathname.startsWith('/uploads/')) {
     const name = pathname.slice('/uploads/'.length);
     if (video.NAME_RE.test(name)) { serveVideo(req, res, path.join(UPLOAD_DIR, name)); return; }
+    if (attach.NAME_RE.test(name)) { attach.serve(req, res, name, SECURITY_HEADERS); return; }
     if (!/^[a-f0-9]{32}\.(jpg|png|webp)$/.test(name)) { res.writeHead(404); res.end(); return; }
     serveFile(res, path.join(UPLOAD_DIR, name), 'public, max-age=31536000, immutable', req);
     return;
@@ -1509,6 +1542,7 @@ setInterval(() => {
   removeUploadFiles(old);
   for (const { file } of old) db.prepare('DELETE FROM uploads WHERE file = ?').run(file);
   video.cleanup();
+  attach.cleanup();
 }, 60 * 60 * 1000).unref();
 metro.start();
 ops.start(Number(process.env.OPS_TICK_MS) || undefined);
