@@ -85,12 +85,22 @@ test('защита: та же пара за 30 дней не засчитыва�
   assert.equal((await rep(b)).deals, 0);
 });
 
-test('уровень «Надёжный» от 5 сделок, фильтр «Надёжные продавцы»; подтверждённая жалоба — уровень ниже', async () => {
+test('уровень «Надёжный» — задания: телефон, фото, 3 сделки, ответ; фильтр «Надёжные продавцы»; подтверждённая жалоба — уровень ниже', async () => {
   for (const b of buyers.slice(1, 5)) {
     const x = await chat(b, `Товар для ${b.user.name}`);
     await say(b, x.cid, 3); await say(seller, x.cid, 3);
     await deal(b, x.cid); await deal(seller, x.cid);
   }
+  // 1.59.0: сделок хватает, но телефон и фото не добавлены — уровня ещё нет, задания видны на своей странице.
+  assert.equal((await rep(seller)).level, 0);
+  const my = (await seller.get('/api/my/reputation')).data;
+  assert.equal(my.next.name, 'Надёжный');
+  assert.deepEqual(my.next.tasks.map((t) => [t.key, t.done]), [['phone', false], ['photo', false], ['deals', true], ['reply', true]]);
+  assert.equal(my.next.tasks[2].have, 3); assert.equal(my.next.tasks[2].need, 3);
+  const { DatabaseSync } = require('node:sqlite');
+  const xdb = new DatabaseSync(require('node:path').join(srv.tmp, 'data', 'torgana.db'));
+  xdb.prepare('UPDATE users SET phone_verified = 1, avatar = ? WHERE id = ?').run('ava.jpg', seller.user.id);
+  xdb.close();
   let r = await rep(seller);
   assert.equal(r.deals, 5); assert.equal(r.level, 1); assert.equal(r.levelName, 'Надёжный'); assert.equal(r.newbie, false);
   assert.ok((await seller.get('/api/notices')).data.items.some((n) => n.title === 'Новый уровень: Надёжный'), '1.47.2: уведомление о новом уровне');

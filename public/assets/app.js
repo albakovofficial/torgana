@@ -3711,18 +3711,28 @@
   }
 
   // ================= репутация (1.46.0): сделки, а не оценки =================
-  // Уровень — кружок с градиентом и белым знаком, как в приложении (LevelPill): Новичок — листок, Надёжный — щит
-  // с галочкой, Опытный — звезда, Мастер Торганы — корона.
+  // 1.59.0: уровень — объёмная монета: Новичок — бронза с листком, Надёжный — изумруд со щитом, Опытный — золото
+  // со звездой, Мастер Торганы — бриллиант с короной. Те же монеты — картинками в приложении (Assets Level0–3).
+  // Цвета: [светлый, середина, тёмный, обод светлый, обод тёмный, знак].
   let medalN = 0;
-  const MEDAL = [['#8FB3E8', '#6E8FC9'], ['#4C86E0', '#3D67D0'], ['#7B7FF0', '#5B3DF5'], ['#F6C453', '#E08A1E']];
+  const MEDAL = [['#F6C9A0', '#C7834F', '#7A4320', '#FFE2C6', '#B06D3C', '#FFF4EA'], ['#B8F5C9', '#2FBF6A', '#0B6B3A', '#D8FFE3', '#22A35A', '#FFFFFF'],
+    ['#FFF1B0', '#F2B925', '#9A5B05', '#FFF6CF', '#D99A12', '#FFFBEA'], ['#E8F3FF', '#7FB2FF', '#4B2FD6', '#F2E9FF', '#8F6BFF', '#FFFFFF']];
   const MEDAL_MARK = [
-    '<path d="M16.8 7.2c-5.6-.2-9.4 2.3-9.6 6.6 0 .9.2 1.7.6 2.4 1.1-2.6 3.2-4.3 5.9-5.4-2.4 1.5-4.2 3.4-5.1 5.9.7.4 1.5.5 2.3.5 4.4-.1 6.2-4 5.9-10z" fill="#fff"/>',
-    '<path d="M12 6.3l5.2 1.9v3.7c0 3.2-2.2 5.6-5.2 6.6-3-1-5.2-3.4-5.2-6.6V8.2z" fill="#fff"/><path d="M9.6 12.2l1.7 1.7 3.2-3.3" fill="none" stroke="#3D67D0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
-    '<path d="M12 6.6l1.7 3.4 3.8.6-2.7 2.6.6 3.7L12 15.1l-3.4 1.8.6-3.7-2.7-2.6 3.8-.6z" fill="#fff"/>',
-    '<path d="M7.2 15l-.7-5.8 3.3 2.5L12 7.6l2.2 4.1 3.3-2.5-.7 5.8z" fill="#fff"/><rect x="7.3" y="15.9" width="9.4" height="1.6" rx=".8" fill="#fff"/>'];
+    (g) => `<path d="M16.8 7.2c-5.6-.2-9.4 2.3-9.6 6.6 0 .9.2 1.7.6 2.4 1.1-2.6 3.2-4.3 5.9-5.4-2.4 1.5-4.2 3.4-5.1 5.9.7.4 1.5.5 2.3.5 4.4-.1 6.2-4 5.9-10z" fill="${g}"/>`,
+    (g, d) => `<path d="M12 6.3l5.2 1.9v3.7c0 3.2-2.2 5.6-5.2 6.6-3-1-5.2-3.4-5.2-6.6V8.2z" fill="${g}"/><path d="M9.6 12.2l1.7 1.7 3.2-3.3" fill="none" stroke="${d}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`,
+    (g) => `<path d="M12 6.6l1.7 3.4 3.8.6-2.7 2.6.6 3.7L12 15.1l-3.4 1.8.6-3.7-2.7-2.6 3.8-.6z" fill="${g}"/>`,
+    (g) => `<path d="M7.2 15l-.7-5.8 3.3 2.5L12 7.6l2.2 4.1 3.3-2.5-.7 5.8z" fill="${g}"/><rect x="7.3" y="15.9" width="9.4" height="1.6" rx=".8" fill="${g}"/>`];
   function levelMedal(level = 0, size = 20) {
-    const k = `md${++medalN}`; const [a, b] = MEDAL[level] || MEDAL[0];
-    return raw(`<svg class="medal" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="${k}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><circle cx="12" cy="12" r="11" fill="url(#${k})"/>${MEDAL_MARK[level] || MEDAL_MARK[0]}</svg>`);
+    const k = `md${++medalN}`; const [light, mid, dark, rimL, rimD, glyph] = MEDAL[level] || MEDAL[0];
+    return raw(`<svg class="medal" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><defs>
+<linearGradient id="${k}r" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${rimL}"/><stop offset=".55" stop-color="${rimD}"/><stop offset="1" stop-color="${dark}"/></linearGradient>
+<radialGradient id="${k}f" cx=".38" cy=".3" r=".85"><stop offset="0" stop-color="${light}"/><stop offset=".55" stop-color="${mid}"/><stop offset="1" stop-color="${dark}"/></radialGradient>
+<linearGradient id="${k}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<filter id="${k}s" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy=".55" stdDeviation=".35" flood-color="#000" flood-opacity=".35"/></filter></defs>
+<ellipse cx="12" cy="22.6" rx="7.5" ry="1.1" fill="#000" opacity=".16"/><circle cx="12" cy="12.6" r="10.6" fill="${dark}"/><circle cx="12" cy="11.6" r="10.6" fill="url(#${k}r)"/>
+<circle cx="12" cy="11.6" r="8.6" fill="url(#${k}f)"/><circle cx="12" cy="11.6" r="8.6" fill="none" stroke="#000" stroke-opacity=".18" stroke-width=".5"/>
+<path d="M5.2 9.2a7.4 6 0 0 1 13.6 0c-2-1.3-4.3-1.9-6.8-1.9s-4.8.6-6.8 1.9z" fill="url(#${k}g)"/>
+<g transform="translate(0 -.4)" filter="url(#${k}s)">${(MEDAL_MARK[level] || MEDAL_MARK[0])(glyph, dark)}</g></svg>`);
   }
   const dealsWord = (n) => `${NF.format(n)}\u00a0${plural(n, 'сделка', 'сделки', 'сделок')}`; // «5 сделок» не разрывается
   // Строка под именем: «● Опытный · 27 сделок». 1.49.0: shop — у магазина без уровня «Новый магазин» вместо «Новичок»;
@@ -3752,12 +3762,22 @@
   }
   // Подсказка: как считается (одна строка, без простыни).
   // «Как считается»: три правила и лестница уровней (условия — как в lib/reputation.js).
+  // 1.59.0: условия — задания уровня (как в lib/reputation.js TASKS).
   const REP_STEPS = [
     ['Новичок', 'с первого дня'],
-    ['Надёжный', 'от 5 сделок · ответ в течение дня'],
-    ['Опытный', 'от 20 сделок · ответ за 1–3 ч · на Торгане от 3 мес.'],
-    ['Мастер Торганы', 'от 50 сделок · ответ за час · полгода без жалоб']
+    ['Надёжный', 'телефон и фото профиля · 3 сделки · ответ в течение дня'],
+    ['Опытный', '15 сделок · 5 комплиментов · ответ за 1–3 ч · 2 месяца на Торгане'],
+    ['Мастер Торганы', '40 сделок · 20 комплиментов · ответ за час · 3 месяца без жалоб']
   ];
+  // Задания до следующего уровня — на своей странице репутации: что сделано и сколько осталось.
+  const repTasks = (next) => (next ? html`<section class="rep-tasks">
+      <div class="rt-head">${levelMedal(next.level, 36)}<span><small>Задания до уровня</small><b>${next.name}</b></span><em>${next.tasks.filter((t) => t.done).length} из ${next.tasks.length}</em></div>
+      <ul>${next.tasks.map((t) => {
+        const body = html`<span class="rt-check">${t.done ? ic('check', 14, 3) : ''}</span><span class="rt-text">${t.text}</span>${t.need && !t.done ? html`<span class="rt-prog"><i style="width:${Math.round((t.have / t.need) * 100)}%"></i></span><small>${t.have}/${t.need}</small>` : ''}`;
+        // Телефон и фото — в настройках профиля: невыполненное задание ведёт туда.
+        return !t.done && (t.key === 'phone' || t.key === 'photo') ? html`<li><a href="/profile/settings">${body}${ic('right', 16, 2)}</a></li>` : html`<li class="${t.done ? 'done' : ''}">${body}</li>`;
+      })}</ul>
+    </section>` : html`<section class="rep-tasks top"><div class="rt-head">${levelMedal(3, 36)}<span><small>Все задания выполнены</small><b>Высший уровень</b></span></div></section>`);
   const repHow = () => html`<details class="rep-how"><summary><span class="rh-q">${ic('info', 16, 2)}</span><b>Как считается</b><span class="rh-chev">${ic('down', 16, 2.2)}</span></summary>
     <div class="rh-body">
       <ul class="rh-rules">
@@ -4305,7 +4325,7 @@
       ${x.reply ? html`<small>Ваше объяснение: ${x.reply}</small>` : ''}
       ${x.canReply ? html`<button type="button" class="btn btn-soft btn-sm" data-issue-reply="${x.id}">Объяснить модератору</button>` : ''}</div>`;
     $('#box').innerHTML = String(html`<div class="rep-page">
-      ${repCard(d.rep)}${repHow()}
+      ${repCard(d.rep)}${repTasks(d.next)}${repHow()}
       ${d.against.length || d.mine.length ? html`<section class="rep-issues"><h2>Жалобы по сделкам</h2>${d.against.map((x) => row(x, false))}${d.mine.map((x) => row(x, true))}</section>` : ''}
     </div>`);
     $$('[data-issue-reply]').forEach((b) => {
