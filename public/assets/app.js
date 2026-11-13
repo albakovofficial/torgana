@@ -1080,7 +1080,7 @@
     [/^\/confirm$/, viewConfirm],
     [/^\/favorites$/, viewFavorites],
     [/^\/messages(?:\/(\d+|support))?$/, viewMessages],
-    [/^\/profile(?:\/(listings|settings|reputation|reviews|searches|following|stats\/\d+|business(?:\/(?:shop|stats))?))?$/, viewProfile],
+    [/^\/profile(?:\/(listings|settings|reputation|reviews|following|stats\/\d+|business(?:\/(?:shop|stats))?))?$/, viewProfile],
     [/^\/business$/, viewBusiness],
     [/^\/pay\/([\w-]+)$/, viewPay],
     [/^\/u\/(\d+)$/, viewUser],
@@ -1338,7 +1338,7 @@
         <div class="sa-links">${d.subs.map((x) => html`<a href="${x.path}"><span>${x.label}</span>${x.n ? html`<em>${NF.format(x.n)}</em>` : ''}${ic('right', 16, 2)}</a>`)}</div>` : ''}
       </div>
       ${d.faq && d.faq.length ? html`<div class="sa-faq">
-        <div class="sa-h"><span class="bz-ic blue sm">${ic('info', 16, 2)}</span><b>Частые вопросы</b><span class="sa-faq-note">по объявлениям раздела на сегодня</span></div>
+        <div class="sa-h"><span class="bz-ic blue sm">${ic('info', 16, 2)}</span><b>Частые вопросы</b></div>
         <div class="sa-qs">${d.faq.map((x, i) => html`<details class="sa-q" ${i < 2 ? raw('open') : ''}><summary><span>${x.q}</span>${ic('down', 18, 2)}</summary><p>${x.a}</p></details>`)}</div>
       </div>` : ''}`;
   }
@@ -4171,7 +4171,6 @@
     if (!requireAuth()) return;
     if (!section && q.get('tab') === 'settings') { go(`/profile/settings${location.hash}`, true); return; }
     if (section === 'settings') { viewSettings(); return; }
-    if (section === 'searches') { go('/profile/following', true); return; } // 1.39.0: сохранённые поиски убраны
     if (section === 'reviews') { go('/profile/reputation', true); return; } // 1.47.2: отзывов нет, старые ссылки — на репутацию
     const hub = !section || section === 'listings';
     const statId = section && section.startsWith('stats/') ? section.slice(6) : null;
@@ -4395,7 +4394,7 @@
   // Уведомления таблицей: событие, пояснение, поле push и поле письма (null — такого канала у события нет).
   const NOTIFY_ROWS = [
     ['Сообщения', 'Чаты и ответы поддержки. Письмо — если не прочитали за 5 минут', 'pushMessages', 'notifyMessages'],
-    ['Подписки', 'Новые объявления продавцов, на которых вы подписаны', 'pushSearches', null],
+    ['Подписки', 'Новые объявления продавцов, на которых вы подписаны', 'pushFollows', null],
     ['Снижение цены', 'Подешевело то, что у вас в избранном', 'pushPrices', null],
     ['Подборка за день', 'Новое у продавцов и снижение цен — одним письмом', null, 'notifyDigest'],
     ['Объявления и сделки', 'Решения модерации, срок публикации, сделки и репутация, проверка бизнеса, оплаты', 'pushModeration', 'notifyModeration']

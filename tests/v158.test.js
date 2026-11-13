@@ -26,22 +26,23 @@ test.before(async () => {
 });
 test.after(() => { srv.stop(); fake.close(); });
 
-test('раздел: заголовок под запрос и «Частые вопросы» из настоящих чисел — на сайте и в разметке', async () => {
+test('раздел: заголовок под запрос и «Частые вопросы» о покупках на Торгане — на сайте и в разметке', async () => {
   const info = (await client(srv.base).get('/api/sections/info?category=electronics&sub=phones&city=Казань')).data;
   const q = Object.fromEntries(info.faq.map((x) => [x.q, x.a]));
-  assert.match(q['Какие цены в разделе «Телефоны» в Казани?'], /от 10\s000 ₽ до 30\s000 ₽\. Половина предложений — до 20\s000 ₽/);
-  assert.match(q['Сколько объявлений в разделе «Телефоны» в Казани?'], /^3 объявления, все — за последнюю неделю/);
-  assert.match(q['Можно ли купить с доставкой?'], /в 1 объявлении продавец указал доставку/);
-  assert.match(q['Можно ли торговаться?'], /Продавцы 2 из 3 объявлений готовы к торгу/);
-  assert.ok(q['Как купить безопасно?']);
+  assert.deepEqual(Object.keys(q), ['Можно ли купить с доставкой?', 'Можно ли торговаться?', 'Как связаться с продавцом?', 'Как понять, что продавцу можно доверять?', 'Объявления проверяются?', 'Как не пропустить снижение цены?', 'Сколько стоит разместить объявление?', 'Как купить безопасно?']);
+  assert.match(q['Можно ли купить с доставкой?'], /доставку указали в 1 объявлении этого раздела/);
+  assert.match(q['Можно ли торговаться?'], /в 2 объявлениях торг уместен/);
+  // без доставки в разделе — вопроса о доставке нет; у вакансий — свои вопросы
+  const jobs = await publish(seller, admin, { title: 'Курьер', category: 'jobs', subcategory: 'vacancies', attrs: { schedule: 'Сменный' }, city: 'Казань', price: 60000, description: 'Работа курьером.' });
+  assert.ok(jobs); assert.ok((await client(srv.base).get('/api/sections/info?category=jobs')).data.faq.some((x) => x.q === 'Вакансии проверяются?'));
   const p = await page('/c/electronics/phones/kazan');
   assert.match(p.html, /<title>Телефоны в Казани: купить, 3 объявления, цены от 10\s000 ₽ \| Торгана<\/title>/);
-  assert.match(p.html, /<h2>Частые вопросы<\/h2><h3>Какие цены в разделе «Телефоны» в Казани\?<\/h3>/);
+  assert.match(p.html, /<h2>Частые вопросы<\/h2><h3>Можно ли купить с доставкой\?<\/h3>/);
   const ld = [...p.html.matchAll(/<script type="application\/ld\+json">(.+?)<\/script>/g)].map((m) => JSON.parse(m[1]));
   const faq = ld.find((x) => x['@type'] === 'FAQPage');
   assert.equal(faq.mainEntity.length, info.faq.length, 'разметка совпадает с тем, что видно на сайте');
   // без объявлений — вопросов нет
-  assert.deepEqual((await client(srv.base).get('/api/sections/info?category=jobs')).data.faq, []);
+  assert.deepEqual((await client(srv.base).get('/api/sections/info?category=animals')).data.faq, []);
 });
 
 test('объявление: 301 на адрес с названием (с параметрами), 410 для удалённого, Product — только с ценой', async () => {

@@ -96,7 +96,7 @@ const badgesOf = (u) => ({ ...trust.badgesOf(u), shop: !!business.planOf(u) && !
 // Переключатели уведомлений: поле API → колонка users (письма и push по видам).
 const NOTIFY_FIELDS = {
   notifyMessages: 'notify_messages', notifyModeration: 'notify_moderation', notifyDigest: 'notify_digest',
-  pushMessages: 'push_messages', pushSearches: 'push_searches', pushPrices: 'push_prices', pushModeration: 'push_moderation'
+  pushMessages: 'push_messages', pushFollows: 'push_follows', pushPrices: 'push_prices', pushModeration: 'push_moderation'
 };
 
 function publicUser(u) {
