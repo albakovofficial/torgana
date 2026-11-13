@@ -2939,7 +2939,26 @@ body.pv-open { overflow: hidden; }
 @media (max-width: 520px) { .tm-doc { flex-wrap: wrap; } .tm-file { width: 100%; } }
 
 /* ---------- 1.46.0: репутация вместо отзывов ---------- */
-.medal { flex: none; display: inline-block; vertical-align: middle; filter: drop-shadow(0 1px 2px rgba(16, 16, 16, .18)); }
+.medal { flex: none; display: inline-block; vertical-align: middle; overflow: visible; }
+/* 1.59.0: задания до следующего уровня */
+.rep-tasks { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 24px; background: var(--surface); }
+.rt-head { display: flex; align-items: center; gap: 12px; }
+.rt-head > span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.rt-head small { font-size: 12.5px; color: var(--muted); }
+.rt-head b { font-size: 17px; font-weight: 800; }
+.rt-head em { font-style: normal; font-size: 13px; font-weight: 700; color: var(--accent); background: var(--accent-soft); padding: 5px 10px; border-radius: 99px; }
+.rep-tasks ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.rep-tasks li { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 14px; border-radius: 16px; background: var(--card); font-size: 14.5px; font-weight: 600; }
+.rt-check { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; color: #fff; }
+.rep-tasks li > a { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; color: inherit; text-decoration: none; }
+.rep-tasks li > a > svg { flex: none; color: var(--muted); }
+.rep-tasks li:has(> a):hover { box-shadow: inset 0 0 0 1px var(--accent); }
+.rep-tasks li.done .rt-check { border-color: transparent; background: linear-gradient(135deg, #2FBF6A, #0B6B3A); }
+.rep-tasks li.done .rt-text { color: var(--muted); }
+.rt-text { flex: 1; min-width: 0; }
+.rt-prog { flex: none; width: 36px; height: 6px; border-radius: 99px; background: var(--surface); overflow: hidden; }
+.rt-prog i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.rep-tasks li small { flex: none; font-size: 12.5px; font-weight: 700; color: var(--muted); min-width: 34px; text-align: right; }
 .rep { display: flex; flex-direction: column; gap: 14px; padding: 18px; border-radius: 24px; background: var(--surface); }
 .rep.compact { gap: 10px; padding: 14px; border-radius: 20px; }
 .rep-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
