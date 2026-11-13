@@ -1080,7 +1080,7 @@
     [/^\/confirm$/, viewConfirm],
     [/^\/favorites$/, viewFavorites],
     [/^\/messages(?:\/(\d+|support))?$/, viewMessages],
-    [/^\/profile(?:\/(listings|settings|reputation|reviews|searches|following|stats\/\d+|business(?:\/(?:shop|stats))?))?$/, viewProfile],
+    [/^\/profile(?:\/(listings|settings|reputation|reviews|following|stats\/\d+|business(?:\/(?:shop|stats))?))?$/, viewProfile],
     [/^\/business$/, viewBusiness],
     [/^\/pay\/([\w-]+)$/, viewPay],
     [/^\/u\/(\d+)$/, viewUser],
@@ -1336,7 +1336,11 @@
         <div class="sa-chips">${d.cities.map((c) => html`<a href="${c.path}">${c.name}${c.n ? html`<span>${NF.format(c.n)}</span>` : ''}</a>`)}</div>` : ''}
         ${d.subs.length ? html`<div class="sa-h"><span class="bz-ic violet sm">${ic('list', 16, 2)}</span><b>${d.sub ? `Рядом в разделе «${d.catName}»` : 'Разделы'}</b></div>
         <div class="sa-links">${d.subs.map((x) => html`<a href="${x.path}"><span>${x.label}</span>${x.n ? html`<em>${NF.format(x.n)}</em>` : ''}${ic('right', 16, 2)}</a>`)}</div>` : ''}
-      </div>`;
+      </div>
+      ${d.faq && d.faq.length ? html`<div class="sa-faq">
+        <div class="sa-h"><span class="bz-ic blue sm">${ic('info', 16, 2)}</span><b>Частые вопросы</b></div>
+        <div class="sa-qs">${d.faq.map((x, i) => html`<details class="sa-q" ${i < 2 ? raw('open') : ''}><summary><span>${x.q}</span>${ic('down', 18, 2)}</summary><p>${x.a}</p></details>`)}</div>
+      </div>` : ''}`;
   }
 
   async function viewSearch(_, q, sec = null) {
@@ -1411,7 +1415,7 @@
         const box = $('#sec-about'); if (!box) return;
         box.innerHTML = String(secAbout(d));
         const h = $('.results-head h1'); if (h) h.textContent = d.h1;
-        setTitle(d.h1);
+        document.title = d.title || `${d.h1} — Торгана`; // тот же заголовок, что отдаёт сервер (lib/seo.js)
       }).catch(() => {});
     }
 
@@ -4167,7 +4171,6 @@
     if (!requireAuth()) return;
     if (!section && q.get('tab') === 'settings') { go(`/profile/settings${location.hash}`, true); return; }
     if (section === 'settings') { viewSettings(); return; }
-    if (section === 'searches') { go('/profile/following', true); return; } // 1.39.0: сохранённые поиски убраны
     if (section === 'reviews') { go('/profile/reputation', true); return; } // 1.47.2: отзывов нет, старые ссылки — на репутацию
     const hub = !section || section === 'listings';
     const statId = section && section.startsWith('stats/') ? section.slice(6) : null;

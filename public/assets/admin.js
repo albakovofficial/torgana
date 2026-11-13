@@ -878,11 +878,14 @@ window.TorganaAdmin = function (T) {
           <ol class="seo-steps">
             ${step(1, 'Вебмастер', html`На <a href="https://webmaster.yandex.ru" target="_blank" rel="noopener" style="text-decoration:underline">webmaster.yandex.ru</a> добавьте сайт https://torgana.ru → способ «Мета-тег» → скопируйте код сюда и сохраните → нажмите «Проверить» в Вебмастере.`)}
             ${step(2, 'Карта сайта', html`В Вебмастере: «Индексирование → Файлы Sitemap» → добавьте <code>${d.sitemap}</code>. Она обновляется сама.`)}
-            ${step(3, 'Метрика', html`На <a href="https://metrika.yandex.ru" target="_blank" rel="noopener" style="text-decoration:underline">metrika.yandex.ru</a> создайте счётчик для torgana.ru без Вебвизора → номер счётчика — сюда.`)}
-            ${step(4, 'Google', 'По желанию: Search Console → «Тег HTML» → код сюда, затем добавьте ту же карту сайта.')}
-            ${step(5, 'Карта объявлений', html`В <a href="https://developer.tech.yandex.ru" target="_blank" rel="noopener" style="text-decoration:underline">Кабинете разработчика Яндекса</a> → «Подключить API» → «JavaScript API и HTTP Геокодер» → в ограничениях укажите сайт torgana.ru → ключ сюда.`)}
+            ${step(3, 'Яндекс Товары', html`В Вебмастере: «Товары и цены → Фиды» → «Добавить фид» → <code>${d.feed}</code>. Объявления-вещи с ценой и фото появятся в товарном блоке выдачи. Фид обновляется раз в час.`)}
+            ${step(4, 'Метрика', html`На <a href="https://metrika.yandex.ru" target="_blank" rel="noopener" style="text-decoration:underline">metrika.yandex.ru</a> создайте счётчик для torgana.ru без Вебвизора → номер счётчика — сюда.`)}
+            ${step(5, 'Google', 'По желанию: Search Console → «Тег HTML» → код сюда, затем добавьте ту же карту сайта.')}
+            ${step(6, 'Карта объявлений', html`В <a href="https://developer.tech.yandex.ru" target="_blank" rel="noopener" style="text-decoration:underline">Кабинете разработчика Яндекса</a> → «Подключить API» → «JavaScript API и HTTP Геокодер» → в ограничениях укажите сайт torgana.ru → ключ сюда.`)}
           </ol>
           <div class="oa-copy"><code>${d.robots}</code><a class="btn btn-soft btn-sm" href="${d.robots}" target="_blank" rel="noopener">Открыть</a></div>
+          <div class="seo-now"><b>IndexNow</b> — Яндекс узнаёт о новых, изменённых и снятых объявлениях за минуты, настраивать ничего не нужно.
+            ${d.indexnow.on ? html`${d.indexnow.lastAt ? html`Последняя отправка — ${new Date(d.indexnow.lastAt).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}, адресов: ${d.indexnow.lastCount}. Всего отправлено: ${d.indexnow.sent}.` : 'Первая отправка — в ближайшие минуты.'}${d.indexnow.error ? html` <span style="color:var(--danger)">Ошибка: ${d.indexnow.error}</span>` : ''}` : 'Включится на настоящем адресе сайта (https).'}</div>
         </section>
       </div>`);
     $('#seo-f', box).onsubmit = async (e) => {

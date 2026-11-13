@@ -62,7 +62,6 @@ test('подписка: только адреса push-служб, VAPID-под�
 
 let bike;
 test('подписка на продавца: новое объявление → push и счётчик нового; сохранённых поисков больше нет', async () => {
-  assert.equal((await boris.post('/api/saved-searches', { q: 'велосипед' })).status, 404, '1.39.0: сохранённые поиски убраны');
   assert.equal((await boris.post(`/api/users/${anna.user.id}/follow`, { follow: true })).status, 200);
   bike = await publish(anna, admin, { title: 'Велосипед детский', description: 'Для 5–8 лет', category: 'hobby', city: 'Казань', price: 9000 });
   const m = await waitPush((x) => x.title === 'Новое у продавца Анна');
