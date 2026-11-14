@@ -1268,7 +1268,7 @@
       if (feed) feed.stop();
       $$('.ads-row.feed').forEach((x) => x.remove());
       const name = cat ? catName(cat) : '';
-      $('#feed-h').textContent = name ? `${name}${S.city ? ` · ${S.city}` : ''}` : `Свежие объявления${S.city ? ` · ${S.city}` : ''}`;
+      $('#feed-h').textContent = name ? `${name}${S.city ? ` · ${S.city}` : ''}` : `Все объявления${S.city ? ` · ${S.city}` : ''}`;
       $('#feed-all').href = cat ? cpath(cat, S.city) : `/search${S.city ? `?city=${encodeURIComponent(S.city)}` : ''}`;
       const params = { ...(S.city ? { city: S.city } : {}), ...(cat ? { category: cat } : {}) };
       const box = $('#feed');
