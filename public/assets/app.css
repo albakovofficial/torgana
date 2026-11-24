@@ -785,7 +785,7 @@ a.pf-num:hover { color: var(--text); box-shadow: 0 6px 18px rgba(16, 16, 16, .07
   .setx-nav a + a { border-top: 1px solid var(--line); }
   .setx-nav a.on { background: transparent; }
   .setx-ic, .setx-nav a.on .setx-ic { background: var(--accent-soft); color: var(--accent); }
-  .setx-panel { padding: 0; border: 0; border-radius: 0; gap: 20px; }
+  .setx-panel { padding: 0; border: 0; border-radius: 0; gap: 20px; background: transparent; }
   .set-h h2 { font-size: 26px; }
   .set-fields { grid-template-columns: minmax(0, 1fr); }
   .set-ava { padding: 16px; }
