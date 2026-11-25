@@ -15,7 +15,6 @@ const { CATEGORIES, CATEGORY_IDS, CITIES, PRICE_UNITS, CONDITIONS, SUPPORT_FAQ }
 const { norm, parseQuery, searchSpec, specSql, brandAliases, correctQuery } = require('./lib/search');
 const { suggestFromPhoto, pingYandex } = require('./lib/ai');
 const { createMailer } = require('./lib/mailer');
-const { createPush } = require('./lib/push');
 const { checkProhibited, blockedOf } = require('./lib/prohibited');
 const legal = require('./lib/legal');
 
@@ -324,10 +323,10 @@ const autoChecks = require('./lib/checks')({ db, marketEstimate });
 const goodPrice = require('./lib/goodprice')({ db }); // 1.48.0: «Хорошая цена»
 const GP_LOW = 0.85;
 const helpers = { HttpError, readJson, rateLimit, requireUser, requireAdmin, loadListing, cardFromRow, photoUrl, taxonomy, metro, video, attach, attrsOf, setAvatar, str, now, norm, autoChecks, OWNER_EMAIL, redirect, file: fileResponse, PUBLIC_URL: PUBLIC_URL || `http://localhost:${PORT}` };
-// 1.56.0: push и в приложение для iPhone (Apple APNs) — вместе с web-push, одной отправкой.
+// Push — только в приложение Торгана для iPhone (Apple APNs). 1.60.0: push в браузер (web-push) убраны.
 const apns = require('./lib/apns')({ db, route, h: helpers, testUrl: process.env.APNS_TEST_URL || '' });
-const push = createPush({ db, subject: `mailto:${SUPPORT_EMAIL || 'support@torgana.ru'}`, allowHttp: process.env.PUSH_ALLOW_HTTP === '1', apns });
-const alerts = require('./lib/alerts')({ route, db, mailer, push, h: helpers, categories: CATEGORIES });
+db.exec("DROP TABLE IF EXISTS push_subs; DELETE FROM settings WHERE key = 'vapid';"); // подписки браузеров и их ключ больше не нужны
+const alerts = require('./lib/alerts')({ route, db, mailer, apns, h: helpers, categories: CATEGORIES });
 helpers.alerts = alerts; // push и подборки нужны модерации, поддержке и отзывам
 const { logEvent, audit } = require('./lib/moderation')({ route, db, mailer, h: helpers });
 helpers.audit = audit; // журнал модерации нужен и отзывам, и поддержке
@@ -443,6 +442,7 @@ route('GET', '/api/config', () => ({
 route('GET', '/api/metro', (ctx) => ({ stations: metro.stations(ctx.query.get('city') || '') }));
 
 route('GET', '/api/me', (ctx) => {
+  if (ctx.user) { const e = auth.renewSession(db, ctx.token, ctx.user.expires_at); if (e) ctx.setCookie(auth.sessionCookie(ctx.token, e, SECURE_COOKIES)); }
   const unread = ctx.user ? unreadCount(ctx.user.id) + supportChat.unreadFor(ctx.user.id) : 0;
   return { user: publicUser(ctx.user), unread, fresh: ctx.user ? alerts.freshCounts(ctx.user.id) : null, notices: ctx.user ? alerts.unreadNotices(ctx.user.id) : 0,
     first: { left: first.left(), form: ctx.user ? first.formOf(ctx.user) : 'm' } }; // медаль «Один из первых»: сколько осталось и подпись

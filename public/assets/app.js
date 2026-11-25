@@ -4140,8 +4140,6 @@
   }
 
   async function logout() {
-    if (PUSH_APP) await appPush('push.signout', 4000);
-    else if (NATIVE && apnsToken) { await api('POST', '/api/push/apns/off', { token: apnsToken.token }).catch(() => {}); apnsMark(''); apnsSent = ''; }
     await api('POST', '/api/auth/logout').catch(() => {});
     S.user = null; setUnread(0);
     toast('Вы вышли из аккаунта');
@@ -4427,24 +4425,6 @@
     ? html`<label class="mini-switch"><input type="checkbox" name="${k}" aria-label="${kind} — ${title}" ${u[k] ? raw('checked') : ''}><span class="track"></span></label>`
     : html`<span class="ntf-none" title="Для этого события нет">—</span>`);
 
-  // Этот телефон или компьютер: включить, проверить, выключить push.
-  async function renderPushDevice(el) {
-    const st = await pushState();
-    const card = (icon, title, sub, buttons = '') => html`<div class="push-dev ${st.sub ? 'on' : ''}"><span class="push-dev-ic">${ic(icon, 22, 2)}</span><span class="push-dev-txt"><b>${title}</b><span>${sub}</span></span>${buttons}</div>`;
-    el.innerHTML = String(!st.ok
-      ? card('bell', 'На этом устройстве push недоступны', st.ios ? 'В браузере на iPhone уведомления не работают — они приходят в приложении Торгана. Письма на почту продолжат приходить.' : 'Браузер не поддерживает уведомления. Письма на почту продолжат приходить.')
-      : st.sub ? card('check', 'Включены на этом устройстве', deviceName(), html`<button type="button" class="btn btn-soft btn-sm" data-test>Проверить</button><button type="button" class="btn btn-line btn-sm" data-off>Выключить</button>`)
-        : st.perm === 'denied' && st.native ? card('bell', 'Уведомления запрещены', 'Разрешите их в Настройках iPhone → Торгана → Уведомления.', html`<button type="button" class="btn btn-accent" data-ios-set>Открыть настройки</button>`)
-        : st.perm === 'denied' ? card('bell', 'Уведомления запрещены в браузере', 'Вы отклонили запрос. Разрешите уведомления в настройках сайта (значок замка рядом с адресом), обновите страницу и нажмите «Включить уведомления».', html`<button type="button" class="btn btn-accent" data-reload>Я разрешил — обновить</button>`)
-          : card('bell', 'Уведомления выключены', 'Сообщим о новых сообщениях, решениях модерации, снижении цен и новом у продавцов из подписок.', html`<button type="button" class="btn btn-accent" data-on>${ic('bell', 18, 2)}Включить уведомления</button>`));
-    const act = async (fn, okText) => { try { await fn(); if (okText) toast(okText); renderPushDevice(el); } catch (e) { toast(e.message, true); } };
-    const on = $('[data-on]', el); if (on) on.onclick = () => act(pushOn, 'Уведомления включены');
-    const rl = $('[data-reload]', el); if (rl) rl.onclick = () => location.reload();
-    const iset = $('[data-ios-set]', el); if (iset) iset.onclick = () => nativePost({ type: 'open.settings' });
-    const off = $('[data-off]', el); if (off) off.onclick = () => act(pushOff, 'Уведомления на этом устройстве выключены');
-    const tst = $('[data-test]', el); if (tst) tst.onclick = () => act(async () => { const r = await api('POST', '/api/push/test'); if (!r.ok) throw new Error(r.error || 'Не получилось отправить — выключите и снова включите уведомления'); }, 'Отправили проверочное уведомление');
-  }
-
   // Для бизнеса (1.45.0): переключатель бизнес-аккаунта (для всех, открывает тарифы) и получение галочки —
   // объёмного значка «Проверенный бренд». Галочка — только правообладателю товарного знака из реестра Роспатента:
   // шаг 1 — компания или ИП (ИНН, ОГРН/ОГРНИП, сверка с ЕГРЮЛ/ЕГРИП, даёт плашку «ИП/Компания проверена»),
@@ -4704,12 +4684,11 @@
           <span>Вы в первой тысяче продавцов Торганы — медаль видна в профиле и в ваших объявлениях. Как её подписать:</span>
           <div class="seg" role="radiogroup" aria-label="Подпись медали">${['m', 'f'].map((v) => html`<button type="button" role="radio" class="${u.badges.first.form === v ? 'on' : ''}" aria-checked="${u.badges.first.form === v ? 'true' : 'false'}" data-medal-form="${v}">${firstName(v)}</button>`)}</div></div></div>` : ''}`,
       sn: () => html`${head('Уведомления', 'О чём сообщать и куда. Переключатели сохраняются сразу')}
-        <div id="push-dev"></div>
         <table class="ntf" id="sn">
-          <thead><tr><th scope="col">Событие</th><th scope="col">${ic('bell', 16, 2)}Push</th>${S.config.mail ? html`<th scope="col">${ic('mail', 16, 2)}Письмо</th>` : ''}</tr></thead>
-          <tbody>${NOTIFY_ROWS.filter(([, , p]) => p || S.config.mail).map(([t, sub, p, m]) => html`<tr><th scope="row"><b>${t}</b><small>${sub}</small></th><td>${notifyCell(u, p, t, 'Push')}</td>${S.config.mail ? html`<td>${notifyCell(u, m, t, 'Письмо')}</td>` : ''}</tr>`)}</tbody>
+          <thead><tr><th scope="col">Событие</th><th scope="col">${ic('phone', 16, 2)}Приложение</th>${S.config.mail ? html`<th scope="col">${ic('mail', 16, 2)}Письмо</th>` : ''}</tr></thead>
+          <tbody>${NOTIFY_ROWS.filter(([, , p]) => p || S.config.mail).map(([t, sub, p, m]) => html`<tr><th scope="row"><b>${t}</b><small>${sub}</small></th><td>${notifyCell(u, p, t, 'Приложение')}</td>${S.config.mail ? html`<td>${notifyCell(u, m, t, 'Письмо')}</td>` : ''}</tr>`)}</tbody>
         </table>
-        ${S.config.mail ? html`<p class="set-small">Письма приходят на ${u.email}</p>` : ''}`,
+        <p class="set-small">Push приходят в приложение Торгана на iPhone — включите уведомления в нём.${S.config.mail ? ` Письма — на ${u.email}.` : ''}</p>`,
       sp: () => html`${head('Пароль и вход', oauth.length ? `Входите по паролю или в одно касание через ${names}` : 'Пароль для входа на Торгану')}
         ${NATIVE || u.oauth.includes('apple') ? html`<div class="set-block"><h3>Apple ID</h3><div class="set-list"><div class="set-row oauth-apple"><span class="oauth-mark" aria-hidden="true"><span class="apple-glyph">\uF8FF</span></span><div><span class="set-v">Войти с Apple</span><span class="set-k">${u.oauth.includes('apple') ? 'Привязан' : 'Не привязан'}</span></div>
           ${u.oauth.includes('apple') ? html`<button type="button" class="btn btn-line btn-sm" data-unlink="apple">Отвязать</button>` : NATIVE ? html`<button type="button" class="btn btn-soft btn-sm" data-link-apple>Привязать</button>` : ''}</div></div></div>` : ''}
@@ -4786,7 +4765,6 @@
           try { const r = await api('PATCH', '/api/me', { [inp.name]: inp.checked }); S.user = r.user; toast(inp.checked ? 'Включено' : 'Выключено'); } catch (ex) { inp.checked = !inp.checked; toast(ex.message, true); }
         };
       });
-      renderPushDevice($('#push-dev'));
     }
     if (sec === 'sp') {
       $$('[data-link]').forEach((b) => { b.onclick = () => oauthGo(b.dataset.link, { link: true }); });
@@ -5399,7 +5377,7 @@
         const v = (/[?&]v=([\w-]+)/.exec(($('script[src*="/assets/app.js"]') || {}).src || '') || [])[1];
         const s = document.createElement('script');
         s.src = `/assets/admin.js${v ? `?v=${v}` : ''}`;
-        s.onload = () => ok(window.TorganaAdmin({ $, $$, CANCEL_REASON, CONDITION_LABEL, MONTHS, MY_STATUS, MY_TAG, NF, P, PAY_STATUS, S, api, app, authPage, ava, catName, codeForm, confirmModal, dateLong, dateShort, eraseModal, esc, go, hm, html, ic, mountChat, nameSeal, navLink, openModal, plural, price, raw, reasonModal, render, renderPushDevice, repLine, requireAuth, rub, setTitle, shortWhen, since, subName, supportAva, svg, toast, trustBadges, verifiedSeal, viewNotFound, when, setCleanup: (f) => { cleanup = f; } }));
+        s.onload = () => ok(window.TorganaAdmin({ $, $$, CANCEL_REASON, CONDITION_LABEL, MONTHS, MY_STATUS, MY_TAG, NF, P, PAY_STATUS, S, api, app, authPage, ava, catName, codeForm, confirmModal, dateLong, dateShort, eraseModal, esc, go, hm, html, ic, mountChat, nameSeal, navLink, openModal, plural, price, raw, reasonModal, render, repLine, requireAuth, rub, setTitle, shortWhen, since, subName, supportAva, svg, toast, trustBadges, verifiedSeal, viewNotFound, when, setCleanup: (f) => { cleanup = f; } }));
         s.onerror = () => { adminMod = null; s.remove(); fail(new Error('Не получилось загрузить модерацию — проверьте связь и обновите страницу')); };
         document.head.append(s);
       });
@@ -5588,99 +5566,7 @@
     document.addEventListener('touchcancel', () => { if (state === 'pull' || state === 'maybe') { state = 'idle'; hide(); } }, { passive: true });
   }
 
-  const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-  // ================= push-уведомления =================
-  const PUSH_OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
-  // На iPhone вне приложения push нет — они приходят в приложении Торгана.
-  const IOS_TAB = IOS && !NATIVE;
-  let swReg = null;
-  function swReady() {
-    if (!PUSH_OK) return Promise.resolve(null);
-    if (!swReg) {
-      swReg = navigator.serviceWorker.register('/sw.js').catch(() => null);
-      navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.go) go(new URL(e.data.go).pathname); });
-    }
-    return swReg;
-  }
-  // 1.56.0: в приложении push — через Apple (APNs): разрешение спрашивает iPhone, адрес устройства (token) приходит
-  // событием push.token после каждой загрузки страницы — сохраняем на сервере для вошедшего человека.
-  const nativeWait = (type, ms = 4000) => new Promise((res) => {
-    const on = (e) => { if (e.detail && e.detail.type === type) { window.removeEventListener('torgana-native', on); res(e.detail); } };
-    window.addEventListener('torgana-native', on);
-    setTimeout(() => { window.removeEventListener('torgana-native', on); res(null); }, ms);
-  });
-  // В хранилище: адрес устройства, если push включены, или 'off' — человек выключил их в настройках.
-  // Адрес отправляем на сервер раз за запуск: сервер мог удалить его (Apple ответил, что он устарел).
-  // 1.56.5: в родном приложении (TorganaApp.push === 'app') push ведёт само приложение — адрес устройства странице не даёт,
-  // страница только спрашивает (push.state) и просит (push.on / push.off / push.signout). Остальное ниже — для сборок-оболочек
-  // TestFlight 1.0.0 (15) и (18); убрать, когда их сменит родное приложение.
-  const PUSH_APP = NATIVE && !!window.TorganaApp && window.TorganaApp.push === 'app';
-  const appPush = async (type, ms) => { nativePost({ type }); return (await nativeWait(type, ms)) || { ok: false, perm: 'default', on: false }; };
-  let apnsToken = null; let apnsErr = ''; let apnsSent = '';
-  const apnsKey = () => `tg_apns_${S.user ? S.user.id : 0}`;
-  const apnsMark = (v) => { try { if (v) localStorage.setItem(apnsKey(), v); else localStorage.removeItem(apnsKey()); } catch { /* нет хранилища */ } };
-  const apnsOn = () => { try { const v = localStorage.getItem(apnsKey()); return !!v && v !== 'off'; } catch { return false; } };
-  async function apnsSend(force = false) {
-    if (!NATIVE || PUSH_APP || !apnsToken || !S.user) return false;
-    const was = (() => { try { return localStorage.getItem(apnsKey()); } catch { return null; } })();
-    if (!force && (was === 'off' || apnsSent === `${S.user.id}:${apnsToken.token}`)) return true;
-    try { await api('POST', '/api/push/apns', apnsToken); } catch { return false; }
-    apnsSent = `${S.user.id}:${apnsToken.token}`; apnsMark(apnsToken.token);
-    return true;
-  }
-  if (NATIVE) {
-    window.addEventListener('torgana-native', (e) => {
-      const m = e.detail || {};
-      if (m.type === 'push.token' && m.token) { apnsToken = { token: m.token, env: m.env === 'development' ? 'development' : 'production' }; apnsSend(); }
-      if (m.type === 'push.error') apnsErr = String(m.message || '');
-    });
-  }
-  async function pushState() {
-    if (PUSH_APP) { const r = await appPush('push.state', 2500); return { ok: true, native: true, sub: r.on ? { native: true } : null, perm: r.perm }; }
-    if (NATIVE) {
-      nativePost({ type: 'push.status' });
-      const r = await nativeWait('push.status', 2500);
-      const perm = r ? r.status : 'default';
-      return { ok: true, native: true, sub: perm === 'granted' && apnsOn() ? { native: true } : null, perm };
-    }
-    const reg = await swReady();
-    if (!reg) return { ok: false, ios: IOS_TAB };
-    return { ok: true, sub: await reg.pushManager.getSubscription(), perm: Notification.permission };
-  }
-  const b64uBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
-  const deviceName = () => { const ua = navigator.userAgent; if (NATIVE) return 'iPhone · приложение Торгана'; return `${/Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iPhone' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Устройство'} · ${/YaBrowser/.test(ua) ? 'Яндекс Браузер' : /Edg\//.test(ua) ? 'Edge' : /Firefox/.test(ua) ? 'Firefox' : /Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : 'браузер'}`; };
-  async function pushOn() {
-    if (PUSH_APP) { const r = await appPush('push.on', 70000); if (!r.ok) throw new Error(r.error || 'Не получилось включить уведомления — попробуйте ещё раз'); return; }
-    if (NATIVE) {
-      nativePost({ type: 'push.request' });
-      const r = await nativeWait('push.status', 60000); // ждём ответа в системном окне
-      if (!r || r.status !== 'granted') throw new Error('Уведомления запрещены — включите их в Настройках iPhone → Торгана → Уведомления');
-      const t = apnsToken || await nativeWait('push.token', 8000);
-      if (!t || !t.token) throw new Error(`iPhone не выдал адрес для уведомлений${apnsErr ? ` (${apnsErr})` : ''}. Закройте приложение, откройте снова и включите ещё раз`);
-      apnsToken = { token: t.token, env: t.env === 'development' ? 'development' : 'production' };
-      if (!(await apnsSend(true))) throw new Error('Не получилось подключить уведомления — проверьте интернет и попробуйте ещё раз');
-      return;
-    }
-    if (!PUSH_OK) throw new Error(IOS_TAB ? 'В браузере на iPhone уведомления не работают — они приходят в приложении Торгана' : 'Этот браузер не поддерживает уведомления');
-    if (await Notification.requestPermission() !== 'granted') throw new Error('Уведомления запрещены — разрешите их в настройках сайта в браузере');
-    const reg = await swReady();
-    const { key } = await api('GET', '/api/push');
-    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(key) });
-    await api('POST', '/api/push/subscribe', { subscription: sub.toJSON(), device: deviceName() });
-  }
-  async function pushOff() {
-    if (PUSH_APP) { await appPush('push.off', 8000); return; }
-    if (NATIVE) { // разрешение iPhone не отзовёшь из приложения — перестаём слать на это устройство
-      if (apnsToken) await api('POST', '/api/push/apns/off', { token: apnsToken.token }).catch(() => {});
-      apnsMark('off');
-      return;
-    }
-    const { sub } = await pushState();
-    if (!sub) return;
-    await api('POST', '/api/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
-    await sub.unsubscribe().catch(() => {});
-  }
   // ================= запуск =================
   // Кто вошёл, непрочитанное и новое у продавцов — при запуске и раз в 30 секунд.
   function applyMe(r) {
@@ -5693,41 +5579,7 @@
     return changed;
   }
   async function refreshMe() {
-    try { if (applyMe(await api('GET', '/api/me'))) { renderHeader(); renderBottomNav(); pushAskOnce(); apnsSend(); } } catch { /* офлайн */ }
-  }
-
-  // Разовый вопрос про уведомления (1.23): при первом заходе вошедшего человека — один раз на устройство и навсегда,
-  // обновления сайта его не повторяют (метка в localStorage). Не спрашиваем, если браузер уже знает ответ
-  // (разрешено или запрещено), push не поддерживается или уже есть подписка. Системный запрос браузера —
-  // только по нажатию «Включить»: так браузер его не прячет.
-  const ASK_KEY = 'tg_push_asked';
-  let asking = false;
-  async function pushAskOnce() {
-    if (!S.user || asking || PUSH_APP) return; // родное приложение спрашивает само
-    try { if (localStorage.getItem(ASK_KEY)) return; } catch { return; }
-    if (['/confirm', '/login', '/register', '/reset', '/forgot'].includes(location.pathname)) return;
-    asking = true;
-    const st = await pushState().catch(() => ({ ok: false }));
-    const mark = () => { try { localStorage.setItem(ASK_KEY, String(Date.now())); } catch { /* нет хранилища */ } };
-    if (!st.ok || st.sub || st.perm !== 'default') { mark(); asking = false; return; }
-    await new Promise((r) => setTimeout(r, 1200));
-    if (!S.user || $('.modal-back')) { asking = false; return; } // занято другим окном — спросим при следующем заходе
-    mark();
-    openModal(String(html`<div class="ask-push"><span class="ask-ic">${ic('bell', 30, 1.9)}</span>
-      <h2>Включить уведомления?</h2>
-      <p>Сообщим, когда объявление опубликуют, напишут в чате или подешевеет товар из избранного. Выключить можно в настройках.</p>
-      <div class="ask-act"><button class="btn btn-accent btn-lg btn-block" data-ok>Включить</button><button class="btn btn-soft btn-lg btn-block" data-x>Не сейчас</button></div></div>`), (m, close) => {
-      m.classList.add('ask-modal'); m.parentElement.classList.add('ask-back');
-      $('[data-x]', m).onclick = close;
-      const ok = $('[data-ok]', m);
-      if (ok) {
-        ok.onclick = async () => {
-          ok.disabled = true;
-          try { await pushOn(); close(); toast('Уведомления включены'); } catch (e) { close(); toast(e.message, true); }
-        };
-      }
-    });
-    asking = false;
+    try { if (applyMe(await api('GET', '/api/me'))) { renderHeader(); renderBottomNav(); } } catch { /* офлайн */ }
   }
 
   // Откуда пришёл человек (первый заход браузера): метка utm_source или сайт, с которого перешли.
@@ -5756,11 +5608,12 @@
 
   async function boot() {
     trackSource();
+    // 1.60.0: push в браузер (с тех пор, как сайт ставили на экран «Домой») убраны — снимаем их service worker.
+    if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister())).catch(() => {});
     try {
       const [config, me] = await Promise.all([api('GET', '/api/config'), api('GET', '/api/me')]);
       S.config = config;
       applyMe(me);
-      if (S.user) swReady(); // подписка на push живёт, пока зарегистрирован service worker
     } catch (e) {
       app.innerHTML = String(html`<div class="wrap"><div class="empty" style="margin-top:40px"><h3>Нет связи с сервером</h3><p>${e.message}</p><a class="btn btn-dark" href="/">Обновить</a></div></div>`);
       return;
@@ -5772,7 +5625,6 @@
     if (pend && !location.pathname.startsWith('/pay/')) history.replaceState(null, '', `/pay/${pend}`);
     await render();
     cookieBar();
-    pushAskOnce();
     setupPullToRefresh();
     setInterval(() => { if (S.user && document.visibilityState === 'visible') refreshMe(); }, 30000);
   }

@@ -417,8 +417,7 @@ function pages(d) {
     // 1.35.5: галерея листается свайпом — лента едет за пальцем
     ['gallery-swipe', `/l/${d.ids[0]}`, null, 'swipe'],
     // 1.36.1: в просмотре фото соседнее фото въезжает рядом, без затемнения
-    ['photo-viewer-slide', `/l/${d.ids[0]}`, null, 'pv-slide'],
-    ['push-ask', '/', d.buyer, 'push-ask']
+    ['photo-viewer-slide', `/l/${d.ids[0]}`, null, 'pv-slide']
   ];
 }
 
@@ -470,8 +469,6 @@ async function main() {
         await ctx.route(/api-maps\.yandex\.ru/, (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: YMAPS_STUB }));
         // Плашку cookie показываем только на своей странице проверки, на остальных — выбор уже сделан.
         if (name !== 'cookie') await ctx.addInitScript(() => { try { localStorage.setItem('tg_cookie', 'necessary'); } catch { /* нет */ } });
-        // Разовый вопрос про уведомления — только на своей странице проверки.
-        if (name !== 'push-ask') await ctx.addInitScript(() => { try { localStorage.setItem('tg_push_asked', '1'); } catch { /* нет */ } });
         const page = await ctx.newPage();
         const errors = [];
         page.on('pageerror', (e) => errors.push(`JS: ${e.message}`));
@@ -549,20 +546,6 @@ async function main() {
               await page.screenshot({ path: path.join(SHOTS, `${vpName}-admin-menu-open.png`) });
             }
           } else if ((await page.$$('.adm-nav a')).length !== 14) errors.push(`в меню модерации не 14 пунктов, а ${(await page.$$('.adm-nav a')).length}`);
-        } else if (open === 'push-ask') {
-          // Первый заход вошедшего: один раз спрашиваем про уведомления; после «Не сейчас» — больше никогда.
-          // Если браузер проверки не умеет push (так бывает в GitHub Actions), вопроса быть не должно — но метка ставится.
-          const shown = await page.waitForSelector('.ask-push', { timeout: 4000 }).then(() => true).catch(() => false);
-          if (shown) {
-            await page.screenshot({ path: path.join(SHOTS, `${vpName}-push-ask-open.png`) });
-            await page.click('.ask-push [data-x]');
-          } else {
-            const st = await page.evaluate(() => ({ asked: !!localStorage.getItem('tg_push_asked'), push: 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && Notification.permission === 'default' }));
-            if (st.push || !st.asked) errors.push('вопрос про уведомления не появился');
-          }
-          await page.reload({ waitUntil: 'networkidle' });
-          await page.waitForTimeout(1800);
-          if (await page.$('.ask-push')) errors.push('вопрос про уведомления повторился');
         } else if (open === 'step:2:more') {
           await page.click('[data-step="1"]');
           await page.waitForTimeout(300);

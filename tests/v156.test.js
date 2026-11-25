@@ -5,6 +5,8 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const http2 = require('node:http2');
 const crypto = require('node:crypto');
+const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
 const { startServer, registerUser, client } = require('./helpers');
 
 const apnsKey = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
@@ -19,6 +21,7 @@ function appleToken(claims) {
   const data = `${b64u({ alg: 'RS256', kid: KID })}.${b64u({ iss: 'https://appleid.apple.com', aud: 'ru.torgana.app', exp: Math.floor(Date.now() / 1000) + 600, ...claims })}`;
   return `${data}.${crypto.sign('RSA-SHA256', Buffer.from(data), appleKey.privateKey).toString('base64url')}`;
 }
+const devices = (id) => { const db = new DatabaseSync(path.join(srv.tmp, 'data', 'torgana.db')); const n = db.prepare('SELECT COUNT(*) AS n FROM apns_tokens WHERE user_id = ?').get(id).n; db.close(); return n; };
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
 test.before(async () => {
@@ -65,7 +68,7 @@ test('push в приложение: адрес устройства, подпи�
   assert.equal((await anna.post('/api/push/apns', { token: 'xyz' })).status, 400);
   assert.equal((await anna.post('/api/push/apns', { token: TOKEN_OK.toUpperCase(), env: 'production' })).status, 200);
   assert.equal((await anna.post('/api/push/apns', { token: TOKEN_GONE })).status, 200);
-  assert.equal((await anna.get('/api/push')).data.devices, 2, 'устройства — и iPhone');
+  assert.equal(devices(anna.user.id), 2, 'два iPhone');
   const lid = (await anna.post('/api/listings', { title: 'Велосипед', category: 'hobby', city: 'Казань', price: '1000' })).data.id;
   await admin.post(`/api/admin/listings/${lid}/restore`);
   const cid = (await boris.post('/api/conversations', { listingId: lid })).data.id;
@@ -83,10 +86,10 @@ test('push в приложение: адрес устройства, подпи�
   assert.equal(m.body.aps.sound, 'default');
   assert.match(m.body.url, /^\/messages\//);
   await new Promise((r) => setTimeout(r, 200));
-  assert.equal((await anna.get('/api/push')).data.devices, 1, 'Unregistered — адрес удалён');
+  assert.equal(devices(anna.user.id), 1, 'Unregistered — адрес удалён');
   // выключить на устройстве
   await anna.post('/api/push/apns/off', { token: TOKEN_OK });
-  assert.equal((await anna.get('/api/push')).data.devices, 0);
+  assert.equal(devices(anna.user.id), 0);
 });
 
 test('«Войти с Apple»: подпись, aud, одноразовый nonce, новый аккаунт и повторный вход', async () => {
@@ -130,7 +133,7 @@ test('«Проверить»: понятная причина, если увед
   assert.match(r.data.error, /ключ APNs/, 'Apple не принял ключ — так и говорим');
   const g = (await admin.get('/api/admin/apns')).data;
   assert.equal(g.lastError.reason, 'InvalidProviderToken');
-  assert.equal((await carl.get('/api/push')).data.devices, 1, 'из-за ключа адрес устройства не удаляем');
+  assert.equal(devices(carl.user.id), 1, 'из-за ключа адрес устройства не удаляем');
   await carl.post('/api/push/test');
   assert.equal(new Set(got.map((x) => x.headers.authorization)).size, 1, 'вход Apple не обновляем на каждый ответ 403 — иначе TooManyProviderTokenUpdates');
 });
