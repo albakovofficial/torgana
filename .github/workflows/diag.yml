@@ -4,19 +4,26 @@ permissions: {}
 jobs:
   ru:
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 10
     steps:
       - run: |
           H='Accept: application/json'
-          nodes=$(curl -s -H "$H" https://check-host.net/nodes/hosts | jq -r '.nodes | to_entries[] | select(.value.location[0]=="ru") | .key' | head -12)
-          echo "Узлы в России:"; echo "$nodes"
+          all=$(curl -s -m 20 -H "$H" https://check-host.net/nodes/hosts)
+          nodes="$(echo "$all" | jq -r '.nodes | to_entries[] | select(.value.location[0]=="ru") | .key') $(echo "$all" | jq -r '.nodes | to_entries[] | select(.value.location[0]=="de" or .value.location[0]=="nl" or .value.location[0]=="kz") | .key' | head -3)"
           q=$(for n in $nodes; do printf '&node=%s' "$n"; done)
-          for kind in http tcp ping; do
-            target=https://torgana.ru/api/config; [ $kind = tcp ] && target=torgana.ru:443; [ $kind = ping ] && target=torgana.ru
-            id=$(curl -s -H "$H" "https://check-host.net/check-$kind?host=$target$q" | jq -r .request_id)
-            sleep 25
-            echo "=== $kind $target"
-            curl -s -H "$H" https://check-host.net/check-result/$id | jq -c 'to_entries[] | {node: .key, r: .value}'
-          done
-          for n in $nodes; do :; done
-          curl -s -H "$H" https://check-host.net/nodes/hosts | jq -c '.nodes | to_entries[] | select(.value.location[0]=="ru") | {n: .key, city: .value.location[2], asn: .value.asn}' | head -12
+          run() {
+            id=$(curl -s -m 20 -H "$H" "https://check-host.net/check-$1?host=$2$q" | jq -r .request_id)
+            echo "=== $1 $2 ($id)"
+            for i in $(seq 1 12); do
+              sleep 10
+              r=$(curl -s -m 20 -H "$H" https://check-host.net/check-result/$id)
+              echo "$r" | jq -e 'all(.[]; . != null)' >/dev/null && break
+            done
+            echo "$r" | jq -c 'to_entries[] | {node: .key, r: .value}'
+          }
+          run http https://torgana.ru/api/config
+          run http https://torgana.ru/
+          run tcp torgana.ru:443
+          run tcp torgana.ru:80
+          run ping torgana.ru
+          run http https://ya.ru/
