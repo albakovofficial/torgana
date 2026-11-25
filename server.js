@@ -443,6 +443,7 @@ route('GET', '/api/config', () => ({
 route('GET', '/api/metro', (ctx) => ({ stations: metro.stations(ctx.query.get('city') || '') }));
 
 route('GET', '/api/me', (ctx) => {
+  if (ctx.user) { const e = auth.renewSession(db, ctx.token, ctx.user.expires_at); if (e) ctx.setCookie(auth.sessionCookie(ctx.token, e, SECURE_COOKIES)); }
   const unread = ctx.user ? unreadCount(ctx.user.id) + supportChat.unreadFor(ctx.user.id) : 0;
   return { user: publicUser(ctx.user), unread, fresh: ctx.user ? alerts.freshCounts(ctx.user.id) : null, notices: ctx.user ? alerts.unreadNotices(ctx.user.id) : 0,
     first: { left: first.left(), form: ctx.user ? first.formOf(ctx.user) : 'm' } }; // медаль «Один из первых»: сколько осталось и подпись
