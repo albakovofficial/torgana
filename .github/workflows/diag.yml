@@ -1,0 +1,22 @@
+name: Диагностика из России
+on: { push: { branches: [diag-ru] } }
+permissions: {}
+jobs:
+  ru:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - run: |
+          H='Accept: application/json'
+          nodes=$(curl -s -H "$H" https://check-host.net/nodes/hosts | jq -r '.nodes | to_entries[] | select(.value.location[0]=="ru") | .key' | head -12)
+          echo "Узлы в России:"; echo "$nodes"
+          q=$(for n in $nodes; do printf '&node=%s' "$n"; done)
+          for kind in http tcp ping; do
+            target=https://torgana.ru/api/config; [ $kind = tcp ] && target=torgana.ru:443; [ $kind = ping ] && target=torgana.ru
+            id=$(curl -s -H "$H" "https://check-host.net/check-$kind?host=$target$q" | jq -r .request_id)
+            sleep 25
+            echo "=== $kind $target"
+            curl -s -H "$H" https://check-host.net/check-result/$id | jq -c 'to_entries[] | {node: .key, r: .value}'
+          done
+          for n in $nodes; do :; done
+          curl -s -H "$H" https://check-host.net/nodes/hosts | jq -c '.nodes | to_entries[] | select(.value.location[0]=="ru") | {n: .key, city: .value.location[2], asn: .value.asn}' | head -12
