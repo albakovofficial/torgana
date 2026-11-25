@@ -1008,6 +1008,8 @@ route('POST', '/api/ai/suggest', async (ctx) => {
     s.subcategory = s.category && (taxonomy.SUBCATS[s.category] || []).some((x) => x.id === s.subcategory) ? s.subcategory : '';
     const attrs = {};
     if (s.subcategory) for (const [k, v] of Object.entries(s.attrs)) { try { Object.assign(attrs, taxonomy.cleanAttrs(s.subcategory, { [k]: v })); } catch { /* не из списка или вне пределов */ } }
+    // 1.60.1: модель машины — только из списка угаданной марки; не из списка — не подставляем.
+    if (attrs.model && attrs.brand) { try { const c = taxonomy.cleanAttrs(s.subcategory, attrs); if (!c.model) delete attrs.model; } catch { /* остальное уже проверено */ } }
     s.attrs = attrs;
     const est = s.category ? marketEstimate({ category: s.category, title: s.title, priceUnit: '' }) : null;
     return { ...s, priceHint: est ? est.median : null, priceHintCount: est ? est.count : 0 };
