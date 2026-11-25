@@ -983,6 +983,16 @@ const AI_SUBS = Object.entries(taxonomy.SUBCATS).map(([cat, list]) => list.map((
   return `${cat}/${x.id} — ${x.name}${req.length ? ` (${req.join('; ')})` : ''}`;
 }).join('\n')).join('\n');
 
+// 1.60.1: название из характеристик для превью в приложении (у машин, квартир, телефонов…) — тот же autoTitle, что при сохранении.
+route('POST', '/api/listings/title', async (ctx) => {
+  const b = await readJson(ctx.req);
+  const sub = String(b.subcategory || '');
+  if (!taxonomy.TITLE_SUBS.has(sub)) return { title: '' };
+  let attrs = {};
+  try { attrs = taxonomy.cleanAttrs(sub, b.attrs); } catch { return { title: '' }; }
+  return { title: taxonomy.autoTitle(sub, attrs).slice(0, 80) };
+});
+
 route('POST', '/api/ai/suggest', async (ctx) => {
   const u = requireUser(ctx);
   const cfg = aiCfg();
