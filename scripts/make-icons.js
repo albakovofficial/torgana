@@ -3,9 +3,8 @@
 // Иконки Торганы из одного описания знака «Т-ценник».
 //   node scripts/make-icons.js
 // Создаёт: assets/favicon.svg (вкладка браузера, круг) и assets/icons/*.png (квадрат на весь размер, знак в безопасной зоне:
-// icon-192 — значок push в браузере, icon-512 — логотип для поисковиков)
+// icon-192 — значок вкладки и /favicon.ico, icon-512 — логотип для поисковиков)
 // и assets/icons/mail-logo.png (логотип в шапке писем: круг, как favicon),
-// assets/icons/badge-96.png (значок push-уведомлений в строке состояния Android: белый знак на прозрачном).
 // apple-touch-icon.png (180×180, без прозрачности) — она же аватарка отправителя для Mail.ru Postmaster,
 // icon-512.png — для портрета Яндекс ID и фото Google-аккаунта no-reply@.
 // assets/og.jpg (1200×630) — картинка для ссылок в мессенджерах и соцсетях: знак, слоган «Сторгуемся!» (1.49.2).
@@ -36,8 +35,6 @@ const appIcon = (size) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size
 </svg>`;
 
 const PNG = { 'apple-touch-icon.png': 180, 'icon-192.png': 192, 'icon-512.png': 512 };
-const BADGE = 96;
-const badge = `<svg xmlns="http://www.w3.org/2000/svg" width="${BADGE}" height="${BADGE}" viewBox="0 0 48 48"><g transform="translate(24 24.4) scale(0.95) translate(-24 -25)">${MARK('transparent')}</g></svg>`;
 const MAIL_LOGO = 102; // показывается 34×34, запас на экраны с высокой плотностью
 
 // Картинка для ссылок: шрифт Onest — из assets/fonts (встраиваем, чтобы не зависеть от сети).
@@ -77,11 +74,6 @@ async function main() {
     await page.screenshot({ path: path.join(ASSETS, 'icons', 'mail-logo.png'), clip: { x: 0, y: 0, width: MAIL_LOGO, height: MAIL_LOGO }, omitBackground: true });
     await page.close();
     console.log(`icons/mail-logo.png — ${MAIL_LOGO}×${MAIL_LOGO}`);
-    const bp = await browser.newPage({ viewport: { width: BADGE, height: BADGE }, deviceScaleFactor: 1 });
-    await bp.setContent(`<html><body style="margin:0;background:transparent">${badge}</body></html>`);
-    await bp.screenshot({ path: path.join(ASSETS, 'icons', 'badge-96.png'), clip: { x: 0, y: 0, width: BADGE, height: BADGE }, omitBackground: true });
-    await bp.close();
-    console.log(`icons/badge-96.png — ${BADGE}×${BADGE}`);
     const op = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1 });
     await op.setContent(og());
     await op.evaluate(() => document.fonts.ready);

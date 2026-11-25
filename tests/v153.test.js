@@ -2,32 +2,29 @@
 // 1.53.0: push модераторам — новые продавцы, апелляции, долгое ожидание проверки, медали, итоги дня, сбои сайта.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const http = require('node:http');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
-const { startServer, registerUser, fakeBrowser } = require('./helpers');
+const { startServer, registerUser, fakeApns } = require('./helpers');
 
-let srv; let pushSrv; let pushPort; let admin; let mod; let anna;
-const inbox = [];
-const phone = fakeBrowser(); const modPhone = fakeBrowser();
-const got = (who, b) => inbox.filter((m) => m.path === `/sub/${who}`).map((m) => b.decrypt(m.body));
-const wait = async (who, b, fn, ms = 5000) => {
-  for (let t = 0; t < ms; t += 50) { const hit = got(who, b).find(fn); if (hit) return hit; await new Promise((r) => setTimeout(r, 50)); }
-  throw new Error(`push не пришёл; есть: ${got(who, b).map((x) => x.title).join('; ')}`);
+let srv; let apple; let admin; let mod; let anna;
+const phone = 'admin'; const modPhone = 'mod';
+const got = (who) => apple.to(who);
+const wait = async (who, _b, fn, ms = 5000) => {
+  for (let t = 0; t < ms; t += 50) { const hit = got(who).find(fn); if (hit) return hit; await new Promise((r) => setTimeout(r, 50)); }
+  throw new Error(`push не пришёл; есть: ${got(who).map((x) => x.title).join('; ')}`);
 };
 test.before(async () => {
-  pushSrv = http.createServer((req, res) => { const c = []; req.on('data', (x) => c.push(x)).on('end', () => { inbox.push({ path: req.url, body: Buffer.concat(c) }); res.writeHead(201); res.end(); }); });
-  await new Promise((r) => pushSrv.listen(0, '127.0.0.1', r));
-  pushPort = pushSrv.address().port;
-  srv = await startServer({ ADMIN_EMAIL: 'admin@test.local,mod@test.local', PUBLIC_URL: 'http://torgana.test', PUSH_ALLOW_HTTP: '1',
+  apple = await fakeApns();
+  srv = await startServer({ ADMIN_EMAIL: 'admin@test.local,mod@test.local', PUBLIC_URL: 'http://torgana.test', APNS_TEST_URL: apple.url,
     ADMIN_TICK_MS: '200', ADMIN_WAIT_MS: '1', ADMIN_ANY_HOUR: '1', OPS_TICK_MS: '300' });
   admin = await registerUser(srv.base, { name: 'Модератор', email: 'admin@test.local' });
   mod = await registerUser(srv.base, { name: 'Второй модератор', email: 'mod@test.local' });
   anna = await registerUser(srv.base, { name: 'Анна Смирнова', email: 'anna@test.local' });
-  await admin.post('/api/push/subscribe', { subscription: { endpoint: `http://127.0.0.1:${pushPort}/sub/admin`, keys: phone.keys } });
-  await mod.post('/api/push/subscribe', { subscription: { endpoint: `http://127.0.0.1:${pushPort}/sub/mod`, keys: modPhone.keys } });
+  await apple.connect(admin);
+  await apple.phone(admin, 'admin');
+  await apple.phone(mod, 'mod');
 });
-test.after(async () => { if (process.env.SHOW_PUSH) console.log(JSON.stringify(got('admin', phone).map((x) => [x.title, x.body]), null, 1)); await srv.stop(); pushSrv.close(); });
+test.after(async () => { if (process.env.SHOW_PUSH) console.log(JSON.stringify(got('admin', phone).map((x) => [x.title, x.body]), null, 1)); await srv.stop(); apple.close(); });
 
 test('по умолчанию включены все 12 видов; выключенный «Новые продавцы» — приходит обычное «на проверку»', async () => {
   assert.equal((await admin.get('/api/admin/me/notify')).data.push.length, 12);

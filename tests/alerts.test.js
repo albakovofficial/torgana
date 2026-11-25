@@ -1,63 +1,44 @@
-'use strict';
-
-// Для пользователей: push (шифрование и доставка), сохранённые поиски, снижение цены, фото в чате, подборка за день.
+// Для пользователей: push в приложение (APNs), подписки на продавцов, снижение цены, фото в чате, подборка за день.
+// 1.60.0: push в браузер убраны — уведомления приходят только в приложение Торгана для iPhone.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const crypto = require('node:crypto');
-const http = require('node:http');
-const { startServer, startSmtp, registerUser, publish, PNG_1PX, fakeBrowser } = require('./helpers');
-const { encrypt, b64u, unb64u } = require('../lib/push');
+const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
+const { startServer, startSmtp, registerUser, publish, PNG_1PX, fakeApns } = require('./helpers');
 
-test('шифрование push: браузер расшифровывает то, что зашифровал сервер', () => {
-  const b = fakeBrowser();
-  const msg = { title: 'Проверка', body: 'Привет, Торгана! ✓' };
-  assert.deepEqual(b.decrypt(encrypt(JSON.stringify(msg), b.keys.p256dh, b.keys.auth)), msg);
-  assert.equal(unb64u(b.keys.p256dh).length, 65);
-});
-
-let srv; let smtp; let pushSrv; let admin; let anna; let boris;
-const inbox = []; // что дошло до «push-службы»
-let pushPort;
+let srv; let smtp; let apple; let admin; let anna; let boris;
 before(async () => {
-  pushSrv = http.createServer((req, res) => {
-    const chunks = [];
-    req.on('data', (c) => chunks.push(c)).on('end', () => { inbox.push({ path: req.url, headers: req.headers, body: Buffer.concat(chunks) }); res.writeHead(req.url.includes('gone') ? 410 : 201); res.end(); });
-  });
-  await new Promise((r) => pushSrv.listen(0, '127.0.0.1', r));
-  pushPort = pushSrv.address().port;
+  apple = await fakeApns();
   smtp = await startSmtp();
-  srv = await startServer({ PUBLIC_URL: 'http://torgana.test', PUSH_ALLOW_HTTP: '1', MAIL_TICK_MS: '150', DIGEST_TICK_MS: '200', DIGEST_MIN_AGE_MS: '0', DIGEST_ANY_HOUR: '1' });
+  srv = await startServer({ PUBLIC_URL: 'http://torgana.test', APNS_TEST_URL: apple.url, MAIL_TICK_MS: '150', DIGEST_TICK_MS: '200', DIGEST_MIN_AGE_MS: '0', DIGEST_ANY_HOUR: '1' });
   admin = await registerUser(srv.base, { name: 'Модератор', email: 'admin@test.local' });
   anna = await registerUser(srv.base, { name: 'Анна', email: 'anna@test.local' });
   boris = await registerUser(srv.base, { name: 'Борис', email: 'boris@test.local' });
+  assert.equal((await apple.connect(admin)).status, 200);
 });
-after(async () => { await srv.stop(); await smtp.close(); pushSrv.close(); });
+after(async () => { await srv.stop(); await smtp.close(); apple.close(); });
 
-const borisPhone = fakeBrowser();
-const waitPush = async (fn, ms = 4000) => {
+const waitPush = async (fn, who = 'boris', ms = 4000) => {
   for (let t = 0; t < ms; t += 50) {
-    const hit = inbox.map((m) => ({ ...m, msg: borisPhone.decrypt(m.body) })).find((m) => fn(m.msg));
+    const hit = apple.to(who).find(fn);
     if (hit) return hit;
     await new Promise((r) => setTimeout(r, 50));
   }
-  throw new Error(`push не пришёл; есть: ${inbox.map((m) => borisPhone.decrypt(m.body).title).join('; ')}`);
+  throw new Error(`push не пришёл; есть: ${apple.to(who).map((m) => m.title).join('; ')}`);
 };
+const devices = (id) => { const db = new DatabaseSync(path.join(srv.tmp, 'data', 'torgana.db')); const n = db.prepare('SELECT COUNT(*) AS n FROM apns_tokens WHERE user_id = ?').get(id).n; db.close(); return n; };
 
-test('подписка: только адреса push-служб, VAPID-подпись', async () => {
-  const key = (await boris.get('/api/push')).data.key;
-  assert.equal(unb64u(key).length, 65);
-  assert.equal((await boris.post('/api/push/subscribe', { subscription: { endpoint: 'http://evil.example/x', keys: borisPhone.keys } })).status, 400);
-  const ok = await boris.post('/api/push/subscribe', { subscription: { endpoint: `http://127.0.0.1:${pushPort}/sub/boris`, keys: borisPhone.keys }, device: 'Тест' });
-  assert.equal(ok.data.devices, 1);
+test('push в браузер убраны: адресов подписки браузера нет, «Проверить» — на iPhone', async () => {
+  assert.equal((await boris.get('/api/push')).status, 404);
+  assert.equal((await boris.post('/api/push/subscribe', { subscription: { endpoint: 'https://fcm.googleapis.com/x' } })).status, 404);
+  assert.equal((await boris.post('/api/push/apns', { token: apple.token('boris'), env: 'production' })).status, 200);
   assert.equal((await boris.post('/api/push/test')).data.ok, true);
   const m = await waitPush((x) => x.title === 'Уведомления включены');
-  assert.equal(m.headers['content-encoding'], 'aes128gcm');
-  const [, t, k] = /^vapid t=([^,]+), k=(.+)$/.exec(m.headers.authorization);
-  assert.equal(k, key);
-  const [h, p, sig] = t.split('.');
-  const pub = crypto.createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: b64u(unb64u(key).subarray(1, 33)), y: b64u(unb64u(key).subarray(33)) }, format: 'jwk' });
-  assert.ok(crypto.verify('sha256', Buffer.from(`${h}.${p}`), { key: pub, dsaEncoding: 'ieee-p1363' }, unb64u(sig)), 'подпись VAPID верна');
-  assert.equal(JSON.parse(unb64u(p)).aud, `http://127.0.0.1:${pushPort}`);
+  assert.equal(m.headers['apns-topic'], 'ru.torgana.app');
+  const db = new DatabaseSync(path.join(srv.tmp, 'data', 'torgana.db'));
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'push_subs'").get().n, 0, 'таблицы подписок браузеров нет');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM settings WHERE key = 'vapid'").get().n, 0, 'ключа VAPID нет');
+  db.close();
 });
 
 let bike;
@@ -65,8 +46,8 @@ test('подписка на продавца: новое объявление �
   assert.equal((await boris.post(`/api/users/${anna.user.id}/follow`, { follow: true })).status, 200);
   bike = await publish(anna, admin, { title: 'Велосипед детский', description: 'Для 5–8 лет', category: 'hobby', city: 'Казань', price: 9000 });
   const m = await waitPush((x) => x.title === 'Новое у продавца Анна');
-  assert.match(m.msg.body, /Велосипед детский — 9/);
-  assert.equal(m.msg.url, `/l/${bike}`);
+  assert.match(m.body, /Велосипед детский — 9/);
+  assert.equal(m.url, `/l/${bike}`);
   const me = (await boris.get('/api/me')).data;
   assert.equal(me.fresh.follow, 1);
   assert.equal(me.fresh.search, undefined);
@@ -76,7 +57,7 @@ test('подписка на продавца: новое объявление �
   // Своё объявление себе не присылаем.
   await publish(boris, admin, { title: 'Самокат', category: 'hobby', city: 'Казань', price: 3000 });
   await waitPush((x) => x.title === 'Объявление опубликовано' && x.body.includes('Самокат')); // решение модерации — да
-  assert.ok(!inbox.some((x) => /^Новое у продавца Борис/.test(borisPhone.decrypt(x.body).title)), 'по своему объявлению — нет');
+  assert.ok(!apple.to('boris').some((x) => /^Новое у продавца Борис/.test(x.title)), 'по своему объявлению — нет');
 });
 
 test('снижение цены в избранном: push, зачёркнутая цена; повышение — без уведомлений', async () => {
@@ -85,12 +66,12 @@ test('снижение цены в избранном: push, зачёркнут�
   await anna.patch(`/api/listings/${bike}`, { title: cur.title, description: cur.description, category: cur.category, city: cur.city, price: 7000 });
   await admin.post(`/api/admin/listings/${bike}/restore`);
   const m = await waitPush((x) => x.title === 'Цена снижена');
-  assert.match(m.msg.body, /7\s000 ₽ вместо 9\s000 ₽/);
+  assert.match(m.body, /7\s000 ₽ вместо 9\s000 ₽/);
   const fav = (await boris.get('/api/favorites')).data.items.find((i) => i.id === bike);
   assert.equal(fav.priceWas, 9000);
   assert.equal((await boris.get(`/api/listings/${bike}`)).data.listing.priceWas, 9000);
   // Повторная публикация не рассылает объявление подписчикам заново.
-  assert.equal(inbox.filter((x) => borisPhone.decrypt(x.body).body.includes('Велосипед детский —')).length, 1);
+  assert.equal(apple.to('boris').filter((x) => x.body.includes('Велосипед детский —')).length, 1);
 });
 
 test('чат: фото в сообщении, push собеседнику; выключенный вид push не приходит', async () => {
@@ -101,15 +82,15 @@ test('чат: фото в сообщении, push собеседнику; вы�
   const sent = await anna.post(`/api/conversations/${conv}/messages`, { photo: up.file });
   assert.equal(sent.data.message.photo, up.url);
   const m = await waitPush((x) => x.tag === `chat-${conv}`);
-  assert.equal(m.msg.body, '📷 Фото');
+  assert.equal(m.body, '📷 Фото');
   assert.equal((await boris.get(`/api/conversations/${conv}`)).data.messages[1].photo, up.url);
 
   await boris.patch('/api/me', { pushMessages: false });
   assert.equal((await boris.get('/api/me')).data.user.pushMessages, false);
-  const n = inbox.length;
+  const n = apple.got.length;
   await anna.post(`/api/conversations/${conv}/messages`, { body: 'Можно посмотреть завтра' });
   await new Promise((r) => setTimeout(r, 300));
-  assert.equal(inbox.length, n);
+  assert.equal(apple.got.length, n);
 });
 
 test('подборка за день: новое у продавца и снижение цены одним письмом', async () => {
@@ -124,13 +105,12 @@ test('подборка за день: новое у продавца и сниж
   assert.equal(smtp.inbox.filter((x) => x.to === 'boris@test.local' && /Новое у продавца/.test(x.subject)).length, 1, 'не чаще раза в сутки');
 });
 
-test('устройство отписалось в браузере (410) — подписка удаляется', async () => {
-  const gone = fakeBrowser();
-  await boris.post('/api/push/subscribe', { subscription: { endpoint: `http://127.0.0.1:${pushPort}/gone/1`, keys: gone.keys } });
-  assert.equal((await boris.get('/api/push')).data.devices, 2);
+test('приложение удалили (Apple ответил 410) — адрес устройства удаляется', async () => {
+  await boris.post('/api/push/apns', { token: apple.GONE, env: 'production' });
+  assert.equal(devices(boris.user.id), 2);
   await boris.post('/api/push/test');
   await new Promise((r) => setTimeout(r, 300));
-  assert.equal((await boris.get('/api/push')).data.devices, 1);
+  assert.equal(devices(boris.user.id), 1);
 });
 
 // 1.47.2: отзывов нет — и переключателей уведомлений о них тоже.
@@ -143,9 +123,8 @@ test('переключателей об отзывах нет', async () => {
 
 // 1.47.2: push модераторам — сразу, о выбранном; свои действия себе не присылаем.
 test('push модератору: новое на проверку и поддержка; выключенный вид и свои действия — нет', async () => {
-  const phone = fakeBrowser();
-  await admin.post('/api/push/subscribe', { subscription: { endpoint: `http://127.0.0.1:${pushPort}/sub/admin`, keys: phone.keys } });
-  const mine = () => inbox.filter((m) => m.path === '/sub/admin').map((m) => phone.decrypt(m.body));
+  await apple.phone(admin, 'admin');
+  const mine = () => apple.to('admin');
   const waitAdm = async (fn) => {
     for (let t = 0; t < 4000; t += 50) { const hit = mine().find(fn); if (hit) return hit; await new Promise((r) => setTimeout(r, 50)); }
     throw new Error(`push модератору не пришёл; есть: ${mine().map((x) => x.title).join('; ')}`);

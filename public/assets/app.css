@@ -1105,13 +1105,6 @@ a.rep-line:hover { color: var(--text); text-decoration: underline; }
 
 .set-wide { grid-column: 1 / -1; }
 .set-h3 { display: flex; align-items: center; gap: 8px; margin: 4px 0 2px; font-size: 15px; font-weight: 700; }
-.push-dev { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 16px 18px; border-radius: 22px; border: 1.5px dashed var(--c-d9d9d5); }
-.push-dev.on { border-color: transparent; background: var(--accent-soft); }
-.push-dev-ic { flex: none; width: 44px; height: 44px; border-radius: 14px; background: var(--surface); color: var(--accent); display: grid; place-items: center; }
-.push-dev.on .push-dev-ic { background: var(--card); }
-.push-dev-txt { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.push-dev-txt b { font-size: 15px; }
-.push-dev-txt span { font-size: 13px; color: var(--text-2); }
 
 .chat-attach { flex: none; width: 48px; height: 48px; cursor: pointer; }
 .chat-attach.busy { opacity: .5; pointer-events: none; animation: pulse 1s ease-in-out infinite; }
@@ -2058,18 +2051,6 @@ body.pv-open { overflow: hidden; }
   .pv-thumbs button { width: 52px; height: 52px; border-radius: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .pv, .pv-img { animation: none; transition: none; } }
-
-/* ---------- разовый вопрос про уведомления (1.23) ---------- */
-.ask-modal { max-width: 400px; padding: 30px 26px 24px; }
-.ask-push { display: flex; flex-direction: column; align-items: center; text-align: center; }
-.ask-ic { width: 76px; height: 76px; display: grid; place-items: center; margin-bottom: 18px; border-radius: 26px; background: var(--accent-soft); color: var(--accent); }
-.ask-push h2 { margin: 0 0 8px; }
-.ask-push p { margin: 0 0 22px; font-size: 15px; line-height: 1.5; color: var(--text-2); }
-.ask-act { width: 100%; display: flex; flex-direction: column; gap: 8px; }
-@media (max-width: 600px) {
-  .ask-back { align-items: flex-end; padding: 0; }
-  .ask-modal { max-width: none; border-radius: 30px 30px 0 0; padding-bottom: calc(24px + env(safe-area-inset-bottom)); animation: sheet-in .22s ease-out; }
-}
 
 /* ---------- шапка в одну строку (1.23, вариант B) ---------- */
 .header-in { gap: 18px; }

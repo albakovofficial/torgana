@@ -237,26 +237,36 @@ function fakeS3({ access = 'AKTEST', secret = 'secret-key', bucket = 'torgana-ba
   return new Promise((r) => srv.listen(0, '127.0.0.1', () => r({ srv, store, st, endpoint: `http://127.0.0.1:${srv.address().port}`, access, secret, bucket })));
 }
 
-// Браузер «понарошку»: свои ключи подписки и расшифровка по RFC 8291 — так проверяем, что сервер шифрует правильно.
-function fakeBrowser() {
-  const { b64u } = require('../lib/push');
-  const ecdh = crypto.createECDH('prime256v1');
-  const pub = ecdh.generateKeys();
-  const auth = crypto.randomBytes(16);
-  const hmac = (k, d) => crypto.createHmac('sha256', k).update(d).digest();
+// Apple «понарошку» (1.60.0, вместо push в браузер): поддельный сервер APNs (HTTP/2) — что ушло на какой iPhone.
+// connect(admin) вставляет ключ Apple в модерации, phone(user, n) — iPhone с приложением у человека,
+// GONE — адрес устройства, на который Apple отвечает «приложение удалено» (410).
+async function fakeApns() {
+  const http2 = require('node:http2');
+  const GONE = 'f'.repeat(64);
+  const got = [];
+  const srv = http2.createServer();
+  srv.on('stream', (stream, headers) => {
+    let body = '';
+    stream.on('data', (d) => { body += d; });
+    stream.on('end', () => {
+      const token = headers[':path'].split('/').pop();
+      let b = {}; try { b = JSON.parse(body); } catch { /* пусто */ }
+      const a = (b.aps && b.aps.alert) || {};
+      got.push({ token, headers, title: a.title, body: a.body, url: b.url, tag: b.aps && b.aps['thread-id'] });
+      stream.respond({ ':status': token === GONE ? 410 : 200 });
+      stream.end(token === GONE ? JSON.stringify({ reason: 'Unregistered' }) : '');
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const key = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+  const token = (n) => crypto.createHash('sha256').update(String(n)).digest('hex');
   return {
-    keys: { p256dh: b64u(pub), auth: b64u(auth) },
-    decrypt(buf) {
-      const salt = buf.subarray(0, 16); const idlen = buf[20]; const asPub = buf.subarray(21, 21 + idlen); const data = buf.subarray(21 + idlen);
-      const ikm = hmac(hmac(auth, ecdh.computeSecret(asPub)), Buffer.concat([Buffer.from('WebPush: info\0'), pub, asPub, Buffer.from([1])])).subarray(0, 32);
-      const prk = hmac(salt, ikm);
-      const d = crypto.createDecipheriv('aes-128-gcm', hmac(prk, Buffer.from('Content-Encoding: aes128gcm\0\x01')).subarray(0, 16), hmac(prk, Buffer.from('Content-Encoding: nonce\0\x01')).subarray(0, 12));
-      d.setAuthTag(data.subarray(data.length - 16));
-      const out = Buffer.concat([d.update(data.subarray(0, data.length - 16)), d.final()]);
-      if (out[out.length - 1] !== 2) throw new Error('нет разделителя последней записи');
-      return JSON.parse(out.subarray(0, out.length - 1).toString());
-    }
+    url: `http://127.0.0.1:${srv.address().port}`, got, GONE, token,
+    connect: (admin) => admin.put('/api/admin/apns', { teamId: 'ABCDE12345', keyId: 'KEY1234567', key }),
+    phone: (user, n) => user.post('/api/push/apns', { token: token(n), env: 'production' }),
+    to: (n) => got.filter((m) => m.token === token(n)),
+    close: () => srv.close()
   };
 }
 
-module.exports = { fakeBrowser, ROOT, PNG_1PX, JPEG_HEAD, startServer, startSmtp, client, registerUser, publish, codeOf, fakeS3 };
+module.exports = { fakeApns, ROOT, PNG_1PX, JPEG_HEAD, startServer, startSmtp, client, registerUser, publish, codeOf, fakeS3 };

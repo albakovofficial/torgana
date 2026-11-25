@@ -2,7 +2,7 @@
 // Модерация Торганы (1.51.2) — отдельный файл: грузится только при заходе в /admin,
 // поэтому покупатели и продавцы этот код не скачивают. T — общие помощники из app.js.
 window.TorganaAdmin = function (T) {
-  const { $, $$, CANCEL_REASON, CONDITION_LABEL, MONTHS, MY_STATUS, MY_TAG, NF, P, PAY_STATUS, S, api, app, authPage, ava, catName, codeForm, confirmModal, dateLong, dateShort, eraseModal, esc, go, hm, html, ic, mountChat, nameSeal, navLink, openModal, plural, price, raw, reasonModal, render, renderPushDevice, repLine, requireAuth, rub, setTitle, shortWhen, since, subName, supportAva, svg, toast, trustBadges, verifiedSeal, viewNotFound, when } = T;
+  const { $, $$, CANCEL_REASON, CONDITION_LABEL, MONTHS, MY_STATUS, MY_TAG, NF, P, PAY_STATUS, S, api, app, authPage, ava, catName, codeForm, confirmModal, dateLong, dateShort, eraseModal, esc, go, hm, html, ic, mountChat, nameSeal, navLink, openModal, plural, price, raw, reasonModal, render, repLine, requireAuth, rub, setTitle, shortWhen, since, subName, supportAva, svg, toast, trustBadges, verifiedSeal, viewNotFound, when } = T;
   const setCleanup = T.setCleanup; // что сделать при уходе со страницы (таймеры, чат)
   // ================= модерация =================
   const REASONS = ['Запрещённый товар или услуга', 'Фото не соответствует описанию', 'Неверная категория', 'Признаки мошенничества', 'Контакты или ссылки в тексте и на фото', 'Повторное объявление', 'Оскорбительное содержание'];
@@ -1035,7 +1035,7 @@ window.TorganaAdmin = function (T) {
     const cur = await api('GET', '/api/admin/me/notify');
     const MODES = [['instant', 'Сразу', 'Одним письмом в течение минуты после нового'], ['hourly', 'Раз в час', 'Сводка всего нового за час'], ['off', 'Не присылать', 'Смотрю сам на сайте']];
     const KINDS = [['pending', 'Новые объявления на проверку', 'И изменённые — после правки они снова в очереди'], ['reports', 'Жалобы на объявления', ''], ['support', 'Сообщения в поддержку', 'Только те, что ещё никто не прочитал']];
-    // 1.47.2: push — сразу, на этот телефон или компьютер; отдельно от писем.
+    // 1.47.2: push — сразу, отдельно от писем; 1.60.0: только в приложение Торгана на iPhone.
     // 1.53.0: + новые продавцы, долгое ожидание, апелляции, медали, итоги дня, сбои сайта (порядок — как на сервере).
     const PUSH = [['pending', 'Новые и изменённые объявления', 'Не чаще раза в 2 минуты — со счётчиком очереди'],
       ['sellers', 'Новые продавцы', 'Первое объявление человека — вместо обычного «на проверку»'],
@@ -1047,8 +1047,7 @@ window.TorganaAdmin = function (T) {
       ['ops', 'Сбои сайта', 'Резервные копии, место на диске, почта, ошибки сервера']];
     box.innerHTML = String(html`<div class="adm-head"><h1>Мои уведомления</h1></div>
       <form class="panel nt-form" id="ntp" style="margin-bottom:16px">
-        <div><h2 class="h2">Push — сразу на телефон</h2><p class="muted" style="margin:4px 0 0">Приходят на устройства, где вы включили уведомления. Ваши собственные действия не присылаем.</p></div>
-        <div id="ntp-dev"></div>
+        <div><h2 class="h2">Push — сразу в приложение</h2><p class="muted" style="margin:4px 0 0">Приходят в приложение Торгана на iPhone, если в нём включены уведомления. Ваши собственные действия не присылаем.</p></div>
         <div class="nt-kinds">${PUSH.map(([k, t, sub]) => html`<label class="switch"><span>${t}${sub ? html`<small>${sub}</small>` : ''}</span><input type="checkbox" name="push" value="${k}" ${cur.push.includes(k) ? raw('checked') : ''}><span class="track"></span></label>`)}</div>
       </form>
       ${S.config.mail ? '' : html`<div class="banner warn" style="margin-bottom:16px">Почта ещё не подключена — письма начнут приходить после настройки в разделе <a href="/admin?status=mail" style="text-decoration:underline">«Почта»</a>.</div>`}
@@ -1070,7 +1069,6 @@ window.TorganaAdmin = function (T) {
       if (e.target.name !== 'push') return;
       try { await api('PUT', '/api/admin/me/notify', { push: $$('input[name=push]:checked', fp).map((x) => x.value) }); toast('Сохранено'); } catch (ex) { toast(ex.message, true); }
     };
-    renderPushDevice($('#ntp-dev')).catch(() => {});
   }
 
   // Найденные подозрительные основы слов → целые слова в тексте (ё = е, позиции совпадают).
