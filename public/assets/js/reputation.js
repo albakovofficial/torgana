@@ -29,7 +29,7 @@ export function levelMedal(level = 0, size = 20) {
 <path d="M5.2 9.2a7.4 6 0 0 1 13.6 0c-2-1.3-4.3-1.9-6.8-1.9s-4.8.6-6.8 1.9z" fill="url(#${k}g)"/>
 <g transform="translate(0 -.4)" filter="url(#${k}s)">${(MEDAL_MARK[level] || MEDAL_MARK[0])(glyph, dark)}</g></svg>`);
 }
-export const dealsWord = (n) => `${NF.format(n)}\u00a0${plural(n, 'сделка', 'сделки', 'сделок')}`; // «5 сделок» не разрывается
+const dealsWord = (n) => `${NF.format(n)}\u00a0${plural(n, 'сделка', 'сделки', 'сделок')}`; // «5 сделок» не разрывается
 // Строка под именем: «● Опытный · 27 сделок». 1.49.0: shop — у магазина без уровня «Новый магазин» вместо «Новичок»;
 // deals: false — без числа сделок (в публичном профиле оно в счётчиках рядом).
 // 1.52.0: first — медаль «Один из первых» (badges.first): стоит в той же строке, справа от уровня.

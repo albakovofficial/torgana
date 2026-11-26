@@ -1,5 +1,6 @@
 // Настройки: фото, имя и город, уведомления, пароль, удаление профиля.
 import { $, $$, NATIVE, NF, PAY, S, api, app, ava, dateLong, dateShort, html, plural, price, raw } from './core.js';
+import { pageCover } from './cover.js';
 import { ic } from './icons.js';
 import { confirmModal, openModal, pickList, toast } from './ui.js';
 import { grid } from './cards.js';
@@ -83,7 +84,7 @@ export function viewSettings() {
     's-acc': u.email
   };
   app.innerHTML = String(html`<div class="wrap setx ${cur ? 'has-sec' : ''}">
-    <div class="setx-head"><h1>Настройки</h1><p>Как вас видят покупатели и как Торгана с вами связывается</p></div>
+    ${pageCover({ title: 'Настройки', sub: 'Как вас видят покупатели и как Торгана с вами связывается', back: '/profile', icon: 'gear', tone: 'gray', cls: 'setx-head' })}
     <aside class="setx-side">
       ${idCard(u)}
       <nav class="setx-nav" aria-label="Разделы настроек">${SET_SECTIONS.map(([id, icon, label]) => html`<a href="/profile/settings#${id}" data-sec="${id}"><span class="setx-ic">${ic(icon, 20)}</span><span class="setx-t"><b>${label}</b><small>${hint[id]}</small></span>${ic('right', 18, 2)}</a>`)}</nav>

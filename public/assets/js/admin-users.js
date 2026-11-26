@@ -63,7 +63,7 @@ export async function viewAdminUser(id) {
     log: d.log.length ? html`<div class="adm-log">${d.log.map(logRow)}</div>` : html`<p class="muted">Модераторы с ним ещё ничего не делали.</p>`
   };
   app.innerHTML = String(adminShell('users', stats, html`
-    <a class="pf-back always" href="/admin?status=users">${ic('left', 18, 2)}Пользователи</a>
+    <a class="pf-back" href="/admin?status=users">${ic('left', 18, 2)}Пользователи</a>
     <div class="adm-person panel">
       <div class="adm-person-top">${ava(u, 'xl')}
         <div class="adm-person-txt"><h1>${nameSeal(u.name, { tm: u.trademark && u.trademark.live ? u.trademark : null })}</h1>

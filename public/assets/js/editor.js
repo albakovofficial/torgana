@@ -60,7 +60,7 @@ function editorPage({ l, src, st, draft, sendLabel, canSchedule, canBoost }) {
   const opt = (name, icon, title, sub, on, id = '') => html`<label class="ed-opt" id="${id || name}-opt"><span class="ed-opt-top"><span class="ed-opt-ic">${ic(icon, 20)}</span><input type="checkbox" ${id ? raw(`id="${id}"`) : raw(`name="${name}"`)} ${on ? raw('checked') : ''}></span><b>${title}</b><small>${sub}</small></label>`;
   return String(html`<div class="wrap ed">
     <div class="ed-head">
-      <a class="pf-back always" href="${l ? `/l/${l.id}` : '/profile'}">${ic('left', 18, 2)}${l ? 'К объявлению' : 'Мои объявления'}</a>
+      <a class="pf-back" href="${l ? `/l/${l.id}` : '/profile'}">${ic('left', 18, 2)}${l ? 'К объявлению' : 'Мои объявления'}</a>
       <h1>${l ? 'Редактирование' : 'Новое объявление'}</h1>
       <p>${l ? 'После сохранения объявление снова проверит модератор — обычно несколько часов. Пока идёт проверка, его не видно в поиске.' : 'Бесплатно и без лимитов. Каждое объявление проверяет модератор — обычно это несколько часов.'}</p>
       ${!l && S.first && S.first.left && !(S.user.badges && S.user.badges.first) && !S.user.isOwner ? html`<div class="ed-first">${firstMedal(30)}<span><b>Медаль «${firstName(S.first.form)}»</b> — первой тысяче продавцов, с личным номером. Осталось ${NF.format(S.first.left)}: медаль будет вашей, когда объявление одобрят</span></div>` : ''}

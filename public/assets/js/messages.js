@@ -1,12 +1,12 @@
 // Сообщения: список, переписка, торг, быстрые ответы, подписка на продавца, поддержка.
-import { $, $$, NF, S, api, app, ava, esc, hm, html, plural, price, raw, rub, shortWhen } from './core.js';
+import { $, $$, NF, S, api, app, ava, hm, html, plural, price, raw, rub, shortWhen } from './core.js';
 import { MARK, P, ic, svg } from './icons.js';
 import { riskOf } from './rules.js';
 import { confirmModal, openModal, pickList, toast } from './ui.js';
 import { resizeImage } from './photos.js';
 import { go, requireAuth, setCleanup, setTitle } from './router.js';
-import { bindDeal, dealBar, dealWow, dealsWord, levelMedal } from './reputation.js';
-import { verifiedSeal } from './badges.js';
+import { bindDeal, dealBar, dealWow, repCard, repLine } from './reputation.js';
+import { nameSeal, verifiedSeal } from './badges.js';
 import { refreshMe } from './main.js';
 
 // 1.48.0: заблокировать / разблокировать. Возвращает новое состояние (true — заблокирован) или undefined — передумали.
@@ -54,15 +54,16 @@ const tickMark = (read) => html`<i class="tk ${read ? 'rd' : ''}" data-tk role="
 // свайп вправо или долгое нажатие (телефон); над полем — «Ответ …», в сообщении — цитата, нажатие ведёт к оригиналу.
 // 1.55.0: как в мессенджерах — у своих сообщений ✓ (отправлено) и ✓✓ синим (прочитано, r.readUpTo), строка
 // «… печатает» (r.typing) и отметка собеседнику, пока я набираю (typing — функция, шлёт не чаще раза в 3 секунды).
-export function mountChat(box, { head, below = '', load, send, scam = false, empty, placeholder = 'Сообщение…', onActivity, back = '/messages', decorate, onData, tools = '', left = '', reply = null, typing = null, receipts = false }) {
+// 27.11: шапка — обложка, как у внутренних страниц: строка «‹ … » (head) и под ней top (карточка объявления).
+// «печатает…» показывается в шапке на месте строки репутации (класс .is-typing у чата).
+export function mountChat(box, { head, top = '', below = '', load, send, scam = false, empty, placeholder = 'Сообщение…', onActivity, back = '/messages', decorate, onData, tools = '', left = '', reply = null, typing = null, receipts = false }) {
   box.innerHTML = String(html`
     <div class="chat-head">
-      <a href="${back}" class="icon-btn chat-back" aria-label="Назад">${ic('left', 20)}</a>
-      ${head}
+      <div class="chat-row"><a href="${back}" class="pc-back chat-back" aria-label="Назад">${ic('left', 20, 2.2)}</a>${head}</div>
+      ${top}
     </div>
     ${below}
     <div class="chat-msgs" data-msgs></div>
-    ${typing && reply ? html`<div class="chat-typing" data-typing aria-live="polite"><span class="ct-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>${reply.other} печатает</span></div>` : ''}
     ${tools}
     ${reply ? html`<div class="chat-reply hidden" data-reply-bar><span class="cr-ic">${ic('reply', 18, 2.2)}</span><div class="cr-tx"><b data-rb-who></b><span data-rb-text></span></div><button type="button" class="icon-btn cr-x" data-rb-x aria-label="Отменить ответ">${ic('close', 18, 2)}</button></div>` : ''}
     <form class="chat-form" data-send>
@@ -107,18 +108,10 @@ export function mountChat(box, { head, below = '', load, send, scam = false, emp
     msgs.insertAdjacentHTML('beforeend', out);
     if (nearBottom || list.some((m) => m.mine)) msgs.scrollTop = msgs.scrollHeight;
   };
-  // Прочитано: все мои сообщения до readUpTo — ✓✓. Печатает: строка над полем и класс у чата (шапка — «печатает…»).
-  const tpRow = $('[data-typing]', box);
+  // Прочитано: все мои сообщения до readUpTo — ✓✓. Печатает: класс у чата (шапка — «печатает…»).
   const live = (r) => {
     if (receipts && r.readUpTo) $$('.msg.out[data-mid] [data-tk]:not(.rd)', msgs).forEach((t) => { if (Number(t.closest('[data-mid]').dataset.mid) <= r.readUpTo) { t.classList.add('rd'); t.innerHTML = String(tickSvg(true)); t.setAttribute('aria-label', 'Прочитано'); } });
-    if (tpRow && r.typing !== undefined) {
-      const on = !!r.typing;
-      if (on !== tpRow.classList.contains('on')) {
-        const near = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 120;
-        tpRow.classList.toggle('on', on); box.classList.toggle('is-typing', on);
-        if (near) msgs.scrollTop = msgs.scrollHeight;
-      }
-    }
+    if (typing && r.typing !== undefined) box.classList.toggle('is-typing', !!r.typing);
   };
   // Правки: сервер присылает изменённые после прошлого опроса (r.edited; время — r.now).
   let editsSince = 0;
@@ -406,19 +399,21 @@ const supportWelcome = () => html`<div class="msg in support-hello">
     Никогда не сообщайте пароль и коды из СМС — мы их не спрашиваем.
     <span class="chat-quick">${SUPPORT_TOPICS.map((t) => html`<button type="button" class="chip" data-topic="${t}">${t}</button>`)}</span></div>`;
 
-// 1.27 (вариант 3): справа от чата — объявление и собеседник с оценкой, напоминание о безопасности.
-// Только на широком экране (CSS); на телефоне и планшете объявление — в шапке чата.
-const chatSide = (l, o, role) => {
-  const gone = l.status === 'deleted';
-  return html`<aside class="chat-side" aria-label="Объявление и ${role === 'buyer' ? 'продавец' : 'покупатель'}">
-    <a href="/l/${l.id}" class="chs-photo${l.photo ? ' ph' : ''}"${l.photo ? raw(` style="--ph:url('${esc(l.photo)}')"`) : ''} tabindex="-1" aria-hidden="true">${l.photo ? html`<img src="${l.photo}" alt="" loading="lazy">` : svg(P.image, 32, 1.3)}</a>
-    <div class="chs-item"><b class="chs-price">${price(l.price, l.priceUnit)}</b>${gone ? html`<span class="chs-title">${l.title}</span>` : html`<a href="/l/${l.id}" class="chs-title">${l.title}</a>`}<span class="chs-place">${l.metro ? `м. ${l.metro}` : l.city}${l.status === 'sold' ? ' · продано' : ''}</span></div>
-    ${gone ? html`<p class="chs-gone">${ic('info', 16, 2)}Объявление удалено продавцом — переписка сохранена.</p>` : html`<a href="/l/${l.id}" class="btn btn-line btn-block btn-sm">Открыть объявление</a>`}
-    <hr>
-    <a href="/u/${o.id}" class="chs-person">${ava(o, 'sm')}<span><b>${o.name}</b><span class="chs-meta">${o.rep ? html`${levelMedal(o.rep.level, 14)}<b>${o.rep.levelName}</b>${o.rep.deals ? ` · ${dealsWord(o.rep.deals)}` : ''}${o.rep.buyer ? ' · надёжный покупатель' : ''}` : ''}</span></span></a>
-    <p class="chs-safe">${ic('shield', 18)}<span>${role === 'buyer' ? 'Не переходите в мессенджеры и не вносите предоплату — общайтесь здесь.' : 'Не называйте коды из СМС и не переходите по ссылкам «для получения оплаты».'}</span></p>
-  </aside>`;
-};
+// 27.11: нажали на имя в шапке — карточка репутации собеседника (вместо колонки справа): уровень за 12 месяцев,
+// «Телефон подтверждён», сделки / ответ / жалобы, комплименты, напоминание о безопасности, ссылка на профиль.
+async function repPopover(btn, o, role) {
+  const head = btn.closest('.chat-head');
+  const old = $('.rep-pop', head);
+  if (old) { old.remove(); btn.setAttribute('aria-expanded', 'false'); return; }
+  const { user } = await api('GET', `/api/users/${o.id}`);
+  head.insertAdjacentHTML('beforeend', String(html`<div class="rep-pop" role="dialog" aria-label="Репутация: ${o.name}">
+    ${repCard(user.rep)}
+    ${user.badges && user.badges.phone ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Телефон подтверждён</span>` : ''}
+    <p class="rp-safe">${ic('shield', 18)}<span>${role === 'buyer' ? 'Не переходите в мессенджеры и не вносите предоплату — общайтесь здесь.' : 'Не называйте коды из СМС и не переходите по ссылкам «для получения оплаты».'}</span></p>
+    <a class="rp-more" href="/u/${o.id}">Профиль и все объявления${ic('right', 16, 2.2)}</a>
+  </div>`));
+  btn.setAttribute('aria-expanded', 'true');
+}
 
 export async function viewMessages(cid) {
   if (!requireAuth()) return;
@@ -484,17 +479,19 @@ export async function viewMessages(cid) {
   const role = data.conversation.role;
   const canOffer = role === 'buyer' && l.status === 'active' && (l.bargain || l.price === null); // продавец указал «без торга» — кнопки ₽ нет
   stopChat = mountChat($('#chat'), {
-    // 1.54.0: шапка — фото, название в одну строку, ниже цена и собеседник; статус — меткой на фото и в строке цены.
-    head: (() => {
+    // 27.11 («1+5 · аватар справа»): имя (нажатие — карточка репутации), под ним уровень или «печатает…», ⋮, аватар;
+    // ниже — объявление: фото, название, цена или статус.
+    head: html`<button type="button" class="ch-who" data-rep aria-haspopup="dialog" aria-expanded="false">
+        <b class="ch-name">${nameSeal(other.name, other.badges)}</b>
+        <span class="ch-rep">${other.rep ? repLine(other.rep) : role === 'buyer' ? 'Продавец' : 'Покупатель'}</span>
+        <span class="ch-typ"><span class="ct-dots" aria-hidden="true"><i></i><i></i><i></i></span>печатает…</span></button>
+      <button type="button" class="icon-btn chat-more" data-chat-more aria-label="Ещё" aria-haspopup="menu">${ic('more', 20)}</button>
+      <a href="/u/${other.id}" class="ch-ava" aria-label="Профиль: ${other.name}">${ava(other)}</a>`,
+    top: (() => {
       const gone = l.status === 'deleted'; const sold = l.status === 'sold';
-      const st = gone ? html`<span class="ch-st" title="Объявление удалено">Удалено</span>` : sold ? html`<span class="ch-st dark">Продано</span>` : '';
-      const ph = html`${l.photo ? html`<img src="${l.photo}" alt="">` : svg(P.image, 20, 1.4)}`;
-      return html`${gone ? html`<span class="ch-ph gone" aria-hidden="true">${ph}</span>` : html`<a href="/l/${l.id}" class="ch-ph ${sold ? 'sold' : ''}" aria-hidden="true" tabindex="-1">${ph}</a>`}
-        <div class="ch-tx">
-          ${gone ? html`<span class="ch-t">${l.title}</span>` : html`<a href="/l/${l.id}" class="ch-t">${l.title}</a>`}
-          <div class="ch-m">${gone ? '' : html`<b class="${sold ? 'off' : ''}">${price(l.price, l.priceUnit)}</b>`}${st}<i aria-hidden="true">·</i><a href="/u/${other.id}" class="ch-who">${ava(other, 'xs')}<span>${other.name}</span></a></div>
-        </div>
-        <button type="button" class="icon-btn chat-more" data-chat-more aria-label="Ещё" aria-haspopup="menu">${ic('more', 20)}</button>`;
+      const inner = html`<span class="ch-ph ${gone || sold ? 'off' : ''}">${l.photo ? html`<img src="${l.photo}" alt="">` : svg(P.image, 20, 1.4)}</span>
+        <span class="ch-tx"><span class="ch-t">${l.title}</span><span class="ch-m">${gone ? html`<span class="ch-st">Объявление удалено — переписка сохранена</span>` : html`<b class="${sold ? 'off' : ''}">${price(l.price, l.priceUnit)}</b>${sold ? html`<span class="ch-st dark">Продано</span>` : ''}`}</span></span>`;
+      return gone ? html`<div class="ch-item">${inner}</div>` : html`<a class="ch-item" href="/l/${l.id}">${inner}${ic('right', 18, 2.2)}</a>`;
     })(),
     reply: { other: other.name },
     receipts: true,
@@ -523,7 +520,6 @@ export async function viewMessages(cid) {
     empty: html`<div class="chat-day">Напишите первое сообщение — например, уточните состояние или договоритесь о встрече.${canOffer && l.price ? ' Или предложите свою цену кнопкой ₽.' : ''}</div>`,
     onActivity: () => refreshMe()
   });
-  $('.inbox').insertAdjacentHTML('beforeend', String(chatSide(l, other, role)));
   const chatEl = $('#chat');
   // 1.48.0: чёрный список — вместо поля ввода плашка: кто кого заблокировал и что делать.
   let block = data.block || null;
@@ -539,6 +535,10 @@ export async function viewMessages(cid) {
   };
   paintBlock();
   chatEl.addEventListener('click', async (e) => {
+    const pop = $('.rep-pop', chatEl); // карточка репутации закрывается нажатием мимо неё
+    if (pop && !e.target.closest('.rep-pop, [data-rep]')) { pop.remove(); $('[data-rep]', chatEl).setAttribute('aria-expanded', 'false'); }
+    const rb = e.target.closest('[data-rep]');
+    if (rb) { repPopover(rb, other, role).catch((ex) => toast(ex.message, true)); return; }
     const mb = e.target.closest('[data-chat-more]');
     if (mb) {
       pickList({ anchor: mb, title: other.name, search: false, value: '', items: [
