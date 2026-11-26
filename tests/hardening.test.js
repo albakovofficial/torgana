@@ -120,3 +120,13 @@ test('подарки модератора: тариф без ИП, реклам�
     assert.ok(['plan-gift', 'promo-gift', 'boost-gift'].every((a) => log.includes(a)), 'всё в журнале');
   } finally { s4.stop(); }
 });
+
+test('подбор пароля к одному аккаунту: после 10 неверных — закрыто на 15 минут с любого адреса', async () => {
+  await registerUser(srv.base, { name: 'Ольга', email: 'olga@test.local', password: 'correct-horse' });
+  const login = (password) => client(srv.base).post('/api/auth/login', { email: 'olga@test.local', password });
+  for (let i = 0; i < 10; i++) assert.equal((await login(`guess-${i}`)).status, 401);
+  const locked = await login('correct-horse');
+  assert.equal(locked.status, 429, 'даже верный пароль ждёт');
+  assert.match(locked.data.error, /восстановите пароль/);
+  assert.equal((await client(srv.base).post('/api/auth/login', { email: 'other@test.local', password: 'x' })).status, 401, 'другие аккаунты не задеты');
+});
