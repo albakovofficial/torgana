@@ -116,7 +116,7 @@ test('1.33: разделы второго уровня, страницы пом�
   assert.equal((await page('/c/transport/cars/atlantida')).status, 404);
   // страницы помощи — свои заголовки; поддержка — частые вопросы
   assert.match((await page('/page/safety')).html, /<title>Как не попасться мошенникам — безопасность на Торгане<\/title>/);
-  assert.match((await page('/page/support')).html, /"@type":"FAQPage"/);
+  assert.match((await page('/page/help')).html, /"@type":"FAQPage"/);
   // главная — организация и сайт
   const home = await page('/');
   assert.match(home.html, /"@type":"Organization"/);

@@ -1,5 +1,5 @@
 // Модерация: реклама, жалобы на сделки, журнал, проверка объявления «от и до», поддержка.
-import { $, $$, CONDITION_LABEL, NF, S, api, app, ava, catName, esc, html, price, raw, shortWhen, since, subName, when } from './core.js';
+import { $, $$, CONDITION_LABEL, NF, S, api, app, ava, catName, esc, html, price, raw, shortWhen, subName, when } from './core.js';
 import { ic } from './icons.js';
 import { reasonModal, toast } from './ui.js';
 import { mountChat, supportAva } from './messages.js';
@@ -169,9 +169,7 @@ function modParts(d) {
             <div style="min-width:0;flex:1"><a href="/admin/u/${u.id}" style="font-weight:700">${u.name}</a><div class="muted" style="font-size:13px;word-break:break-all">${u.email}${u.emailVerified ? ' · подтверждён' : ' · не подтверждён'}</div></div>
             ${u.avatar ? html`<button class="btn btn-line btn-sm" data-ava-remove="${u.id}">Убрать фото</button>` : ''}</div>
           <div class="kv">
-            <span>На Торгане</span><b>с ${since(u.createdAt)}</b>
             <span>Телефон</span><b>${u.phone || '—'}</b>
-            <span>Город</span><b>${u.city || '—'}</b>
             <span>Объявлений</span><b>${u.counts.total} · опубл. ${u.counts.active} · на проверке ${u.counts.pending}</b>
             <span>Отклонено ранее</span><b class="${u.counts.rejected ? 'danger-t' : ''}">${u.counts.rejected}</b>
             <span>Жалоб на него</span><b class="${u.reportsAgainst ? 'warn-t' : ''}">${u.reportsAgainst}</b>
@@ -247,7 +245,7 @@ export async function renderSupportAdmin(box, threadId) {
   setCleanup(mountChat($('#support-chat'), {
     back: '/admin?status=support',
     head: html`${ava(u)}<div style="flex:1;min-width:0"><a href="/admin/u/${u.id}" style="font-weight:700">${u.name}</a>
-      <span class="muted" style="font-size:13px;word-break:break-all">${u.email}${u.emailVerified ? '' : ' · не подтверждён'} · с ${since(u.createdAt)} · объявлений ${u.listings}${u.rejected ? ` · отклонено ${u.rejected}` : ''}${u.blocked ? ' · заблокирован' : ''}</span></div>`,
+      <span class="muted" style="font-size:13px;word-break:break-all">${u.email}${u.emailVerified ? '' : ' · не подтверждён'} · объявлений ${u.listings}${u.rejected ? ` · отклонено ${u.rejected}` : ''}${u.blocked ? ' · заблокирован' : ''}</span></div>`,
     load: (after) => api('GET', `/api/admin/support/${id}?after=${after}`),
     send: async (msg) => (await api('POST', `/api/admin/support/${id}/messages`, msg)).message,
     placeholder: 'Ответ от имени поддержки…'

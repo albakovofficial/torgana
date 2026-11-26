@@ -96,7 +96,7 @@ function editorPage({ l, src, st, draft, sendLabel, canSchedule, canBoost }) {
             ${opt('', 'info', 'Договорная', 'Цену не показываем — договоритесь в чате', st.negotiable, 'neg')}
           </div>
           <div class="field"><label for="city">Город</label>
-            <div class="ed-icon-input">${ic('pin', 18)}<input id="city" name="city" class="input" data-cities autocomplete="off" value="${src.city || S.user.city || S.city || ''}" placeholder="Начните вводить город"></div></div>
+            <div class="ed-icon-input">${ic('pin', 18)}<input id="city" name="city" class="input" data-cities autocomplete="off" value="${src.city || S.city || ''}" placeholder="Начните вводить город"></div></div>
           <div class="field"><label for="desc">Описание <small class="muted">— по желанию</small></label>
           <div class="ed-tips" id="desc-tips" aria-label="Что написать"></div>
           <div class="ed-input"><label for="desc" class="sr">Описание</label><textarea id="desc" name="description" class="textarea" maxlength="4000" placeholder="Состояние, комплектация, причина продажи, особенности">${src.description || ''}</textarea><span class="ed-count" id="desc-count"></span></div></div>

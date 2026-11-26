@@ -1,5 +1,5 @@
 // Страница объявления: фото, характеристики, продавец, похожие; жалоба на объявление.
-import { $, $$, CONDITION_CATS, CONDITION_LABEL, NF, S, api, app, ava, catName, cpath, dateShort, html, lpath, plural, price, raw, rub, since, subName, subOf, when } from './core.js';
+import { $, $$, CONDITION_CATS, CONDITION_LABEL, NF, S, api, app, ava, catName, cpath, dateShort, html, lpath, plural, price, raw, rub, subName, subOf, when } from './core.js';
 import { P, ic, svg } from './icons.js';
 import { COLOR_HEX, openModal, reasonModal, toast } from './ui.js';
 import { photoViewer } from './photos.js';
@@ -155,7 +155,7 @@ export async function viewListing(id) {
           ${ava(seller)}
           <span style="flex:1;min-width:0"><span style="display:block;font-size:17px;font-weight:700">${nameSeal(seller.name, seller.badges)}</span>
           ${repLine(seller.rep, '', { first: seller.badges && seller.badges.first, who: seller.name, kind: seller.badges && seller.badges.shop ? 'shop' : '' })}
-          <span class="muted" style="display:block;font-size:13px">На Торгане с ${since(seller.createdAt)} · ${seller.activeCount} ${plural(seller.activeCount, 'объявление', 'объявления', 'объявлений')}</span>
+          <span class="muted" style="display:block;font-size:13px">${seller.activeCount} ${plural(seller.activeCount, 'объявление', 'объявления', 'объявлений')}</span>
           ${seller.badges && (seller.badges.phone || seller.badges.biz) ? html`<span class="pf-badges" style="margin-top:8px">${trustBadges(seller.badges)}</span>` : ''}</span>
           ${ic('right', 20)}
         </a>

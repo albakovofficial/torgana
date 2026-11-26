@@ -245,7 +245,10 @@ function pages(d) {
     ['user', `/u/${d.seller.user.id}`, null],
     ['login', '/login', null],
     ['register', '/register', null],
-    ['help-page', '/page/help', null],
+    ['help-page', '/page/help', null, 'hub'], // 1.63.0: «Помощь и безопасность» — плитки тем, частые вопросы
+    ['search-help', '/page/search', null],
+    ['sell-page', '/page/sell', null],
+    ['deals-page', '/page/deals', null],
     ['safety-page', '/page/safety', null],
     ['support-page', '/page/support', null],
     ['rules', '/page/rules', null, 'doc'], // 1.62.0: документы — шапка, «коротко о главном», разделы с номерами, запрещённое плитками
@@ -285,7 +288,7 @@ function pages(d) {
     ['stats', `/profile/stats/${d.ids[1]}`, d.seller],
     ['stats-week', `/profile/stats/${d.ids[1]}?days=7`, d.seller],
     ['settings-old-link', '/profile?tab=settings', d.seller],
-    ['profile-empty', '/profile', d.buyer],
+    ['profile-empty', '/profile', d.buyer, 'lockcov'], // 1.63.0: без тарифа обложки нет, строка «с тарифом «Магазин»»; ни города, ни «на Торгане с»
     ['favorites', '/favorites', d.buyer],
     ['messages', '/messages', d.buyer],
     ['chat', `/messages/${d.conv}`, d.buyer],
@@ -536,6 +539,21 @@ async function main() {
           if (!/a_gearbox=/.test(page.url())) errors.push(`фильтр не применился: ${page.url()}`);
           const n = await page.textContent('#count');
           if (!/^1 объявление$/.test(n)) errors.push(`после фильтра «Автомат» должно быть 1 объявление, а не «${n}»`);
+        } else if (open === 'lockcov') {
+          if (await page.$('.pf-cover')) errors.push('у профиля без тарифа есть обложка');
+          if (!(await page.$('.pf-lockcov'))) errors.push('нет строки «Обложка и витрина — с тарифом»');
+          if (/на Торгане с/.test(await page.textContent('#app'))) errors.push('осталось «на Торгане с»');
+        } else if (open === 'hub') {
+          if ((await page.$$('.hub-tile')).length !== 4) errors.push('в «Помощи» не 4 темы');
+          if ((await page.$$('.hub-faq details')).length < 5) errors.push('нет частых вопросов');
+          await page.click('.hub-faq summary'); await page.waitForTimeout(200);
+          if (!(await page.isVisible('.hub-faq details[open] p'))) errors.push('вопрос не раскрылся');
+          // Тупиков нет: каждая ссылка «Помощи» ведёт на настоящую страницу, а не на «не найдено».
+          for (const href of await page.$$eval('.hub a[href^="/"]', (a) => a.map((x) => x.getAttribute('href')))) {
+            const p2 = await page.context().newPage(); await p2.goto(srv.base + href, { waitUntil: 'networkidle' });
+            if (/Такой страницы нет|Страница не найдена/.test(await p2.textContent('#app'))) errors.push(`«Помощь» ведёт в тупик: ${href}`);
+            await p2.close();
+          }
         } else if (open === 'doc') {
           if ((await page.$$('.doc-brief .doc-tile')).length !== 4) errors.push('в «Коротко о главном» не 4 плитки');
           if ((await page.$$('.doc-sec h2 .doc-n')).length < 5) errors.push('разделы правил без номеров');

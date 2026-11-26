@@ -71,7 +71,6 @@ export function when(ts) {
   return `${d.getDate()} ${MONTHS[d.getMonth()]}${d.getFullYear() !== new Date().getFullYear() ? ' ' + d.getFullYear() : ''}`;
 }
 export const shortWhen = (ts) => when(ts).replace(/ в \d\d:\d\d$/, '');
-export const since = (ts) => { const d = new Date(ts); return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
 export const hm = (ts) => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 const initial = (name) => (String(name || '?').trim()[0] || '?').toUpperCase();
 // Аватарка: фото профиля или первая буква имени на изумрудном круге. cls — sm | lg | xl.

@@ -101,9 +101,9 @@ export function renderBottomNav() {
 
 // Подвал: знак и кнопка поддержки, разделы (на телефоне раскрываются), контакты, © с реквизитами оператора, документы. Последняя колонка FOOTER_COLS — документы (их же показывает меню ≡).
 export const FOOTER_COLS = [
-  ['Покупателям', [['/page/help', 'Как искать'], ['/page/safety', 'Безопасность'], ['/favorites', 'Избранное']]],
-  ['Продавцам', [['/new', 'Разместить объявление'], ...(PAY ? [['/business', 'Для бизнеса']] : []), ['/page/rules', 'Правила площадки']]],
-  ['Помощь', [['/page/support', 'Поддержка'], ['/page/contacts', 'Реквизиты и контакты']]],
+  ['Покупателям', [['/page/search', 'Как искать'], ['/page/safety', 'Безопасность'], ['/favorites', 'Избранное']]],
+  ['Продавцам', [['/new', 'Разместить объявление'], ['/page/sell', 'Как продавать'], ...(PAY ? [['/business', 'Для бизнеса']] : []), ['/page/rules', 'Правила площадки']]],
+  ['Помощь', [['/page/help', 'Помощь и безопасность'], ['/page/support', 'Поддержка'], ['/page/contacts', 'Реквизиты и контакты']]],
   ['Документы', [['/page/terms', 'Пользовательское соглашение'], ['/page/privacy', 'Конфиденциальность'], ['/page/consent', 'Согласие на обработку данных']]]
 ];
 const FOOTER_NARROW = '(max-width: 760px)';
@@ -197,4 +197,4 @@ document.addEventListener('click', (e) => { if (e.target.closest('[data-cookie-s
 // Разделы аккаунта и «Выйти» — одно меню для левой колонки профиля (на компьютере) и для панели ≡ (full).
 // В панели вместо пункта «Настройки» — все группы настроек, публичный профиль и помощь.
 export const FOOTER_LABEL = Object.fromEntries(FOOTER_COLS.flatMap((c) => c[1]));
-export const HELP_LINKS = [['/page/help', 'search'], ['/page/safety', 'shield'], ['/page/rules', 'flag'], ...(PAY ? [['/business', 'store']] : [])];
+export const HELP_LINKS = [['/page/help', 'info'], ['/page/safety', 'shield'], ['/page/rules', 'flag'], ...(PAY ? [['/business', 'store']] : [])];
