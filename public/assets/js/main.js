@@ -34,10 +34,10 @@ import { payPending } from './business.js';
 // есть свой такой жест. Жест только наблюдает за пальцем (passive) и не мешает прокрутке и нажатиям.
 // Обновление мягкое: заново берём данные и перерисовываем страницу; вышла новая версия сайта — перезагрузка.
 async function softRefresh() {
-  const cur = ($('script[src*="/assets/app.js"]') || {}).src || '';
+  const cur = ($('script[src*="/assets/js/main.js"]') || {}).src || '';
   try {
     const page = await fetch('/', { cache: 'no-store' }).then((r) => r.text());
-    const m = /\/assets\/app\.js\?v=([\w-]+)/.exec(page);
+    const m = /\/assets\/js\/main\.js\?v=([\w-]+)/.exec(page);
     if (m && !cur.includes(m[1])) { location.reload(); return; }
   } catch { /* офлайн — обновим то, что получится */ }
   try { S.config = await api('GET', '/api/config'); } catch { /* офлайн */ }

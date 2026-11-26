@@ -1,17 +1,60 @@
 // Информационные страницы и документы.
-import { S, api, app, html, raw } from './core.js';
+import { S, api, app, html, plural, raw } from './core.js';
 import { ic } from './icons.js';
 import { supportAva } from './messages.js';
 import { go, setTitle, viewNotFound } from './router.js';
 
 // ================= информационные страницы =================
+// 1.62.0: документы (вариант A) — шапка с «коротко», плитки главного, нумерованные разделы, запрещённое плитками,
+// на компьютере — оглавление сбоку, на телефоне — «Содержание» сверху. Текст документа — с сервера (lib/legal.js), как есть.
+const DOCS = [['rules', 'Правила площадки', 'list'], ['terms', 'Пользовательское соглашение', 'edit'], ['privacy', 'Конфиденциальность', 'lock'], ['consent', 'Согласие на обработку данных', 'check'], ['contacts', 'Реквизиты и контакты', 'store']];
+const BAN_ICON = [[/наркот/i, 'ban'], [/оруж/i, 'warn'], [/лекарств/i, 'plus'], [/алкогол/i, 'ban'], [/документ/i, 'user'], [/финанс/i, 'card'], [/подделк/i, 'copy'],
+  [/шпион/i, 'eye'], [/людьми/i, 'users'], [/эрот/i, 'lock'], [/животн/i, 'shield'], [/экстрем/i, 'flag'], [/маги/i, 'sparkle'], [/опасн/i, 'bolt']];
+function docPage(slug, d) {
+  const t = document.createElement('template');
+  t.innerHTML = d.html; // текст документа собирает сервер (реквизиты экранированы там же)
+  const ed = [...t.content.querySelectorAll('p.muted')].find((p) => /^Редакция/.test(p.textContent));
+  const edition = ed ? ed.textContent.replace(/\.$/, '') : '';
+  if (ed) ed.remove();
+  // «Запрещено размещать» — плитки: название, пояснение, закон.
+  t.content.querySelectorAll('ol.rules-list > li').forEach((li) => {
+    const b = li.querySelector('strong'); const law = li.querySelector('.muted');
+    const name = b ? b.textContent.replace(/:$/, '') : '';
+    if (b) b.remove(); if (law) law.remove(); li.querySelector('br')?.remove();
+    const icon = (BAN_ICON.find(([re]) => re.test(name)) || [, 'ban'])[1];
+    li.innerHTML = String(html`<span class="ban-ic">${ic(icon, 18, 2)}</span><b>${name}</b><span class="ban-t">${li.textContent.trim().replace(/^[.:\s]+/, '')}</span>${law ? html`<small>${law.textContent}</small>` : ''}`);
+  });
+  // Разделы: каждый заголовок h2 с текстом под ним — отдельный блок с номером.
+  const intro = []; const secs = [];
+  [...t.content.childNodes].forEach((n) => {
+    if (n.nodeName === 'H2') secs.push({ id: n.id || `s${secs.length + 1}`, title: n.textContent.replace(/^\d+\.\s*/, ''), body: [] });
+    else (secs.length ? secs[secs.length - 1].body : intro).push(n.outerHTML || (n.textContent.trim() ? n.textContent : ''));
+  });
+  const words = t.content.textContent.split(/\s+/).length;
+  const toc = html`<div class="doc-toc-h">Содержание</div>${secs.map((x, i) => html`<a href="#${x.id}">${i + 1}. ${x.title}</a>`)}`;
+  return html`<div class="wrap doc">
+    <div class="doc-crumbs"><a href="/page/help">Помощь</a> › Правила и документы</div>
+    <header class="doc-hero"><span class="doc-hero-ic">${ic((DOCS.find(([k]) => k === slug) || [, , 'list'])[2], 26, 2)}</span>
+      <h1>${d.title}</h1>${d.lead ? html`<p><b>Коротко.</b> ${d.lead}</p>` : ''}
+      <div class="doc-meta"><span>${ic('clock', 14, 2)}${Math.max(1, Math.round(words / 180))} мин чтения</span>${edition ? html`<span>${edition}</span>` : ''}</div></header>
+    ${d.brief && d.brief.length ? html`<div class="doc-brief">${d.brief.map(([icon, title, text], i) => html`<div class="doc-tile"><span class="doc-tile-ic t${i % 4}">${ic(icon, 19, 2.2)}</span><b>${title}</b><span>${text}</span></div>`)}</div>` : ''}
+    ${secs.length > 2 ? html`<details class="doc-toc-m"><summary>${ic('list', 18, 2)}Содержание · ${secs.length} ${plural(secs.length, 'раздел', 'раздела', 'разделов')}${ic('down', 16, 2.2)}</summary><nav>${secs.map((x, i) => html`<a href="#${x.id}">${i + 1}. ${x.title}</a>`)}</nav></details>` : ''}
+    <div class="doc-lay">
+      <nav class="doc-toc" aria-label="Содержание">${toc}<div class="doc-toc-h other">Другие документы</div>${DOCS.filter(([k]) => k !== slug).map(([k, label]) => html`<a href="/page/${k}">${label}</a>`)}</nav>
+      <article class="doc-body">${raw(intro.join(''))}${secs.map((x, i) => html`<section class="doc-sec" id="${x.id}"><h2><span class="doc-n">${i + 1}</span>${x.title}</h2>${raw(x.body.join(''))}</section>`)}
+        <nav class="doc-more" aria-label="Другие документы">${DOCS.filter(([k]) => k !== slug).map(([k, label, icon]) => html`<a href="/page/${k}"><span>${ic(icon, 18, 2)}</span>${label}${ic('right', 16, 2)}</a>`)}</nav>
+      </article>
+    </div>
+  </div>`;
+}
+
 const LEGAL = new Set(['terms', 'rules', 'privacy', 'consent', 'contacts']);
 export async function viewPage(slug) {
   if (slug === 'business') { go('/business', true); return; }
   if (LEGAL.has(slug)) {
     const d = await api('GET', `/api/pages/${slug}`);
     setTitle(d.title);
-    app.innerHTML = String(html`<div class="wrap"><article class="page"><h1>${d.title}</h1>${raw(d.html)}</article></div>`);
+    app.innerHTML = String(docPage(slug, d));
     const to = location.hash.length > 1 && document.getElementById(location.hash.slice(1));
     if (to) to.scrollIntoView({ block: 'start' });
     return;

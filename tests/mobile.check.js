@@ -248,7 +248,7 @@ function pages(d) {
     ['help-page', '/page/help', null],
     ['safety-page', '/page/safety', null],
     ['support-page', '/page/support', null],
-    ['rules', '/page/rules', null],
+    ['rules', '/page/rules', null, 'doc'], // 1.62.0: документы — шапка, «коротко о главном», разделы с номерами, запрещённое плитками
     ['terms', '/page/terms', null],
     ['privacy', '/page/privacy', null],
     ['consent', '/page/consent', null],
@@ -313,7 +313,7 @@ function pages(d) {
     ['admin-notify', '/admin?status=notify', d.admin],
     ['admin-settings', '/admin?status=settings', d.admin], // 1.47.2: настройки — плитками
     ['admin-listings-sold', '/admin?status=sold', d.admin], // 1.47.2: статусы объявлений — вкладками
-    ['admin-menu', '/admin?status=pending', d.admin, 'adm-menu'], // 1.47.2: телефон — разделы в нижней панели
+    ['admin-home', '/admin', d.admin, 'adm-home'], // 1.62.0: телефон — разделы списком; компьютер — очередь: список и объявление рядом
     ['admin-pending', '/admin?status=pending', d.admin],
     ['admin-check', `/admin/l/${d.pending}`, d.admin],
     ['admin-reports', '/admin?status=reports', d.admin],
@@ -536,16 +536,20 @@ async function main() {
           if (!/a_gearbox=/.test(page.url())) errors.push(`фильтр не применился: ${page.url()}`);
           const n = await page.textContent('#count');
           if (!/^1 объявление$/.test(n)) errors.push(`после фильтра «Автомат» должно быть 1 объявление, а не «${n}»`);
-        } else if (open === 'adm-menu') {
-          const b = await page.$('[data-adm-menu]');
+        } else if (open === 'doc') {
+          if ((await page.$$('.doc-brief .doc-tile')).length !== 4) errors.push('в «Коротко о главном» не 4 плитки');
+          if ((await page.$$('.doc-sec h2 .doc-n')).length < 5) errors.push('разделы правил без номеров');
+          if ((await page.$$('.rules-list li .ban-t')).length < 10) errors.push('запрещённое не плитками с пояснением');
+          if (!(await page.isVisible(vp.viewport.width <= 900 ? '.doc-toc-m' : '.doc-toc'))) errors.push('нет содержания');
+        } else if (open === 'adm-home') {
           if (vp.viewport.width <= 900) {
-            if (!b || !(await b.isVisible())) errors.push('нет кнопки разделов модерации');
-            else {
-              await b.click(); await page.waitForTimeout(300);
-              if ((await page.$$('.adm-tiles a')).length !== 14) errors.push(`в панели разделов не 14 плиток, а ${(await page.$$('.adm-tiles a')).length}`);
-              await page.screenshot({ path: path.join(SHOTS, `${vpName}-admin-menu-open.png`) });
-            }
-          } else if ((await page.$$('.adm-nav a')).length !== 14) errors.push(`в меню модерации не 14 пунктов, а ${(await page.$$('.adm-nav a')).length}`);
+            const n = (await page.$$('.adm-row')).length;
+            if (n !== 13) errors.push(`на главном экране модерации не 13 разделов, а ${n}`);
+          } else {
+            if ((await page.$$('.adm-nav a')).length !== 13) errors.push(`в меню модерации не 13 пунктов, а ${(await page.$$('.adm-nav a')).length}`);
+            if (!(await page.$('.adm-split .adm-q-row.on'))) errors.push('в очереди не выбрано объявление');
+            if (!(await page.$('.adm-pane-bar [data-restore]'))) errors.push('справа нет кнопки «Опубликовать»');
+          }
         } else if (open === 'step:2:more') {
           await page.click('[data-step="1"]');
           await page.waitForTimeout(300);

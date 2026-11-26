@@ -4,7 +4,7 @@
 лишний код и картинки удалять. Изменения дизайна — показывать снимками телефона (и компьютера для сайта) до выпуска.
 
 ## Репозитории
-- **albakovofficial/torgana** — сайт torgana.ru (Node 22 + node:sqlite, SPA `public/assets/app.js`, тесты `npm test`, 243 шт.).
+- **albakovofficial/torgana** — сайт torgana.ru (Node 22 + node:sqlite, SPA — модули `public/assets/js/*.js`, тесты `npm test`, 243 шт.).
   Выпуск: коммит «X.Y.Z: …» (версия в package.json) в `main` → PR `main → release` → merge (сайт обновляется за 30–45 с).
   **Влить в release можно только после явного «выпускай» владельца.** Проверка выпуска — запуск workflow `uptime.yml`,
   в логе строка `интерфейс: app.js?v=<hash>` (hash = sha1(app.js+app.css+theme.js+admin.js)[:10]). Сейчас на сайте **1.56.4**.
