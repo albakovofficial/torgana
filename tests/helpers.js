@@ -41,7 +41,7 @@ async function startServer(extraEnv = {}, keepTmp = null) {
     TRUST_PROXY: '0',
     ANTHROPIC_API_KEY: '',
     METRO_SOURCE: path.join(ROOT, 'tests', 'fixtures', 'metro.json'), // справочник метро без сети
-    INDEXNOW_URL: '', // IndexNow — только в tests/v158.test.js, на поддельный адрес
+    INDEXNOW_URL: '', // IndexNow — только в tests/seo.test.js, на поддельный адрес
     ADMIN_DEVICE_CHECK: '0', // код для входа в модерацию проверяется в tests/ops.test.js
     ...extraEnv
   };
