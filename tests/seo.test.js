@@ -135,3 +135,13 @@ test('1.33: разделы второго уровня, страницы пом�
   assert.equal(sectionPath('transport', '', 'Санкт-Петербург'), '/c/transport/sankt-peterburg');
 });
 
+
+test('«$\'» и «$`» в имени продавца не ломают страницу: скрипты не дублируются', async () => {
+  const odd = await registerUser(srv.base, { name: "Иван $' и $` продавец", email: 'odd@test.local' });
+  const me = (await odd.get('/api/me')).data.user.id;
+  const scripts = (h) => (h.match(/<script/g) || []).length;
+  const home = await page('/');
+  const profile = await page(`/u/${me}`);
+  assert.equal(scripts(profile.html) - (profile.html.match(/ld\+json/g) || []).length, scripts(home.html) - (home.html.match(/ld\+json/g) || []).length);
+  assert.match(profile.html, /Иван \$&#39; и \$` продавец|Иван \$' и \$` продавец/);
+});

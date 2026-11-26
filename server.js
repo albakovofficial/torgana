@@ -9,7 +9,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const { openDb } = require('./lib/db');
-const { HttpError, sendJson, readJson, parseCookies, rateLimit } = require('./lib/http');
+const { HttpError, sendJson, readJson, parseCookies, rateLimit, failure, guard } = require('./lib/http');
 const auth = require('./lib/auth');
 const { CATEGORIES, CATEGORY_IDS, CITIES, PRICE_UNITS, CONDITIONS, SUPPORT_FAQ } = require('./lib/constants');
 const { norm, parseQuery, searchSpec, specSql, brandAliases, correctQuery } = require('./lib/search');
@@ -477,8 +477,11 @@ route('POST', '/api/auth/login', async (ctx) => {
   const body = await readJson(ctx.req);
   const email = str(body.email, 120).toLowerCase();
   const password = String(body.password || '');
+  // Подбор к одному аккаунту с разных адресов: 10 неверных паролей — вход в него закрыт на 15 минут.
+  const fails = `login-fail:${email}`;
+  guard(fails, 10, 'Слишком много неверных паролей для этого аккаунта. Подождите 15 минут или восстановите пароль.');
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-  if (!user || !auth.verifyPassword(password, user.password_hash)) throw new HttpError(401, 'Неверный email или пароль');
+  if (!user || !auth.verifyPassword(password, user.password_hash)) { failure(fails, 15 * 60 * 1000); throw new HttpError(401, 'Неверный email или пароль'); }
   if (ADMIN_EMAILS.includes(email) && !user.is_admin) {
     db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
     user.is_admin = 1;
@@ -1519,9 +1522,9 @@ const server = http.createServer(async (req, res) => {
   const token = cookies[auth.SESSION_COOKIE];
   const headers = { ...SECURITY_HEADERS };
   const ctx = {
-    req, res, query: url.searchParams, params: {}, ip: clientIp(req), token,
+    req, res, query: url.searchParams, params: {}, ip: clientIp(req), token, cookies,
     user: auth.userFromSession(db, token),
-    setCookie: (c) => { headers['Set-Cookie'] = c; }
+    setCookie: (c) => { headers['Set-Cookie'] = [...(headers['Set-Cookie'] || []), c]; }
   };
 
   try {
