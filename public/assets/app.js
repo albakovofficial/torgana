@@ -97,6 +97,9 @@
     left: '<path d="M15 6l-6 6 6 6"/>',
     right: '<path d="M9 6l6 6-6 6"/>',
     down: '<path d="M6 9l6 6 6-6"/>',
+    rise: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+    fall: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+    flat: '<path d="M5 12h14M13 6l6 6-6 6"/>',
     pushpin: '<path d="M9 4h6l-1 6 3 3H7l3-3z"/><path d="M12 16v4"/>',
     shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
     truck: '<rect x="2" y="7" width="13" height="10" rx="1.5"/><path d="M15 10h4l3 3v4h-7"/><circle cx="7" cy="18" r="1.8"/><circle cx="18" cy="18" r="1.8"/>',
@@ -4369,18 +4372,22 @@
     const p = shares(rows.map(([k]) => sources[k] || 0));
     return rows.map(([, icn, label], i) => html`<div class="st-src"><span class="st-src-ic">${ic(icn, 17)}</span><div><div class="st-step-h"><span>${label}</span><b>${p[i]}%</b></div><div class="st-track dark"><i style="width:${p[i]}%"></i></div></div></div>`);
   };
+  // 1.61.1: сравнение с прошлым периодом — зелёная стрелка вверх или красная вниз, процент и «было N за прошлую неделю»
+  // (так же в приложении). Плитка статистики объявления и магазина — одна.
+  const PAST = { 7: 'за прошлую неделю', 30: 'за прошлые 30 дней', 90: 'за прошлые 90 дней' };
+  const trend = (a, b, period) => {
+    const was = html`<span class="t-was">было ${NF.format(b)} ${PAST[period] || `за прошлые ${period} дн.`}</span>`;
+    if (a === b) return html`<span class="t-row"><span class="t-pill same">${ic('flat', 13, 2.6)}0%</span>${was}</span>`;
+    const up = a > b;
+    return html`<span class="t-row"><span class="t-pill ${up ? 'up' : 'down'}">${ic(up ? 'rise' : 'fall', 13, 2.6)}${b ? `${Math.abs(Math.round(((a - b) / b) * 100))}%` : 'новое'}</span>${was}</span>`;
+  };
+  const kpi = (n, label, sub, note, accent) => html`<div class="st-kpi ${accent ? 'accent' : ''}"><span class="k">${label}</span><b>${n}</b>${note ? html`<span class="d">${note}</span>` : ''}<span class="s">${sub}</span></div>`;
   async function renderStats(id, days) {
     const d = await api('GET', `/api/my/listings/${id}/stats?days=${days}`);
     const { totals: t, prev: pv, listing: l } = d;
     const ctr = ctrOf(t.impressions, d.sources);
     const fromList = listViews(d.sources);
-    const delta = (a, b) => {
-      if (!pv) return '';
-      if (!b) return ''; // сравнивать не с чем
-      const ch = Math.round(((a - b) / b) * 100);
-      return `${ch > 0 ? '+' : ''}${ch}% к прошлым ${d.period} дням`;
-    };
-    const kpi = (n, label, sub, note, accent) => html`<div class="st-kpi ${accent ? 'accent' : ''}"><span class="k">${label}</span><b>${n}</b>${note ? html`<span class="d">${note}</span>` : ''}<span class="s">${sub}</span></div>`;
+    const delta = (a, b) => (pv ? trend(a, b, d.period) : '');
     const mx = Math.max(1, ...d.daily.map((x) => x.views));
     const n = d.daily.length;
     const labels = n > 1 ? [0, Math.floor((n - 1) / 2), n - 1] : [0];
@@ -5290,8 +5297,7 @@
     const d = await api('GET', `/api/my/shop/stats?days=${days}`);
     const t = d.totals; const pv = d.prev;
     const ctr = ctrOf(t.impressions, d.sources);
-    const delta = (a, b) => (b ? `${a >= b ? '+' : ''}${Math.round(((a - b) / b) * 100)}% к прошлым ${d.period} дням` : '');
-    const kpi = (n, label, sub, note, accent) => html`<div class="st-kpi ${accent ? 'accent' : ''}"><span class="k">${label}</span><b>${n}</b>${note ? html`<span class="d">${note}</span>` : ''}<span class="s">${sub}</span></div>`;
+    const delta = (a, b) => trend(a, b, d.period);
     const mx = Math.max(1, ...d.daily.map((x) => x.views));
     const n = d.daily.length;
     const labels = [0, Math.floor((n - 1) / 2), n - 1];
