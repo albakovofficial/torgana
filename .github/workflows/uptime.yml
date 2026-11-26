@@ -27,7 +27,7 @@ jobs:
               code=$(curl -s -o /tmp/body -w '%{http_code} %{time_total}' -m 15 -A 'TorganaUptime/1.0 (+https://github.com/albakovofficial/torgana)' "$url") || code="000 -"
               echo "$url → $code"
               case "$code" in 200*) ;; *) return 1 ;; esac
-              [ "$url" = https://torgana.ru/ ] && grep -o 'app\.js?v=[a-f0-9]*' /tmp/body | head -1 | sed 's/^/  интерфейс: /'
+              [ "$url" = https://torgana.ru/ ] && grep -oE 'js/main\.js\?v=[a-f0-9]+' /tmp/body | head -1 | sed 's/^/  интерфейс: /'
             done
             grep -q '"categories"' /tmp/body 2>/dev/null || grep -q 'Sitemap' /tmp/body
           }
