@@ -4435,26 +4435,24 @@
     ? html`<label class="mini-switch"><input type="checkbox" name="${k}" aria-label="${kind} — ${title}" ${u[k] ? raw('checked') : ''}><span class="track"></span></label>`
     : html`<span class="ntf-none" title="Для этого события нет">—</span>`);
 
-  // Для бизнеса (1.45.0): переключатель бизнес-аккаунта (для всех, открывает тарифы) и получение галочки —
+  // Для бизнеса (1.45.0; 1.61.0 — без переключателя «Бизнес-аккаунт»): проверка ИП и получение галочки —
   // объёмного значка «Проверенный бренд». Галочка — только правообладателю товарного знака из реестра Роспатента:
   // шаг 1 — компания или ИП (ИНН, ОГРН/ОГРНИП, сверка с ЕГРЮЛ/ЕГРИП, даёт плашку «ИП/Компания проверена»),
   // шаг 2 — номер свидетельства на товарный знак (модератор сверяет запись в реестре ФИПС), шаг 3 — галочка у имени.
   const TM_REGISTRY = 'https://fips.ru/registers-web/';
   const dateIn = (ts) => (ts ? new Date(ts).toISOString().slice(0, 10) : '');
-  function bizBlock(b, on, hasPlan, tm) {
-    const acc = html`<label class="switch biz-switch"><span>Бизнес-аккаунт<small>${!PAY ? (on ? 'Включён' : 'Бесплатно') : on ? 'Включён — тарифы для магазина доступны' : 'Бесплатно. Открывает тарифы: витрину и статистику магазина'}</small></span><input type="checkbox" data-biz-acc ${on ? raw('checked') : ''} ${on && hasPlan ? raw('disabled') : ''}><span class="track"></span></label>
-      ${on && PAY ? html`<div class="set-btns"><a class="btn btn-soft btn-sm" href="/business">${ic('store', 16, 2)}Тарифы</a><a class="btn btn-soft btn-sm" href="/profile/business">Мой магазин</a></div>` : ''}`;
+  // 1.61.0: без переключателя «Бизнес-аккаунт» и без шагов «1 2 3» — две строки со статусом словами.
+  const bizState = (b) => (!b ? ['off', 'Не начато'] : { verified: ['ok', 'Готово'], pending: ['wait', 'На проверке'], rejected: ['bad', 'Исправить'] }[b.status] || ['off', 'Не начато']);
+  const tmState = (b, tm) => (tm && tm.live ? ['ok', 'Готово'] : tm && tm.status === 'pending' ? ['wait', 'На проверке'] : tm && tm.status === 'rejected' ? ['bad', 'Исправить']
+    : b && ['pending', 'verified'].includes(b.status) ? ['off', 'Не начато'] : ['off', 'После ИП']);
+  const trustRow = (icon, t, sub, [cls, word], href) => html`<${href ? 'a' : 'div'} class="trust-row"${href ? raw(` href="${href}"`) : ''}><span class="tr-ic">${icon}</span><span class="tr-txt"><b>${t}</b><small>${sub}</small></span><span class="ml-tag ${cls}"><i></i>${word}</span></${href ? 'a' : 'div'}>`;
+  function bizBlock(b, tm) {
     const bizDone = b && b.status === 'verified';
     const bizSent = b && ['pending', 'verified'].includes(b.status);
-    const tmDone = tm && tm.live;
-    // Каждый шаг — со своим статусом: «готово», «на проверке» или «сейчас».
-    const tmWait = bizSent && tm && tm.status === 'pending';
-    const s1 = bizDone ? 'done' : bizSent ? 'on' : 'on';
-    const s2 = tmDone ? 'done' : bizSent ? 'on' : '';
-    const step = (cls, n, icon, t, sub) => html`<li class="${cls}"><span class="bs-n">${n}</span><span class="bs-ic">${cls === 'done' ? ic('check', 20) : n === 3 ? verifiedSeal(22) : ic(icon, 20)}</span><b>${t}</b><small>${sub}</small></li>`;
-    const head = html`<h3 class="set-h3 seal-h">${verifiedSeal(22)}Галочка проверенного бренда</h3>
-      <p class="muted" style="margin:0;font-size:14px">Только для правообладателей товарного знака, зарегистрированного в Роспатенте. Покупатели видят галочку рядом с вашим именем.</p>
-      <ol class="biz-steps">${step(s1, 1, 'shield', 'Компания или ИП', bizDone ? 'Подтверждено' : bizSent ? 'На проверке' : 'ИНН и ОГРН — сверим с ЕГРЮЛ/ЕГРИП')}${step(s2, 2, 'edit', 'Товарный знак и документы', tmDone ? 'Подтверждено' : tmWait ? 'На проверке' : 'Свидетельство Роспатента и письмо с кодом')}${step(tmDone ? 'done' : '', 3, 'check', 'Галочка у имени', tmDone ? 'Выдана модератором' : 'Выдаёт только модератор')}</ol>`;
+    const head = html`<div class="trust-rows">
+        ${trustRow(ic('shield', 20, 2), bizDone && b.kind !== 'ip' ? 'Компания проверена' : 'ИП или компания', 'Значок у имени · сверим с ЕГРЮЛ/ЕГРИП', bizState(b))}
+        ${trustRow(verifiedSeal(20), 'Галочка бренда', 'Для владельцев товарного знака из реестра Роспатента', tmState(b, tm))}
+      </div>`;
     // Шаг 1 — данные компании (как раньше, отдельная плашка «ИП проверен / Компания проверена»).
     const bizStatus = bizDone ? html`<div class="biz-ok">${ic('shield', 22, 2)}<span><b>${b.name} — ${b.kind === 'ip' ? 'ИП проверен' : 'компания проверена'}</b><span>ИНН ${b.inn} · ${b.kind === 'ip' ? 'ОГРНИП' : 'ОГРН'} ${b.ogrn}</span></span><button type="button" class="btn btn-line btn-sm" data-biz-del>Убрать</button></div>`
       : b && b.status === 'pending' ? html`<div class="banner warn"><strong>${b.name}</strong> — данные на проверке с ${when(b.at)}, обычно в течение дня. <button type="button" class="link-btn" data-biz-del>Отозвать</button></div>` : '';
@@ -4469,7 +4467,7 @@
         <div class="set-btns"><button class="btn btn-dark" type="submit">Отправить на проверку</button>${b ? html`<button type="button" class="btn btn-soft" data-biz-del>Отозвать</button>` : ''}</div>
       </form>`;
     // Шаг 2 — товарный знак с документами: грузится отдельно (renderTmBox), нужен код заявки и список файлов.
-    return html`${acc}${head}
+    return html`${head}
       ${bizSent ? bizStatus : bizForm}
       ${bizSent ? html`<div id="tm-box" class="tm-box"><div class="loader"></div></div>` : ''}`;
   }
@@ -4484,7 +4482,7 @@
     const st = tm && (tm.status === 'verified' && !tm.live ? ['bad', 'Срок истёк'] : TM_STATUS[tm.status]);
     const lock = tm && tm.status === 'pending';
     const has = (k) => d.docs.some((x) => x.kind === k);
-    const letter = `Подтверждаю, что аккаунт ${S.user.email} на сайте torgana.ru принадлежит ${b.name} (ИНН ${b.inn}, ${b.kind === 'ip' ? 'ОГРНИП' : 'ОГРН'} ${b.ogrn}) — правообладателю товарного знака № ${(tm && tm.number) || '______'} «${(tm && tm.name) || '______'}», и прошу подтвердить бренд.\nКод заявки: ${d.code}\nДата, должность, ФИО, подпись${b.kind === 'ip' ? '' : ', печать (если есть)'}.`;
+    const letter = d.letter; // текст письма — с сервера (1.61.0), тот же в приложении
     const docRow = (x) => html`<div class="tm-doc"><span class="tm-doc-ic">${ic(x.mime === 'application/pdf' ? 'list' : 'image', 18, 2)}</span><span><b>${x.kindName}</b><small>${x.name || 'файл'} · ${fmtSize(x.size)}</small></span>
       <a class="btn btn-soft btn-sm" href="/api/me/verify-docs/${x.id}" target="_blank" rel="noopener">Открыть</a>${lock ? '' : html`<button type="button" class="btn btn-line btn-sm" data-doc-del="${x.id}">Удалить</button>`}</div>`;
     box.innerHTML = String(html`
@@ -4543,16 +4541,6 @@
     });
   }
   function bindBizForm(reload) {
-    const acc = $('[data-biz-acc]');
-    if (acc) {
-      acc.onchange = async () => {
-        try {
-          if (acc.checked) await bizAccountOn();
-          else { await api('PUT', '/api/me/business-account', { on: false }); await refreshMe(); toast('Бизнес-аккаунт выключен'); }
-          reload();
-        } catch (ex) { acc.checked = !acc.checked; toast(ex.message, true); }
-      };
-    }
     const f = $('#bf');
     if (f) {
       f.onsubmit = async (e) => {
@@ -4716,7 +4704,7 @@
           </div>
           <div class="set-foot"><span>Минимум 8 символов. На других устройствах потребуется войти заново</span><button class="btn btn-accent" type="submit">Сменить пароль</button></div>
         </form>`,
-      's-biz': () => html`${head('Для бизнеса', 'Бизнес-аккаунт открывает тарифы. Галочка у имени — правообладателям товарного знака')}${bizBlock(u.business, u.bizAccount, !!u.plan, u.trademark)}`,
+      's-biz': () => html`${head('Для бизнеса', 'Значки доверия у имени — бесплатно и без тарифа')}${PAY ? html`<a class="trust-row shop-link" href="/profile/business"><span class="tr-ic">${ic('store', 20, 2)}</span><span class="tr-txt"><b>Мой магазин</b><small>Тариф, витрина, статистика, продвижение и платежи</small></span>${ic('right', 18, 2)}</a>` : ''}${bizBlock(u.business, u.trademark)}`,
       's-look': () => html`${head('Оформление', 'Светлое, тёмное или как на устройстве. Сохраняется на этом устройстве')}
         <div class="look" role="radiogroup" aria-label="Оформление">${THEMES.map(([v, icon, t, sub]) => html`<button type="button" role="radio" class="look-it${themeGet() === v ? ' on' : ''}" aria-checked="${themeGet() === v ? 'true' : 'false'}" data-theme-set="${v}">
           <span class="look-pv lp-${v}" aria-hidden="true"><i></i><i></i><i></i></span><span class="look-t">${ic(icon, 18, 2)}<b>${t}</b></span><small>${sub}</small></button>`)}</div>`,
@@ -4951,13 +4939,6 @@
   })[key];
   // Цена, зачёркнутая «от руки» (1.45.0): неровная линия рисуется при появлении.
   const handStrike = (text) => html`<span class="hand-strike">${text}<svg viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true"><path pathLength="100" d="M3 15.5c13-2.6 27-5.4 43-6.4 17-1.1 33 .3 47-1.6 9.6-1.3 16-3.1 24-5.2"/><path pathLength="100" class="hs2" d="M8 19.5c18-3.3 39-6.1 61-6.3 15-.2 29 .4 46-3.9"/></svg></span>`;
-  // Включить бизнес-аккаунт — с любой страницы, где он нужен (страница «Для бизнеса», «Мой бизнес», настройки).
-  async function bizAccountOn() {
-    await api('PUT', '/api/me/business-account', { on: true });
-    await refreshMe();
-    toast('Бизнес-аккаунт включён — выберите тариф');
-  }
-
   // Подтверждение покупки → страница оплаты ЮKassa.
   function payModal({ title, lines, amount, url, body }) {
     openModal(String(html`<h2>${title}</h2>
@@ -4975,10 +4956,10 @@
   }
 
   // /business — тарифы, продвижение, вопросы. Цены — с сервера (их задаёт владелец).
-  // 1.45.0: страница упрощена до трёх шагов: бизнес-аккаунт (для всех, бесплатно) → тариф (первым — 0 ₽) → витрина.
+  // 1.45.0: страница упрощена до шагов; 1.61.0: тариф (первым — 0 ₽) → витрина → значки доверия, без «бизнес-аккаунта».
   const BIZ_FAQ = [
     ['Нужно ли платить, чтобы продавать?', 'Нет. Объявления бесплатны и без лимитов для всех. Тариф добавляет инструменты магазина.'],
-    ['Кто может подключить тариф?', 'Любой, кто включил бизнес-аккаунт, — это бесплатно. Проверка ИНН не обязательна: она даёт значок проверенного бизнеса в профиле.'],
+    ['Кто может подключить тариф?', 'Любой пользователь. Проверка ИНН не обязательна: она даёт значок проверенного бизнеса в профиле.'],
     ['Что будет после бесплатного периода?', 'Тариф просто закончится — объявления останутся. Продлить можно по обычной цене. Автоплатежей нет.'],
     ['Как оплатить и вернуть деньги?', 'Картой или через СБП на странице ЮKassa, чек придёт на почту. За неиспользованные дни вернём деньги через поддержку.']
   ];
@@ -4988,23 +4969,21 @@
     const pr = (me && me.prices) || S.config.billing.prices;
     const ready = me ? me.ready : S.config.billing.ready;
     const plan = me && me.plan;
-    const bizOn = !!(me && me.bizAccount);
     const st = S.config.billing.starter; // бесплатный старт: { days, limit, left } — пока есть места
-    // 0 ₽ показываем гостю и тем, кому старт доступен (или станет доступен после включения бизнес-аккаунта).
-    const free = !!st && (!me || me.trial || me.trialWhy === 'Сначала включите бизнес-аккаунт');
+    // 0 ₽ показываем гостю и тем, кому старт доступен.
+    const free = !!st && (!me || me.trial);
     let months = ['1', '3', '12'].includes(q.get('m')) ? Number(q.get('m')) : 1;
     const bp = pr.boost || {};
     const flow = (n, t, done) => html`<li class="${done ? 'done' : ''}"><span>${done ? ic('check', 14, 3) : n}</span>${t}</li>`;
     const heroCta = !S.user ? html`<a class="btn btn-accent btn-lg" href="/login?next=/business">Войти и начать</a>`
-      : !bizOn ? html`<button type="button" class="btn btn-accent btn-lg" data-biz-on>Включить бизнес-аккаунт</button>`
-        : plan ? html`<a class="btn btn-accent btn-lg" href="/profile/business">Мой магазин</a>` : html`<a class="btn btn-accent btn-lg" href="#plans">Выбрать тариф</a>`;
+      : plan ? html`<a class="btn btn-accent btn-lg" href="/profile/business">Мой магазин</a>` : html`<a class="btn btn-accent btn-lg" href="#plans">Выбрать тариф</a>`;
     app.innerHTML = String(html`<div class="wrap biz bz">
       <section class="bz-hero">
         <div class="bz-hero-txt">
           <span class="bz-kicker">${ic('store', 15, 2)}Торгана для бизнеса</span>
           <h1>Продавайте как магазин</h1>
           <p>Объявления — бесплатно для всех. Тариф добавляет витрину с поиском и разделами и статистику магазина.</p>
-          <ol class="bz-flow">${flow(1, 'Бизнес-аккаунт', bizOn)}${flow(2, 'Тариф', !!plan)}${flow(3, 'Витрина', false)}</ol>
+          <ol class="bz-flow">${flow(1, 'Тариф', !!plan)}${flow(2, 'Витрина', false)}${flow(3, 'Значки доверия', false)}</ol>
           <div class="bz-cta">${heroCta}</div>
         </div>
         <div class="bz-mini" aria-hidden="true">
@@ -5038,7 +5017,6 @@
         <p class="muted biz-small">Условия — в <a href="/page/terms#paid" style="text-decoration:underline">разделе 7 Пользовательского соглашения</a>. Исполнитель — ${S.config.operator ? `${S.config.operator.name}, ИНН ${S.config.operator.inn}` : 'оператор Торганы'}.</p>
       </section>
     </div>`);
-    const turnOn = async (b) => { b.disabled = true; try { await bizAccountOn(); viewBusiness(_, new URLSearchParams({ m: String(months) })); } catch (ex) { toast(ex.message, true); b.disabled = false; } };
     const paint = () => {
       $$('[data-m]').forEach((b) => { b.classList.toggle('on', Number(b.dataset.m) === months); b.setAttribute('aria-selected', Number(b.dataset.m) === months ? 'true' : 'false'); });
       const save = (key) => { const full = pr[key][1] * months; return full > pr[key][months] ? Math.round((1 - pr[key][months] / full) * 100) : 0; };
@@ -5046,7 +5024,6 @@
       const cta = (key) => {
         const cls = key === 'pro' ? 'btn-accent' : 'btn-dark';
         if (!S.user) return html`<a class="btn ${cls} btn-block" href="/login?next=/business">${free ? 'Войти и начать бесплатно' : 'Войти и подключить'}</a>`;
-        if (!bizOn) return html`<button type="button" class="btn ${cls} btn-block" data-biz-on>Включить бизнес-аккаунт</button>`;
         if (free && !plan) return html`<button type="button" class="btn ${cls} btn-block" data-trial="${key}">Начать бесплатно</button>`;
         if (!ready) return html`<button type="button" class="btn btn-soft btn-block" disabled>Оплата скоро</button>`;
         return html`<button type="button" class="btn ${cls} btn-block" data-buy="${key}">${plan && plan.id === key ? `Продлить на ${months} мес.` : plan ? `Перейти на «${PLAN_NAME[key]}»` : 'Подключить'}</button>`;
@@ -5062,7 +5039,6 @@
           <div class="plan-top"><h3>${PLAN_NAME[key]}${plan && plan.id === key ? html`<span class="plan-cur">ваш тариф</span>` : key === 'pro' ? html`<span class="plan-cur">больше всего</span>` : ''}</h3>${price(key)}</div>
           <ul>${planFeatures(key, pr).map((f) => html`<li>${ic('check', 16, 2.4)}${f}</li>`)}</ul>
           ${cta(key)}</div>`)}`);
-      $$('[data-biz-on]').forEach((b) => { b.onclick = () => turnOn(b); });
       $$('[data-trial]').forEach((b) => {
         b.onclick = async () => {
           const key = b.dataset.trial;
@@ -5080,7 +5056,6 @@
       });
     };
     $$('[data-m]').forEach((b) => { b.onclick = () => { months = Number(b.dataset.m); history.replaceState({}, '', `/business?m=${months}`); paint(); }; });
-    const hb = $('.bz-cta [data-biz-on]'); if (hb) hb.onclick = () => turnOn(hb);
     paint();
   }
 
@@ -5191,15 +5166,26 @@
   async function renderBusinessHub(sub, days, reload) {
     const d = await api('GET', '/api/my/business');
     const box = $('#box');
-    const biz = d.bizAccount; // 1.45.0: тарифы — после включения бизнес-аккаунта, проверка ИНН не нужна
     const official = !!(d.shop && d.shop.official); // 1.50.0: официальному аккаунту всё открыто без тарифа
     const lock = (need) => (official ? '' : !d.plan ? `в тарифе «${PLAN_NAME[need]}»` : need === 'pro' && d.plan.id !== 'pro' ? 'в тарифе «Магазин Про»' : '');
-    const gate = (need, text) => html`<div class="biz-gate">${ic('store', 26, 1.8)}<div><b>${text}</b><span>${lock(need) ? `Доступно ${lock(need)}.` : ''} ${biz ? '' : 'Сначала включите бизнес-аккаунт — это бесплатно.'}</span></div><a class="btn btn-dark" href="/business">${biz ? 'Выбрать тариф' : 'Включить бизнес-аккаунт'}</a></div>`;
+    const gate = (need, text) => html`<div class="biz-gate">${ic('store', 26, 1.8)}<div><b>${text}</b><span>${lock(need) ? `Доступно ${lock(need)}.` : ''}</span></div><a class="btn btn-dark" href="/business">Выбрать тариф</a></div>`;
     if (sub === 'shop') return lock('shop') ? (box.innerHTML = String(gate('shop', 'Витрина магазина'))) : renderShopEditor(box, d, reload);
     if (sub === 'stats') return lock('shop') ? (box.innerHTML = String(gate('shop', 'Статистика магазина'))) : renderShopStats(box, days);
     const tool = (href, icon, t, sub2, need) => html`<a class="biz-tool ${lock(need) ? 'locked' : ''}" href="${href}"><span class="bt-ic">${ic(icon, 22)}</span><b>${t}</b><small>${lock(need) ? html`${ic('lock', 13, 2)} ${lock(need)}` : sub2}</small></a>`;
+    // 1.61.0 (как в приложении): чек-лист «Запуск магазина», пока не настроен, и «Доверие покупателей» со статусами словами.
+    const open = official || !!d.plan;
+    const tm = S.user.trademark;
+    const steps = [[official ? 'Официальный аккаунт' : `Тариф «${d.plan ? d.plan.name : ''}»`, open, ''],
+      ['Обложка и описание', !!(d.shop.cover && d.shop.about), '/profile/business/shop'],
+      ['Подтвердите ИП или компанию', !!(d.biz && d.biz.status === 'verified'), '/profile/settings#s-biz'],
+      ['Галочка бренда — по желанию', !!(tm && tm.live), '/profile/settings#s-biz']];
+    const done = steps.filter((x) => x[1]).length;
+    const checklist = open && !steps.slice(0, 3).every((x) => x[1]) ? html`<section class="st-card launch">
+        <div class="st-card-head"><h2>Запуск магазина</h2><b class="launch-pct">${Math.round((done / steps.length) * 100)}%</b></div>
+        <div class="launch-bar"><i style="width:${(done / steps.length) * 100}%"></i></div>
+        <ol class="launch-steps">${steps.map(([t, ok, href], i) => html`<li class="${ok ? 'done' : ''}">${ok || !href ? html`<span class="ls-n">${ok ? ic('check', 14, 3) : i + 1}</span><b>${t}</b>` : html`<a href="${href}"><span class="ls-n">${i + 1}</span><b>${t}</b>${ic('right', 16, 2)}</a>`}</li>`)}</ol>
+      </section>` : '';
     box.innerHTML = String(html`<div class="bizhub">
-      ${!biz && !official ? html`<div class="biz-gate">${ic('store', 26, 1.8)}<div><b>Включите бизнес-аккаунт</b><span>Бесплатно. После этого можно подключить тариф — первым бизнес-аккаунтам он бесплатный.</span></div><button type="button" class="btn btn-dark" data-biz-on>Включить</button></div>` : ''}
       ${official ? html`<div class="plan-now pro">
         <div class="pn-txt"><span class="pn-k">Аккаунт</span><b>«Официальный аккаунт Торганы»</b><span>Витрина, статистика и закреплённые — без тарифа и без срока.</span></div>
       </div>` : html`<div class="plan-now ${d.plan ? d.plan.id : 'none'}">
@@ -5207,10 +5193,17 @@
           <span>${d.plan ? `до ${dateLong(d.plan.until)} · осталось ${daysLeft(d.plan.until)} ${plural(daysLeft(d.plan.until), 'день', 'дня', 'дней')}` : `Витрина и статистика магазина — от ${rub(d.prices.shop[1])} в месяц. Размещение объявлений бесплатно всегда.`}</span></div>
         <a class="btn ${d.plan ? 'btn-light' : 'btn-dark'}" href="/business">${d.plan ? 'Продлить или сменить' : 'Выбрать тариф'}</a>
       </div>`}
+      ${checklist}
       <div class="biz-tools">
         ${tool('/profile/business/shop', 'store', 'Витрина', d.shop.about || d.shop.cover ? 'заполнена · как видят покупатели' : 'обложка, описание, адрес, сайт', 'shop')}
         ${tool('/profile/business/stats', 'chart', 'Статистика магазина', 'все объявления · выгрузка в Excel', 'shop')}
       </div>
+      <section class="st-card"><h2>Доверие покупателей</h2>
+        <div class="trust-rows">
+          ${trustRow(ic('shield', 20, 2), d.biz && d.biz.status === 'verified' && d.biz.kind !== 'ip' ? 'Компания проверена' : 'ИП или компания', 'Значок у имени — бесплатно', bizState(d.biz), '/profile/settings#s-biz')}
+          ${trustRow(verifiedSeal(20), 'Галочка бренда', 'Для владельцев товарного знака', tmState(d.biz, tm), '/profile/settings#s-biz')}
+        </div>
+      </section>
       <section class="st-card"><div class="st-card-head"><h2>Продвижение</h2><a class="btn btn-soft btn-sm" href="/profile?status=active">${ic('trend', 16, 2)}Выбрать объявление</a></div>
         ${d.promotions.length ? html`<div class="promo-list">${d.promotions.map((p) => html`<a class="promo-row" href="${p.listingId ? `/l/${p.listingId}` : '#'}">
             <span class="ml-tag ${PROMO_STATUS[p.status][0]}"><i></i>${PROMO_STATUS[p.status][1]}</span>
@@ -5224,8 +5217,6 @@
     : html`<p class="muted" style="margin:0">Платежей пока не было.</p>`}
       </section>
     </div>`);
-    const on = $('[data-biz-on]', box);
-    if (on) on.onclick = async () => { on.disabled = true; try { await bizAccountOn(); go('/business#plans'); } catch (ex) { toast(ex.message, true); on.disabled = false; } };
   }
 
   // 1.49.0: закрепить на витрине («Магазин Про») или открепить; true — получилось.

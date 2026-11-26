@@ -103,7 +103,7 @@ function publicUser(u) {
     id: u.id, name: u.name, email: u.email, city: u.city, phone: u.phone, avatar: photoUrl(u.avatar), isAdmin: !!u.is_admin, isOwner: !!u.is_admin && u.email === OWNER_EMAIL, createdAt: u.created_at,
     emailVerified: !!u.email_verified, ...Object.fromEntries(Object.entries(NOTIFY_FIELDS).map(([k, col]) => [k, !!u[col]])),
     rep: helpers.reputation ? helpers.reputation.levelOf(u.id) : null, badges: badgesOf(u), business: trust.bizOf(u), trademark: trust.tmOf(u), phoneVia: u.phone_verified ? u.phone_verified_via : '', oauth: oauth.linkedOf(u.id),
-    plan: business.planOf(u), shop: business.shopOf(u), bizAccount: !!u.biz_account, deactivatedAt: u.deactivated_at || null
+    plan: business.planOf(u), shop: business.shopOf(u), deactivatedAt: u.deactivated_at || null
   } : null;
 }
 
@@ -404,7 +404,7 @@ route('PUT', '/api/admin/seo', async (ctx) => {
 route('GET', '/api/my/business', (ctx) => {
   const u = requireUser(ctx);
   return {
-    plan: business.planOf(u), prices: billing.prices(), ready: billing.ready(), biz: trust.bizOf(u), bizAccount: !!u.biz_account, trial: business.trialBlock(u) === '', trialWhy: business.trialBlock(u),
+    plan: business.planOf(u), prices: billing.prices(), ready: billing.ready(), biz: trust.bizOf(u), trial: business.trialBlock(u) === '', trialWhy: business.trialBlock(u),
     shop: business.shopOf(u) || { cover: photoUrl(u.shop_cover), about: u.shop_about, hours: u.shop_hours, address: u.shop_address, site: u.shop_site, delivery: u.shop_delivery, pins: [] },
     pinned: (business.shopOf(u) || { pins: [] }).pins.map((id) => db.prepare('SELECT id, title FROM listings WHERE id = ? AND user_id = ? AND status = \'active\'').get(id, u.id)).filter(Boolean),
     promotions: promo.listFor(u.id), payments: billing.listFor(u.id)

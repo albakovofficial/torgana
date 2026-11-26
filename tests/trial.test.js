@@ -20,30 +20,23 @@ async function shop(email, biz) {
 }
 const verify = (c) => admin.post(`/api/admin/users/${c.user.id}/business`, { decision: 'approve' });
 const planOf = async (c) => (await c.get('/api/my/business')).data.plan;
-const bizOn = (c) => c.put('/api/me/business-account', { on: true });
 const trial = (c, plan) => c.post('/api/my/plan/trial', { plan });
 
 const IP = { name: 'ИП Смирнова А. А.', inn: '500100732259', ogrn: '304500116000157' };
 const OOO1 = { name: 'ООО «Ромашка»', inn: '7707083893', ogrn: '1027700132195' };
 const OOO3 = { name: 'ООО «Василёк»', inn: '7812345675', ogrn: '1027800111228' };
 
-test('бизнес-аккаунт: включает любой, открывает тарифы; при тарифе выключить нельзя', async () => {
+test('1.61.0: тариф — сразу, без переключателя «Бизнес-аккаунт»', async () => {
   const a = acc = await registerUser(srv.base, { name: 'Частник', email: 'acc@test.local' });
-  assert.equal((await a.get('/api/me')).data.user.bizAccount, false);
-  assert.equal((await a.post('/api/my/plan/pay', { plan: 'shop', months: 1 })).status, 403, 'без бизнес-аккаунта тариф не купить');
-  assert.equal((await bizOn(a)).status, 200);
-  assert.equal((await a.get('/api/me')).data.user.bizAccount, true);
-  assert.equal((await a.post('/api/my/plan/pay', { plan: 'shop', months: 1 })).status, 503, 'дальше — только «оплата не подключена»');
+  assert.equal((await a.get('/api/me')).data.user.bizAccount, undefined, 'переключателя больше нет');
+  assert.equal((await a.put('/api/me/business-account', { on: true })).status, 404);
+  assert.equal((await a.post('/api/my/plan/pay', { plan: 'shop', months: 1 })).status, 503, 'сразу — только «оплата не подключена»');
   await admin.post(`/api/admin/users/${a.user.id}/plan`, { plan: 'shop', days: 5 });
-  assert.equal((await a.put('/api/me/business-account', { on: false })).status, 400, 'пока идёт тариф — нельзя');
-  // Заявка на проверку ИНН сама включает бизнес-аккаунт.
   ip = await shop('ip@test.local', IP);
-  assert.equal((await ip.get('/api/me')).data.user.bizAccount, true);
 });
 
 test('акция выключена — бесплатного старта нет', async () => {
   const c = early = await registerUser(srv.base, { name: 'Ранний', email: 'early@test.local' });
-  await bizOn(c);
   assert.equal((await client(srv.base).get('/api/config')).data.billing.starter, null);
   assert.equal((await c.get('/api/my/business')).data.trial, false);
   assert.equal((await trial(c, 'pro')).status, 409);
@@ -57,7 +50,6 @@ test('бесплатный старт: тариф на выбор, один ра
   assert.deepEqual({ left: cfg.left, days: cfg.days }, { left: 2, days: 90 });
 
   plain = await registerUser(srv.base, { name: 'Частник', email: 'plain@test.local' });
-  assert.equal((await trial(plain, 'pro')).status, 403, 'без бизнес-аккаунта — нельзя');
 
   const b = early;
   assert.equal((await b.get('/api/my/business')).data.trial, true);
@@ -71,7 +63,6 @@ test('бесплатный старт: тариф на выбор, один ра
   assert.equal((await trial(b, 'pro')).status, 403, 'второй раз — нет');
 
   const c = await registerUser(srv.base, { name: 'Магазин В', email: 'c@test.local' });
-  await bizOn(c);
   assert.equal((await trial(c, 'pro')).status, 200);
   cfg = (await client(srv.base).get('/api/config')).data.billing.starter;
   assert.equal(cfg, null, 'мест нет — предложение не показываем');
