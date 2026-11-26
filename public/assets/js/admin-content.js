@@ -1,5 +1,5 @@
 // Модерация: реклама, жалобы на сделки, журнал, проверка объявления «от и до», поддержка.
-import { $, $$, CONDITION_LABEL, NF, S, api, app, ava, catName, esc, html, price, raw, shortWhen, since, subName, when } from './core.js';
+import { $, $$, CONDITION_LABEL, NF, S, api, app, ava, catName, esc, html, price, raw, shortWhen, subName, when } from './core.js';
 import { ic } from './icons.js';
 import { reasonModal, toast } from './ui.js';
 import { mountChat, supportAva } from './messages.js';
@@ -139,29 +139,16 @@ function eventText(e) {
 }
 
 // Модерация → проверка объявления «от и до».
-export async function viewAdminListing(id) {
-  if (!requireAuth()) return;
-  if (!S.user.isAdmin) { viewNotFound(); return; }
-  const { listing: l, seller: u, events, reports, next } = await api('GET', `/api/admin/listings/${id}`);
-  setTitle(`Проверка: ${l.title}`);
+// Проверка объявления: страница /admin/l/:id и правая колонка очереди на компьютере (вариант C) — одни и те же блоки.
+function modParts(d) {
+  const { listing: l, seller: u, events, reports } = d;
   const words = l.matches.flatMap((m) => m.words);
   const open = reports.filter((r) => !r.resolvedAt);
   const specs = [['Категория', catName(l.category)], ['Раздел', subName(l.subcategory) || '—'], ...(l.specs || []).map((x) => [x.label, x.value]),
     ['Цена', price(l.price, l.priceUnit)], ['Город', l.city], ...(l.metro ? [['Метро', l.metro]] : []), ...(l.district ? [['Район', l.district]] : []), ['Состояние', CONDITION_LABEL[l.condition]],
     ['Доставка', l.delivery ? 'Отправит по России' : 'Только встреча'], ['Создано', when(l.createdAt)], ['Изменено', when(l.updatedAt)],
     ['Просмотры', NF.format(l.views)], ['В избранном', NF.format(l.favCount)], ['Диалогов', NF.format(l.chats)]];
-  const nextUrl = next ? `/admin/l/${next}` : '/admin?status=pending';
-  app.innerHTML = String(html`<div class="wrap mod-page">
-    <div class="mod-top">
-      <a href="/admin?status=${l.status === 'pending' ? 'pending' : open.length ? 'reports' : l.status}" class="btn btn-soft btn-sm">${ic('left', 18)}К списку</a>
-      <span class="tag ${l.status === 'active' ? 'accent' : l.status === 'rejected' ? 'danger' : ''}">${STATUS_LABEL[l.status]}</span>
-      <span class="muted" style="font-size:14px">№ ${l.id}</span>
-      <span style="flex:1"></span>
-      ${l.status === 'active' ? html`<a class="btn btn-line btn-sm" href="/l/${l.id}" target="_blank">Открыть на сайте</a>` : ''}
-      <a class="btn btn-soft btn-sm" href="${nextUrl}">${next ? 'Следующее в очереди' : 'В очередь'}${ic('right', 18)}</a>
-    </div>
-    <div class="mod-grid">
-      <div class="mod-main">
+  const main = html`
         ${l.matches.length ? html`<div class="banner danger"><strong>Похоже на запрещённое.</strong> ${l.matches.map((m) => {
   const found = [...new Set(stemHits(`${l.title} ${l.description}`, m.words).map(([a, b]) => `${l.title} ${l.description}`.slice(a, b)))];
   return html`<div style="margin-top:6px">${m.title}: ${(found.length ? found : m.words).map((w) => html`<mark>${w}</mark> `)}</div>`;
@@ -175,20 +162,14 @@ export async function viewAdminListing(id) {
         <section><h2 class="h2">Описание</h2><p class="desc">${l.description ? highlight(l.description, words) : html`<span class="muted">Описания нет</span>`}</p></section>
         <section><h2 class="h2">Все поля</h2><div class="specs">${specs.map(([k, v]) => html`<div class="spec"><div class="k">${k}</div><div class="v">${v}</div></div>`)}</div></section>
         ${l.rejectReason && l.status === 'rejected' ? html`<div class="banner danger"><strong>Причина отклонения:</strong> ${l.rejectReason}</div>` : ''}
-        ${l.appealAt ? html`<div class="banner warn"><strong>Апелляция автора:</strong> ${l.appealText}</div>` : ''}
-      </div>
-      <aside class="mod-side">
-        <div class="panel mod-actions"><h2 class="h2" style="margin:0">Решение</h2>
-          <div class="mod-btns">${modButtons({ ...l, reports: open.length })}</div>
-          <p class="muted" style="margin:0;font-size:13px">После решения откроется следующее объявление из очереди.</p></div>
+        ${l.appealAt ? html`<div class="banner warn"><strong>Апелляция автора:</strong> ${l.appealText}</div>` : ''}`;
+  const side = html`
         <div class="panel"><h2 class="h2" style="margin:0 0 12px">Продавец</h2>
           <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">${ava(u)}
             <div style="min-width:0;flex:1"><a href="/admin/u/${u.id}" style="font-weight:700">${u.name}</a><div class="muted" style="font-size:13px;word-break:break-all">${u.email}${u.emailVerified ? ' · подтверждён' : ' · не подтверждён'}</div></div>
             ${u.avatar ? html`<button class="btn btn-line btn-sm" data-ava-remove="${u.id}">Убрать фото</button>` : ''}</div>
           <div class="kv">
-            <span>На Торгане</span><b>с ${since(u.createdAt)}</b>
             <span>Телефон</span><b>${u.phone || '—'}</b>
-            <span>Город</span><b>${u.city || '—'}</b>
             <span>Объявлений</span><b>${u.counts.total} · опубл. ${u.counts.active} · на проверке ${u.counts.pending}</b>
             <span>Отклонено ранее</span><b class="${u.counts.rejected ? 'danger-t' : ''}">${u.counts.rejected}</b>
             <span>Жалоб на него</span><b class="${u.reportsAgainst ? 'warn-t' : ''}">${u.reportsAgainst}</b>
@@ -199,12 +180,50 @@ export async function viewAdminListing(id) {
         ${reports.length ? html`<div class="panel"><h2 class="h2" style="margin:0 0 12px">Жалобы · ${reports.length}</h2>${reports.map((r) => html`<div class="report ${r.resolvedAt ? 'done' : ''}">
             <b>${r.reason}</b>${r.text ? html`<p>${r.text}</p>` : ''}<span class="muted">${r.user ? r.user.name : 'пользователь'} · ${when(r.at)}${r.resolvedAt ? ` · закрыта: ${r.resolution}` : ''}</span></div>`)}</div>` : ''}
         <div class="panel"><h2 class="h2" style="margin:0 0 12px">История</h2>
-          <ol class="timeline">${[...events].reverse().map((e) => html`<li><span class="tl-dot"></span><div>${eventText(e)}<div class="muted" style="font-size:12px;margin-top:2px">${when(e.at)}${e.actor ? ` · ${e.actor.name}${e.actor.isAdmin ? ' (модератор)' : ''}` : ''}</div></div></li>`)}</ol></div>
+          <ol class="timeline">${[...events].reverse().map((e) => html`<li><span class="tl-dot"></span><div>${eventText(e)}<div class="muted" style="font-size:12px;margin-top:2px">${when(e.at)}${e.actor ? ` · ${e.actor.name}${e.actor.isAdmin ? ' (модератор)' : ''}` : ''}</div></div></li>`)}</ol></div>`;
+  return { l, main, side, buttons: modButtons({ ...l, reports: open.length }), back: l.status === 'pending' ? 'pending' : open.length ? 'reports' : l.status };
+}
+
+export async function viewAdminListing(id) {
+  if (!requireAuth()) return;
+  if (!S.user.isAdmin) { viewNotFound(); return; }
+  const d = await api('GET', `/api/admin/listings/${id}`);
+  const { l, main, side, buttons, back } = modParts(d);
+  setTitle(`Проверка: ${l.title}`);
+  const nextUrl = d.next ? `/admin/l/${d.next}` : '/admin?status=pending';
+  app.innerHTML = String(html`<div class="wrap mod-page">
+    <div class="mod-top">
+      <a href="/admin?status=${back}" class="btn btn-soft btn-sm">${ic('left', 18)}К списку</a>
+      <span class="tag ${l.status === 'active' ? 'accent' : l.status === 'rejected' ? 'danger' : ''}">${STATUS_LABEL[l.status]}</span>
+      <span class="muted" style="font-size:14px">№ ${l.id}</span>
+      <span style="flex:1"></span>
+      ${l.status === 'active' ? html`<a class="btn btn-line btn-sm" href="/l/${l.id}" target="_blank">Открыть на сайте</a>` : ''}
+      <a class="btn btn-soft btn-sm" href="${nextUrl}">${d.next ? 'Следующее в очереди' : 'В очередь'}${ic('right', 18)}</a>
+    </div>
+    <div class="mod-grid">
+      <div class="mod-main">${main}</div>
+      <aside class="mod-side">
+        <div class="panel mod-actions"><h2 class="h2" style="margin:0">Решение</h2>
+          <div class="mod-btns">${buttons}</div>
+          <p class="muted" style="margin:0;font-size:13px">После решения откроется следующее объявление из очереди.</p></div>
+        ${side}
       </aside>
     </div>
   </div>`);
   // После решения — сразу следующее объявление из очереди.
   bindModActions(app, () => go(nextUrl, true));
+}
+
+// Правая колонка очереди на компьютере: объявление целиком, решение — в панели снизу. after — что открыть после решения.
+export async function renderModPane(el, id, after) {
+  let d;
+  try { d = await api('GET', `/api/admin/listings/${id}`); } catch (e) { el.innerHTML = String(html`<div class="empty"><p>${e.message}</p></div>`); return; }
+  const { l, main, side, buttons } = modParts(d);
+  el.innerHTML = String(html`<div class="adm-pane-body">
+      <div class="adm-pane-top"><span class="tag ${l.status === 'active' ? 'accent' : l.status === 'rejected' ? 'danger' : ''}">${STATUS_LABEL[l.status]}</span><span class="muted">№ ${l.id}</span><span style="flex:1"></span><a class="btn btn-line btn-sm" href="/admin/l/${l.id}">Открыть целиком</a></div>
+      ${main}${side}</div>
+    <div class="adm-pane-bar">${buttons}</div>`);
+  bindModActions(el, after);
 }
 
 // Модерация → Поддержка: диалоги слева, чат и карточка пользователя справа.
@@ -226,7 +245,7 @@ export async function renderSupportAdmin(box, threadId) {
   setCleanup(mountChat($('#support-chat'), {
     back: '/admin?status=support',
     head: html`${ava(u)}<div style="flex:1;min-width:0"><a href="/admin/u/${u.id}" style="font-weight:700">${u.name}</a>
-      <span class="muted" style="font-size:13px;word-break:break-all">${u.email}${u.emailVerified ? '' : ' · не подтверждён'} · с ${since(u.createdAt)} · объявлений ${u.listings}${u.rejected ? ` · отклонено ${u.rejected}` : ''}${u.blocked ? ' · заблокирован' : ''}</span></div>`,
+      <span class="muted" style="font-size:13px;word-break:break-all">${u.email}${u.emailVerified ? '' : ' · не подтверждён'} · объявлений ${u.listings}${u.rejected ? ` · отклонено ${u.rejected}` : ''}${u.blocked ? ' · заблокирован' : ''}</span></div>`,
     load: (after) => api('GET', `/api/admin/support/${id}?after=${after}`),
     send: async (msg) => (await api('POST', `/api/admin/support/${id}/messages`, msg)).message,
     placeholder: 'Ответ от имени поддержки…'

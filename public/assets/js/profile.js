@@ -1,5 +1,5 @@
 // Профиль: карточка, меню, «Мои объявления», своя репутация, статистика, бизнес и товарный знак.
-import { $, $$, NATIVE, NF, PAY, S, api, app, ava, dateLong, dateShort, esc, html, lpath, nativePost, plural, price, raw, rub, shortWhen, since, when } from './core.js';
+import { $, $$, NATIVE, NF, PAY, S, api, app, ava, dateLong, dateShort, esc, html, lpath, nativePost, plural, price, raw, rub, shortWhen, when } from './core.js';
 import { P, ic, svg } from './icons.js';
 import { confirmModal, openModal, toast } from './ui.js';
 import { resizeImage } from './photos.js';
@@ -23,13 +23,12 @@ export const MY_TAG = { active: ['ok', 'Опубликовано'], scheduled: [
 export const isExpired = (i) => i.status === 'archived' && i.expiresAt && i.expiresAt <= Date.now(); // прошло 30 дней
 export const atTime = (ts) => new Date(ts).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' });
 
-// Насколько заполнен профиль: имя есть всегда, дальше фото, город и (если есть почта) подтверждённый email.
+// Насколько заполнен профиль: имя есть всегда, дальше фото и (если есть почта) подтверждённый email.
 // 1.49.0: с тарифом — и витрина. Каждый пункт — [готово, что, действие, ключ]; ключ ведёт туда, где это заполнить.
 function profileTodo(u) {
   const sh = u.shop; // витрина — при тарифе или у официального аккаунта
   const todo = [
     [!!u.avatar, 'Фото профиля', 'Добавить', 'avatar'],
-    [!!u.city, 'Город', 'Указать', 'city'],
     ...(S.config.mail ? [[u.emailVerified, 'Почта', 'Подтвердить', 'verify']] : []),
     ...(sh ? [[!!sh.cover, 'Обложка витрины', 'Загрузить', 'cover'], [!!sh.about, 'Описание магазина', 'Написать', 'about'], [!!sh.hours, 'Часы работы', 'Указать', 'hours'],
       [!!sh.address, 'Адрес', 'Указать', 'addr'], [!!sh.delivery, 'Доставка', 'Указать', 'delivery'], [!!sh.site, 'Сайт', 'Указать', 'site']] : [])
@@ -50,13 +49,14 @@ export function idCard(u, stats = []) {
       <div class="pf-ava">${ava(u, 'lg')}<button class="pf-cam" type="button" data-ava-pick aria-label="${u.avatar ? 'Сменить фото профиля' : 'Добавить фото профиля'}">${ic('camera', 15, 2)}</button></div>
       <div class="pf-who-txt">
         <div class="pf-name">${nameSeal(u.name, u.badges)}</div>
-        <div class="pf-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
         ${u.rep && !(sh && sh.official) ? repLine(u.rep, '/profile/reputation', { shop: !!sh, first: u.badges && u.badges.first, kind: 'me' }) : ''}
       </div>
       <a class="icon-btn pf-gear" href="/profile/settings" aria-label="Настройки">${ic('gear', 20)}</a>
     </div>
     ${String(badges).trim() ? html`<div class="pf-badges">${badges}</div>` : ''}
     ${sh && sh.about ? html`<div class="pf-about"><p data-about>${sh.about}</p><div class="pf-about-acts"><button type="button" class="pf-about-more" data-about-more hidden>Ещё</button><a href="/profile/business/shop#sh-about">${ic('edit', 14, 2.2)}Изменить</a></div></div>` : ''}
+    ${sh ? '' : PAY ? html`<a class="pf-lockcov" href="/business">${ic('lock', 16, 2.2)}<span>Обложка и витрина — с тарифом «Магазин»</span><b>Открыть</b></a>`
+    : html`<div class="pf-lockcov">${ic('lock', 16, 2.2)}<span>Обложка и витрина — с тарифом «Магазин»</span></div>`}
     ${stats.length ? html`<div class="pf-nums">${stats.map(([n, k, href]) => html`<a class="pf-num" href="${href}"><b>${NF.format(n)}</b><span>${k}</span></a>`)}</div>` : ''}
     ${sh ? html`<div class="pf-tools">
       <a class="pft" href="/profile/business/stats"><span class="pft-ic">${ic('chart', 19, 2.2)}</span><b>Статистика</b><small>Показы и переходы</small><span class="pft-go">${ic('right', 16, 2.4)}</span></a>
@@ -92,7 +92,6 @@ export function bindIdCard(again) {
     b.onclick = () => {
       const t = b.dataset.todo;
       if (t === 'avatar') pickAvatar(again);
-      else if (t === 'city') go('/profile/settings#s-city');
       else if (t === 'verify') verifyModal(again);
       else go(`/profile/business/shop#sh-${t}`);
     };
@@ -148,7 +147,7 @@ export function openMenu() {
   const u = S.user;
   const docs = FOOTER_COLS[FOOTER_COLS.length - 1][1].concat([['/page/contacts', FOOTER_LABEL['/page/contacts']]]);
   openModal(String(html`<div class="menu-top">
-      ${u ? html`<a class="menu-me" href="/profile">${ava(u, 'lg')}<span class="menu-me-txt"><b>${u.name}</b><small>${u.city ? `${u.city} · ` : ''}Мой профиль</small></span></a>`
+      ${u ? html`<a class="menu-me" href="/profile">${ava(u, 'lg')}<span class="menu-me-txt"><b>${u.name}</b><small>Мой профиль</small></span></a>`
   : html`<div class="menu-me-txt"><b>Добро пожаловать</b><small>Войдите, чтобы писать продавцам и размещать объявления</small></div>`}
       <button type="button" class="icon-btn" data-x aria-label="Закрыть меню">${ic('close', 20, 2)}</button>
     </div>

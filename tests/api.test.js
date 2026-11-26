@@ -143,9 +143,13 @@ describe('регистрация и вход', () => {
   });
 
   test('изменение профиля', async () => {
+    // 1.63.0: города у профиля нет — поле не сохраняется и не отдаётся, дата регистрации тоже не показывается.
     const r = await seller.patch('/api/me', { city: 'Казань', name: 'Анна' });
     assert.equal(r.status, 200);
-    assert.equal(r.data.user.city, 'Казань');
+    assert.equal(r.data.user.name, 'Анна');
+    assert.ok(!('city' in r.data.user) && !('createdAt' in r.data.user));
+    const pub = (await guest.get(`/api/users/${r.data.user.id}`)).data.user;
+    assert.ok(!('city' in pub) && !('createdAt' in pub));
   });
 });
 

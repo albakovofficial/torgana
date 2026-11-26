@@ -245,10 +245,13 @@ function pages(d) {
     ['user', `/u/${d.seller.user.id}`, null],
     ['login', '/login', null],
     ['register', '/register', null],
-    ['help-page', '/page/help', null],
+    ['help-page', '/page/help', null, 'hub'], // 1.63.0: «Помощь и безопасность» — плитки тем, частые вопросы
+    ['search-help', '/page/search', null],
+    ['sell-page', '/page/sell', null],
+    ['deals-page', '/page/deals', null],
     ['safety-page', '/page/safety', null],
     ['support-page', '/page/support', null],
-    ['rules', '/page/rules', null],
+    ['rules', '/page/rules', null, 'doc'], // 1.62.0: документы — шапка, «коротко о главном», разделы с номерами, запрещённое плитками
     ['terms', '/page/terms', null],
     ['privacy', '/page/privacy', null],
     ['consent', '/page/consent', null],
@@ -285,7 +288,7 @@ function pages(d) {
     ['stats', `/profile/stats/${d.ids[1]}`, d.seller],
     ['stats-week', `/profile/stats/${d.ids[1]}?days=7`, d.seller],
     ['settings-old-link', '/profile?tab=settings', d.seller],
-    ['profile-empty', '/profile', d.buyer],
+    ['profile-empty', '/profile', d.buyer, 'lockcov'], // 1.63.0: без тарифа обложки нет, строка «с тарифом «Магазин»»; ни города, ни «на Торгане с»
     ['favorites', '/favorites', d.buyer],
     ['messages', '/messages', d.buyer],
     ['chat', `/messages/${d.conv}`, d.buyer],
@@ -313,7 +316,7 @@ function pages(d) {
     ['admin-notify', '/admin?status=notify', d.admin],
     ['admin-settings', '/admin?status=settings', d.admin], // 1.47.2: настройки — плитками
     ['admin-listings-sold', '/admin?status=sold', d.admin], // 1.47.2: статусы объявлений — вкладками
-    ['admin-menu', '/admin?status=pending', d.admin, 'adm-menu'], // 1.47.2: телефон — разделы в нижней панели
+    ['admin-home', '/admin', d.admin, 'adm-home'], // 1.62.0: телефон — разделы списком; компьютер — очередь: список и объявление рядом
     ['admin-pending', '/admin?status=pending', d.admin],
     ['admin-check', `/admin/l/${d.pending}`, d.admin],
     ['admin-reports', '/admin?status=reports', d.admin],
@@ -536,16 +539,35 @@ async function main() {
           if (!/a_gearbox=/.test(page.url())) errors.push(`фильтр не применился: ${page.url()}`);
           const n = await page.textContent('#count');
           if (!/^1 объявление$/.test(n)) errors.push(`после фильтра «Автомат» должно быть 1 объявление, а не «${n}»`);
-        } else if (open === 'adm-menu') {
-          const b = await page.$('[data-adm-menu]');
+        } else if (open === 'lockcov') {
+          if (await page.$('.pf-cover')) errors.push('у профиля без тарифа есть обложка');
+          if (!(await page.$('.pf-lockcov'))) errors.push('нет строки «Обложка и витрина — с тарифом»');
+          if (/на Торгане с/.test(await page.textContent('#app'))) errors.push('осталось «на Торгане с»');
+        } else if (open === 'hub') {
+          if ((await page.$$('.hub-tile')).length !== 4) errors.push('в «Помощи» не 4 темы');
+          if ((await page.$$('.hub-faq details')).length < 5) errors.push('нет частых вопросов');
+          await page.click('.hub-faq summary'); await page.waitForTimeout(200);
+          if (!(await page.isVisible('.hub-faq details[open] p'))) errors.push('вопрос не раскрылся');
+          // Тупиков нет: каждая ссылка «Помощи» ведёт на настоящую страницу, а не на «не найдено».
+          for (const href of await page.$$eval('.hub a[href^="/"]', (a) => a.map((x) => x.getAttribute('href')))) {
+            const p2 = await page.context().newPage(); await p2.goto(srv.base + href, { waitUntil: 'networkidle' });
+            if (/Такой страницы нет|Страница не найдена/.test(await p2.textContent('#app'))) errors.push(`«Помощь» ведёт в тупик: ${href}`);
+            await p2.close();
+          }
+        } else if (open === 'doc') {
+          if ((await page.$$('.doc-brief .doc-tile')).length !== 4) errors.push('в «Коротко о главном» не 4 плитки');
+          if ((await page.$$('.doc-sec h2 .doc-n')).length < 5) errors.push('разделы правил без номеров');
+          if ((await page.$$('.rules-list li .ban-t')).length < 10) errors.push('запрещённое не плитками с пояснением');
+          if (!(await page.isVisible(vp.viewport.width <= 900 ? '.doc-toc-m' : '.doc-toc'))) errors.push('нет содержания');
+        } else if (open === 'adm-home') {
           if (vp.viewport.width <= 900) {
-            if (!b || !(await b.isVisible())) errors.push('нет кнопки разделов модерации');
-            else {
-              await b.click(); await page.waitForTimeout(300);
-              if ((await page.$$('.adm-tiles a')).length !== 14) errors.push(`в панели разделов не 14 плиток, а ${(await page.$$('.adm-tiles a')).length}`);
-              await page.screenshot({ path: path.join(SHOTS, `${vpName}-admin-menu-open.png`) });
-            }
-          } else if ((await page.$$('.adm-nav a')).length !== 14) errors.push(`в меню модерации не 14 пунктов, а ${(await page.$$('.adm-nav a')).length}`);
+            const n = (await page.$$('.adm-row')).length;
+            if (n !== 13) errors.push(`на главном экране модерации не 13 разделов, а ${n}`);
+          } else {
+            if ((await page.$$('.adm-nav a')).length !== 13) errors.push(`в меню модерации не 13 пунктов, а ${(await page.$$('.adm-nav a')).length}`);
+            if (!(await page.$('.adm-split .adm-q-row.on'))) errors.push('в очереди не выбрано объявление');
+            if (!(await page.$('.adm-pane-bar [data-restore]'))) errors.push('справа нет кнопки «Опубликовать»');
+          }
         } else if (open === 'step:2:more') {
           await page.click('[data-step="1"]');
           await page.waitForTimeout(300);

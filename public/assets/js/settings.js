@@ -1,5 +1,5 @@
 // Настройки: фото, имя и город, уведомления, пароль, удаление профиля.
-import { $, $$, NATIVE, NF, PAY, S, api, app, ava, dateLong, dateShort, html, plural, price, raw, since } from './core.js';
+import { $, $$, NATIVE, NF, PAY, S, api, app, ava, dateLong, dateShort, html, plural, price, raw } from './core.js';
 import { ic } from './icons.js';
 import { confirmModal, openModal, pickList, toast } from './ui.js';
 import { grid } from './cards.js';
@@ -58,10 +58,10 @@ export function viewDeactivated() {
 }
 
 // ================= настройки =================
-// Слева карточка и пять разделов, справа открыт один. Раздел — в #якоре, старые ссылки (#s-photo, #s-city) ведут в «Профиль».
+// Слева карточка и пять разделов, справа открыт один. Раздел — в #якоре, старая ссылка #s-photo ведёт в «Профиль».
 // На телефоне без якоря — карточка и список разделов; раздел открывается своим экраном со ссылкой «Настройки».
 export const SET_SECTIONS = [['sf', 'user', 'Профиль'], ['sn', 'bell', 'Уведомления'], ['sp', 'lock', 'Пароль и вход'], ['s-look', 'moon', 'Оформление'], ['s-block', 'ban', 'Чёрный список'], ['s-biz', 'shield', 'Для бизнеса'], ['s-acc', 'mail', 'Аккаунт']];
-const SET_ALIAS = { 's-photo': 'sf', 's-city': 'sf' };
+const SET_ALIAS = { 's-photo': 'sf' };
 // Яндекс ID и VK ID: включённые на сайте и уже привязанные (отвязать можно, даже если вход выключили).
 const myOauth = (u) => OAUTH.filter(([k]) => (S.config.oauth && S.config.oauth[k]) || u.oauth.includes(k));
 export function viewSettings() {
@@ -130,7 +130,6 @@ function renderSettings(sec, reload) {
       <form id="sf" class="set-form">
         <div class="set-fields">
           <div class="field"><label for="s-name">Имя</label><input id="s-name" name="name" class="input" maxlength="60" value="${u.name}" required autocomplete="name"></div>
-          <div class="field"><label for="s-city">Город</label><div class="ed-icon-input">${ic('pin', 18)}<input id="s-city" name="city" class="input" data-cities autocomplete="off" value="${u.city || ''}" placeholder="Подставим в новые объявления"></div></div>
           <div class="field wide"><label for="s-phone">Телефон</label><input id="s-phone" name="phone" class="input" type="tel" inputmode="tel" maxlength="30" value="${u.phone || ''}" placeholder="+7" autocomplete="tel">${phoneNote}</div>
         </div>
         <div class="set-foot"><span>Имя и фото сразу обновятся во всех ваших объявлениях</span><button type="reset" class="btn btn-soft">Отменить</button><button class="btn btn-accent" type="submit">Сохранить</button></div>
@@ -169,7 +168,6 @@ function renderSettings(sec, reload) {
     's-acc': () => html`${head('Аккаунт', 'Почта для входа и писем от Торганы')}
       <div class="set-list">
         ${row('mail', 'Почта', u.email, S.config.mail ? (u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 14, 2.4)} Подтверждена</span>` : html`<button type="button" class="btn btn-soft btn-sm" id="verify-again">Подтвердить</button>`) : '')}
-        ${row('clock', 'На Торгане', `с ${since(u.createdAt)}`)}
         ${row('logout', 'Выйти из аккаунта', 'На этом устройстве', html`<button type="button" class="btn btn-soft btn-sm" data-logout>Выйти</button>`)}
       </div>
       ${u.isOwner ? '' : html`<div class="acc-del">
@@ -179,7 +177,7 @@ function renderSettings(sec, reload) {
       </div>`}`
   };
   $('#box').innerHTML = String(body[sec]());
-  // Пришли по ссылке на поле (#s-city) или фото (#s-photo) — покажем его.
+  // Пришли по ссылке на фото (#s-photo) — покажем его.
   const to = location.hash.length > 1 && location.hash.slice(1) !== sec && document.getElementById(location.hash.slice(1));
   if (to) { const field = to.matches('input'); to.scrollIntoView({ block: 'center' }); if (field) to.focus(); }
   const q = new URLSearchParams(location.search).get('oauth');
@@ -209,7 +207,7 @@ function renderSettings(sec, reload) {
       e.preventDefault();
       const f = e.target;
       try {
-        const r = await api('PATCH', '/api/me', { name: f.name.value, city: f.city.value, phone: f.phone.value });
+        const r = await api('PATCH', '/api/me', { name: f.name.value, phone: f.phone.value });
         S.user = r.user; toast('Сохранено'); renderHeader(); reload();
       } catch (ex) { toast(ex.message, true); }
     };
@@ -285,7 +283,6 @@ export async function viewUser(id, q) {
       <div class="pub-ava">${ava(u, 'xl')}</div>
       <div class="pub-who">
         <h1>${nameSeal(sh ? sh.name : u.name, u.badges)}</h1>
-        <div class="pub-sub">${u.city ? `${u.city} · ` : ''}на Торгане с ${since(u.createdAt)}</div>
         ${sh && sh.official ? '' : repLine(u.rep, `/u/${u.id}?tab=rep`, { shop: !!sh, deals: false, first: u.badges && u.badges.first, who: sh ? sh.name : u.name, kind: own ? 'me' : '' })}
         ${sh && sh.about ? html`<p class="shop-about">${sh.about}</p>` : ''}
         ${badges ? html`<div class="pf-badges">${raw(badges)}</div>` : ''}

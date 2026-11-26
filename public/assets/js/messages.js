@@ -409,14 +409,13 @@ const supportWelcome = () => html`<div class="msg in support-hello">
 // 1.27 (вариант 3): справа от чата — объявление и собеседник с оценкой, напоминание о безопасности.
 // Только на широком экране (CSS); на телефоне и планшете объявление — в шапке чата.
 const chatSide = (l, o, role) => {
-  const since = o.createdAt ? `на Торгане с ${new Date(o.createdAt).getFullYear()}` : '';
   const gone = l.status === 'deleted';
   return html`<aside class="chat-side" aria-label="Объявление и ${role === 'buyer' ? 'продавец' : 'покупатель'}">
     <a href="/l/${l.id}" class="chs-photo${l.photo ? ' ph' : ''}"${l.photo ? raw(` style="--ph:url('${esc(l.photo)}')"`) : ''} tabindex="-1" aria-hidden="true">${l.photo ? html`<img src="${l.photo}" alt="" loading="lazy">` : svg(P.image, 32, 1.3)}</a>
     <div class="chs-item"><b class="chs-price">${price(l.price, l.priceUnit)}</b>${gone ? html`<span class="chs-title">${l.title}</span>` : html`<a href="/l/${l.id}" class="chs-title">${l.title}</a>`}<span class="chs-place">${l.metro ? `м. ${l.metro}` : l.city}${l.status === 'sold' ? ' · продано' : ''}</span></div>
     ${gone ? html`<p class="chs-gone">${ic('info', 16, 2)}Объявление удалено продавцом — переписка сохранена.</p>` : html`<a href="/l/${l.id}" class="btn btn-line btn-block btn-sm">Открыть объявление</a>`}
     <hr>
-    <a href="/u/${o.id}" class="chs-person">${ava(o, 'sm')}<span><b>${o.name}</b><span class="chs-meta">${o.rep ? html`${levelMedal(o.rep.level, 14)}<b>${o.rep.levelName}</b>${o.rep.deals ? ` · ${dealsWord(o.rep.deals)}` : ''}${o.rep.buyer ? ' · надёжный покупатель' : ''}` : ''}${since ? ` · ${since}` : ''}</span></span></a>
+    <a href="/u/${o.id}" class="chs-person">${ava(o, 'sm')}<span><b>${o.name}</b><span class="chs-meta">${o.rep ? html`${levelMedal(o.rep.level, 14)}<b>${o.rep.levelName}</b>${o.rep.deals ? ` · ${dealsWord(o.rep.deals)}` : ''}${o.rep.buyer ? ' · надёжный покупатель' : ''}` : ''}</span></span></a>
     <p class="chs-safe">${ic('shield', 18)}<span>${role === 'buyer' ? 'Не переходите в мессенджеры и не вносите предоплату — общайтесь здесь.' : 'Не называйте коды из СМС и не переходите по ссылкам «для получения оплаты».'}</span></p>
   </aside>`;
 };

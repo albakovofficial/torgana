@@ -1,5 +1,5 @@
 // Модерация: пользователи — список, карточка, блокировка, подарки и остановка услуг.
-import { $, $$, NF, S, api, app, ava, dateLong, dateShort, html, plural, price, raw, since, when } from './core.js';
+import { $, $$, NF, S, api, app, ava, dateLong, dateShort, html, plural, price, raw, when } from './core.js';
 import { P, ic, svg } from './icons.js';
 import { confirmModal, openModal, reasonModal, toast } from './ui.js';
 import { go, render, requireAuth, setTitle, viewNotFound } from './router.js';
@@ -20,7 +20,7 @@ export async function renderUsersAdmin(box, q, title = 'Пользователи
   const row = (u) => html`<a class="adm-user" href="/admin/u/${u.id}">
       ${ava(u)}
       <span class="adm-user-main"><b>${u.name}</b><span>${u.email}</span></span>
-      <span class="adm-user-meta">${u.city ? `${u.city} · ` : ''}с ${since(u.createdAt)}<br>${NF.format(u.listings)} ${plural(u.listings, 'объявление', 'объявления', 'объявлений')} · опубл. ${u.active}</span>
+      <span class="adm-user-meta">${NF.format(u.listings)} ${plural(u.listings, 'объявление', 'объявления', 'объявлений')} · опубл. ${u.active}</span>
       <span class="adm-user-badges">${userBadges(u)}</span>
       <span class="chev">${ic('right', 18, 2)}</span>
     </a>`;
@@ -67,7 +67,7 @@ export async function viewAdminUser(id) {
     <div class="adm-person panel">
       <div class="adm-person-top">${ava(u, 'xl')}
         <div class="adm-person-txt"><h1>${nameSeal(u.name, { tm: u.trademark && u.trademark.live ? u.trademark : null })}</h1>
-          <div class="muted">№ ${u.id} · на Торгане с ${since(u.createdAt)}</div>
+          <div class="muted">№ ${u.id}</div>
           ${u.rep ? repLine(u.rep, `/u/${u.id}?tab=rep`) : ''}
           <div class="pf-badges">${userBadges({ ...u, reports: d.reports.against.filter((r) => !r.resolvedAt).length })}${trustBadges({ phone: u.phoneVerified, biz: u.business && u.business.status === 'verified' ? { kind: u.business.kind === 'ip' ? 'ИП' : 'Компания', name: u.business.name } : null })}${S.config.mail && u.emailVerified ? html`<span class="pf-badge ok">${ic('check', 13, 2.4)} Почта подтверждена</span>` : ''}</div>
         </div>
@@ -103,7 +103,7 @@ export async function viewAdminUser(id) {
       ${svcBrief(u, d.services)}
       ${u.blocked ? html`<div class="banner danger"><strong>Заблокирован${u.blockedAt ? ` ${when(u.blockedAt)}` : ''}${blockedBy && blockedBy.admin ? ` · ${blockedBy.admin.name}` : ''}.</strong> ${u.blockReason || 'Причина не указана.'}</div>` : ''}
       <div class="adm-facts">${[
-        ['Email', u.email], ['Телефон', u.phone || '—'], ['Город', u.city || '—'],
+        ['Email', u.email], ['Телефон', u.phone || '—'],
         ['Объявления', ['active', 'pending', 'rejected', 'sold', 'archived'].filter((k) => d.counts[k]).map((k) => `${MY_STATUS[k].toLowerCase()} ${d.counts[k]}`).join(' · ') || 'нет'],
         ['Поддержка', d.support ? `${d.support.messages} ${plural(d.support.messages, 'сообщение', 'сообщения', 'сообщений')}${d.support.waiting ? ' · ждёт ответа' : ''}` : 'не писал']
       ].map(([k, v]) => html`<div><span>${k}</span><b>${v}</b></div>`)}</div>
