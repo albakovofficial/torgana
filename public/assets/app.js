@@ -2431,15 +2431,21 @@
     };
     const fmtAttrInput = (f, v) => (v === undefined || v === null || v === '' ? '' : f.max >= 100000 ? NF.format(Number(v)) : String(v).replace('.', ','));
     // Главные характеристики (req) — на шаге «Что и сколько», остальные — в «Ещё по желанию» на последнем шаге.
-    // 1.48.0: модель — поле с подсказками частых моделей выбранной марки.
-    const modelSug = (f) => { const list = f.suggest ? (f.suggest[st.attrs.brand] || []) : []; const v = st.attrs[f.key];
-      return list.length ? html`<div class="av-chips at-sug" role="group" aria-label="Частые модели">${list.map((o) => html`<button type="button" class="av-chip${o === v ? ' on' : ''}" data-sug="${o}">${o}</button>`)}</div>` : ''; };
+    // 1.48.0: модель — поле с подсказками частых моделей выбранной марки. 1.60.1: у машин — только из списка марки:
+    // плашками первые восемь (частые), полный список — подсказкой при вводе; не из списка — сразу говорим.
+    const modelList = (f) => (f.suggest ? f.suggest[st.attrs.brand] || [] : []);
+    const modelOk = (f) => { const v = st.attrs[f.key]; const list = modelList(f); const k = (x) => String(x).toLowerCase().replace(/[\s-]+/g, ''); return !f.fixed || !v || !list.length || list.some((m) => k(m) === k(v)); };
+    const modelSug = (f) => { const list = modelList(f); const v = st.attrs[f.key];
+      const chips = [...list.slice(0, 8), ...(v && list.slice(8).includes(v) ? [v] : [])];
+      return list.length ? html`<div class="av-chips at-sug" role="group" aria-label="Частые модели">${chips.map((o) => html`<button type="button" class="av-chip${o === v ? ' on' : ''}" data-sug="${o}">${o}</button>`)}</div>
+        <datalist id="dl-${f.key}">${list.map((o) => html`<option value="${o}"></option>`)}</datalist>
+        ${f.fixed ? html`<small class="at-bad${modelOk(f) ? ' hidden' : ''}">Такой модели нет у ${st.attrs.brand} — выберите из списка</small>` : ''}` : ''; };
     const attrField = (f) => {
       const v = st.attrs[f.key];
       if (f.type === 'select') return attrChoice(f, v);
       if (f.type === 'text') {
         return html`<div class="field wide at-text" data-tfield="${f.key}"><label for="at-${f.key}">${f.label}${f.req ? html`<i class="rq">*</i>` : ''}</label>
-          <input id="at-${f.key}" class="input" maxlength="${f.max || 40}" autocomplete="off" autocapitalize="sentences" data-akt="${f.key}" placeholder="${f.placeholder || ''}" value="${v || ''}">
+          <input id="at-${f.key}" class="input" maxlength="${f.max || 40}" autocomplete="off" autocapitalize="sentences" data-akt="${f.key}" list="dl-${f.key}" placeholder="${f.placeholder || ''}" value="${v || ''}">
           <span class="at-sug-box">${modelSug(f)}</span></div>`;
       }
       return html`<div class="field"><label for="at-${f.key}">${f.label}${f.req ? html`<i class="rq">*</i>` : ''}</label><div class="ed-unit-input"><input id="at-${f.key}" class="input" inputmode="${f.key === 'area' || f.key === 'land' ? 'decimal' : 'numeric'}" autocomplete="off" data-akn="${f.key}" data-max="${f.max}" placeholder="${f.key === 'year' ? `например, ${new Date().getFullYear() - 5}` : '—'}" value="${fmtAttrInput(f, v)}">${f.unit ? html`<span>${f.unit}</span>` : ''}</div></div>`;
@@ -2486,7 +2492,10 @@
         if (!f) return;
         const box = $('.at-sug-box', w);
         if (full) box.innerHTML = String(modelSug(f));
-        else $$('[data-sug]', box).forEach((b) => b.classList.toggle('on', b.dataset.sug === st.attrs[f.key]));
+        else {
+          $$('[data-sug]', box).forEach((b) => b.classList.toggle('on', b.dataset.sug === st.attrs[f.key]));
+          const bad = $('.at-bad', box); if (bad) bad.classList.toggle('hidden', modelOk(f));
+        }
       });
     }
     const renderAttrs = () => {
@@ -2674,6 +2683,7 @@
     ];
     const ERR = {
       's-what': (b) => (b.title.length < 3 && !isAuto() ? 'Напишите название — хотя бы пару слов.' : b.vin && !vinOk(b.vin) ? 'Проверьте VIN: 17 латинских букв и цифр без I, O, Q или номер кузова — либо оставьте поле пустым.' : !b.category ? 'Выберите категорию.' : !b.subcategory && subsOf(b.category).length ? 'Выберите раздел — так объявление попадёт в нужные фильтры.'
+        : (subOf(b.subcategory) || { fields: [] }).fields.some((f) => f.fixed && !modelOk(f)) ? `Выберите модель ${st.attrs.brand} из списка.`
         : attrsMissing(b).length ? `Укажите: ${attrsMissing(b).map((f) => f.label.toLowerCase()).join(', ')}.` : b.city.length < 2 ? 'Укажите город.' : ''),
       's-publish': (b) => (b.publishAt !== null && b.publishAt < Date.now() + 5 * 60 * 1000 ? 'Выберите время позже — хотя бы через несколько минут.' : boostErr(st.boost))
     };

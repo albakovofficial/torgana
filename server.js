@@ -983,6 +983,16 @@ const AI_SUBS = Object.entries(taxonomy.SUBCATS).map(([cat, list]) => list.map((
   return `${cat}/${x.id} — ${x.name}${req.length ? ` (${req.join('; ')})` : ''}`;
 }).join('\n')).join('\n');
 
+// 1.60.1: название из характеристик для превью в приложении (у машин, квартир, телефонов…) — тот же autoTitle, что при сохранении.
+route('POST', '/api/listings/title', async (ctx) => {
+  const b = await readJson(ctx.req);
+  const sub = String(b.subcategory || '');
+  if (!taxonomy.TITLE_SUBS.has(sub)) return { title: '' };
+  let attrs = {};
+  try { attrs = taxonomy.cleanAttrs(sub, b.attrs); } catch { return { title: '' }; }
+  return { title: taxonomy.autoTitle(sub, attrs).slice(0, 80) };
+});
+
 route('POST', '/api/ai/suggest', async (ctx) => {
   const u = requireUser(ctx);
   const cfg = aiCfg();
@@ -998,6 +1008,8 @@ route('POST', '/api/ai/suggest', async (ctx) => {
     s.subcategory = s.category && (taxonomy.SUBCATS[s.category] || []).some((x) => x.id === s.subcategory) ? s.subcategory : '';
     const attrs = {};
     if (s.subcategory) for (const [k, v] of Object.entries(s.attrs)) { try { Object.assign(attrs, taxonomy.cleanAttrs(s.subcategory, { [k]: v })); } catch { /* не из списка или вне пределов */ } }
+    // 1.60.1: модель машины — только из списка угаданной марки; не из списка — не подставляем.
+    if (attrs.model && attrs.brand) { try { const c = taxonomy.cleanAttrs(s.subcategory, attrs); if (!c.model) delete attrs.model; } catch { /* остальное уже проверено */ } }
     s.attrs = attrs;
     const est = s.category ? marketEstimate({ category: s.category, title: s.title, priceUnit: '' }) : null;
     return { ...s, priceHint: est ? est.median : null, priceHintCount: est ? est.count : 0 };
