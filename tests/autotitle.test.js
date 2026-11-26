@@ -2,7 +2,7 @@
 // 1.48.0: название из характеристик — один код на сервере (lib/taxonomy.js) и в браузере (public/assets/js/rules.js).
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { autoTitle, TITLE_SUBS, CARD_WORDS, cleanAttrs, summaryOf, publicTaxonomy } = require('../lib/taxonomy');
+const { autoTitle, TITLE_SUBS, CARD_WORDS, cleanAttrs, summaryOf, publicTaxonomy, vinNorm, vinOk } = require('../lib/taxonomy');
 
 // Браузерный модуль правил (public/assets/js/rules.js) — без обращений к странице, подключаем как есть.
 let client;
@@ -47,6 +47,15 @@ test('в браузере — тот же код: те же названия и 
   assert.deepEqual([...client.TITLE_SUBS], [...TITLE_SUBS]);
   for (const [sub, a] of CASES) assert.equal(client.autoTitle(sub, a), autoTitle(sub, a), sub);
   assert.deepEqual(client.CARD_WORDS, CARD_WORDS);
+});
+
+test('VIN: одно правило в браузере и на сервере — русские буквы, O/Q/I в 17-значном, номер кузова', () => {
+  const C = [['хта 21900012345678', 'XTA21900012345678', true], ['XTA2190OO12345678', 'XTA21900012345678', true], ['XTA2190001234567!', 'XTA2190001234567!', false],
+    ['GX100-6012345', 'GX100-6012345', true], ['ABCDEF', 'ABCDEF', false], ['XTA21900I12345Q78', 'XTA21900112345078', true], ['', '', false]];
+  for (const [raw, norm, ok] of C) {
+    assert.equal(vinNorm(raw), norm, raw); assert.equal(vinOk(norm), ok, raw);
+    assert.equal(client.vinNorm(raw), vinNorm(raw), raw); assert.equal(client.vinOk(norm), vinOk(norm), raw);
+  }
 });
 
 test('модель: без ссылок, лишних пробелов и с заглавной буквы', () => {

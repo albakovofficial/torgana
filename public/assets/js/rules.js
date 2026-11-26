@@ -65,6 +65,14 @@ const TR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 
 export const slugify = (s) => String(s || '').toLowerCase().split('').map((c) => (TR[c] !== undefined ? TR[c] : c)).join('')
   .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
 
+// ================= VIN =================
+// 1.48.0: VIN — 17 знаков без I, O, Q; номер кузова (праворульные из Японии) — 6–17 латинских букв, цифр и дефисов, есть цифры.
+// Набрали в русской раскладке — меняем похожие буквы на латинские; в 17-значном VIN нет O, Q и I — это 0 и 1.
+// То же правило — в lib/taxonomy.js (тест сверяет).
+const VIN_LAT = { А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H', О: 'O', Р: 'P', С: 'C', Т: 'T', Х: 'X', У: 'Y' };
+export const vinNorm = (v) => { let t = String(v || '').toUpperCase().replace(/\s/g, '').replace(/[АВЕКМНОРСТХУ]/g, (c) => VIN_LAT[c]); if (t.length === 17) t = t.replace(/O|Q/g, '0').replace(/I/g, '1'); return t; };
+export const vinOk = (v) => (v.length === 17 ? /^[A-HJ-NPR-Z0-9]{17}$/.test(v) : /^[A-Z0-9-]{6,17}$/.test(v) && /\d{4}/.test(v));
+
 // ================= сообщения =================
 // 1.48.0: предупреждения под сообщением собеседника — ссылка на другой сайт, номер карты, предоплата, мессенджер, коды.
 const luhn = (d) => { let sum = 0; for (let i = 0; i < d.length; i++) { let n = Number(d[d.length - 1 - i]); if (i % 2) { n *= 2; if (n > 9) n -= 9; } sum += n; } return sum % 10 === 0; };
