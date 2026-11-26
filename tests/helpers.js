@@ -75,18 +75,25 @@ async function startServer(extraEnv = {}, keepTmp = null) {
   };
 }
 
-// Клиент, который хранит cookie входа, как браузер.
+// Клиент, который хранит cookie, как браузер: по имени, пустое значение удаляет куку.
 function client(base) {
-  let cookie = '';
+  const jar = new Map();
+  const header = () => [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
+  const take = (line) => {
+    const [pair] = line.split(';');
+    const i = pair.indexOf('=');
+    const [k, v] = [pair.slice(0, i).trim(), pair.slice(i + 1).trim()];
+    if (v) jar.set(k, v); else jar.delete(k);
+  };
   async function req(method, url, body, headers = {}) {
+    const cookie = header();
     const r = await fetch(base + url, {
       method,
       headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...(cookie ? { cookie } : {}), ...headers },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       redirect: 'manual'
     });
-    const set = r.headers.get('set-cookie');
-    if (set) cookie = set.split(';')[0].endsWith('=') ? '' : set.split(';')[0];
+    r.headers.getSetCookie().forEach(take);
     const text = await r.text();
     let data = null;
     try { data = JSON.parse(text); } catch { data = text; }
@@ -99,8 +106,8 @@ function client(base) {
     patch: (u, b = {}, h) => req('PATCH', u, b, h),
     put: (u, b = {}, h) => req('PUT', u, b, h),
     del: (u, h) => req('DELETE', u, undefined, h),
-    get cookie() { return cookie; },
-    set cookie(v) { cookie = v; }
+    get cookie() { return header(); },
+    set cookie(v) { jar.clear(); String(v || '').split(';').filter((x) => x.includes('=')).forEach(take); }
   };
 }
 

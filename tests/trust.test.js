@@ -44,10 +44,8 @@ async function oauthLogin(provider, { next = '/profile', viaPayload = false, as 
   assert.equal(u.searchParams.get('redirect_uri'), `http://torgana.test/api/auth/oauth/${provider}/callback`);
   const state = u.searchParams.get('state');
   const qs = viaPayload ? new URLSearchParams({ payload: JSON.stringify({ code: 'c1', state, device_id: 'dev-1', type: 'code_v2' }) }) : new URLSearchParams({ code: 'c1', state });
-  const res = await fetch(`${srv.base}/api/auth/oauth/${provider}/callback?${qs}`, { redirect: 'manual', headers: as ? { cookie: as.cookie } : {} });
+  const res = await c.get(`/api/auth/oauth/${provider}/callback?${qs}`);
   assert.equal(res.status, 302);
-  const cookie = (res.headers.get('set-cookie') || '').split(';')[0];
-  if (cookie && !as) c.cookie = cookie;
   return { c, location: res.headers.get('location') };
 }
 
@@ -102,6 +100,33 @@ test('плохой или старый state — на вход с ошибкой
   assert.equal(res.status, 302);
   assert.match(decodeURIComponent(res.headers.get('location')), /^\/login\?oauth_error=Ссылка входа устарела/);
   assert.equal(res.headers.get('set-cookie'), null);
+});
+
+// Ссылку возврата от сервиса нельзя подсунуть другому человеку: вход и привязка — только в том браузере, где начали.
+async function startedBy(c, provider, body) {
+  const s = await c.post(`/api/auth/oauth/${provider}/start`, body);
+  return new URL(s.data.url).searchParams.get('state');
+}
+
+test('чужая ссылка возврата: вход в чужой аккаунт не происходит', async () => {
+  const evil = client(srv.base);
+  const state = await startedBy(evil, 'yandex', { consent: true });
+  const victim = client(srv.base);
+  const res = await victim.get(`/api/auth/oauth/yandex/callback?code=c1&state=${state}`);
+  assert.match(decodeURIComponent(res.headers.get('location')), /^\/login\?oauth_error=Вход начат на другом устройстве/);
+  assert.equal((await victim.get('/api/me')).data.user, null);
+});
+
+test('чужая ссылка привязки: VK другого человека к аккаунту не привязывается', async () => {
+  const evil = await registerUser(srv.base, { name: 'Злой', email: 'evil@test.local' });
+  const state = await startedBy(evil, 'vk', { link: true });
+  const victim = client(srv.base);
+  victim.cookie = evil.cookie.split('; ').filter((x) => x.startsWith('tg_oauth=')).join(''); // даже с кукой входа
+  const res = await victim.get(`/api/auth/oauth/vk/callback?code=c1&state=${state}`);
+  assert.match(decodeURIComponent(res.headers.get('location')), /^\/login\?oauth_error=Войдите в аккаунт/);
+  const me = (await evil.get('/api/me')).data.user;
+  assert.deepEqual(me.oauth, []);
+  assert.equal(me.phone, '');
 });
 
 test('проверка бизнеса: контрольные суммы, заявка, решение модератора, значок у объявлений', async () => {

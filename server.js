@@ -1519,9 +1519,9 @@ const server = http.createServer(async (req, res) => {
   const token = cookies[auth.SESSION_COOKIE];
   const headers = { ...SECURITY_HEADERS };
   const ctx = {
-    req, res, query: url.searchParams, params: {}, ip: clientIp(req), token,
+    req, res, query: url.searchParams, params: {}, ip: clientIp(req), token, cookies,
     user: auth.userFromSession(db, token),
-    setCookie: (c) => { headers['Set-Cookie'] = c; }
+    setCookie: (c) => { headers['Set-Cookie'] = [...(headers['Set-Cookie'] || []), c]; }
   };
 
   try {
