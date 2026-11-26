@@ -52,11 +52,11 @@ async function payAndNotify(r) {
   return id;
 }
 
-test('без ключей ЮKassa оплаты нет; тарифы — только для проверенного бизнеса', async () => {
+test('без ключей ЮKassa оплаты нет; тариф — любому (1.61.0), проверка бизнеса не нужна', async () => {
   const cfg = (await client(srv.base).get('/api/config')).data.billing;
   assert.equal(cfg.ready, false);
   assert.equal(cfg.prices.shop[1], 490);
-  assert.equal((await shop.post('/api/my/plan/pay', { plan: 'shop', months: 1 })).status, 403, 'без проверки бизнеса');
+  assert.equal((await shop.post('/api/my/plan/pay', { plan: 'shop', months: 1 })).status, 503, 'и без проверки бизнеса — только «оплата не подключена»');
   await shop.post('/api/me/business', { name: 'ИП Смирнова А. А.', inn: '500100732259', ogrn: '304500116000157' });
   await admin.post(`/api/admin/users/${shop.user.id}/business`, { decision: 'approve' });
   assert.equal((await shop.post('/api/my/plan/pay', { plan: 'shop', months: 1 })).status, 503, 'оплата не подключена');
