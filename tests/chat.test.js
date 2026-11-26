@@ -41,10 +41,8 @@ describe('чёрный список и предупреждения', () => {
     assert.ok((await buyer.get('/api/listings?sub=cars')).data.items.some((x) => x.id === id));
   });
 
-  test('предупреждения в чате: ссылка на чужой сайт, номер карты, предоплата, мессенджер', () => {
-    const app = require('node:fs').readFileSync(require('node:path').join(__dirname, '../public/assets/app.js'), 'utf8');
-    const a = app.indexOf('  // 1.48.0: предупреждения под сообщением'); const b = app.indexOf('  };', app.indexOf('const riskOf', a)) + 4;
-    const { riskOf } = new Function(`${app.slice(a, b)}\nreturn { riskOf };`)();
+  test('предупреждения в чате: ссылка на чужой сайт, номер карты, предоплата, мессенджер', async () => {
+    const { riskOf } = await import('../public/assets/js/rules.js'); // тот же модуль, что в браузере
     const k = (t) => (riskOf(t) || {}).k || null;
     assert.equal(k('Оплатите тут: pay-secure.ru/a'), 'link');
     assert.equal(k('Смотрите https://torgana.ru/l/5'), null, 'ссылка на Торгану — не чужая');

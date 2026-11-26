@@ -24,7 +24,7 @@ jobs:
           node-version: 22
 
       - name: Синтаксис
-        run: node --check server.js && node --check public/assets/app.js && node --check public/assets/admin.js
+        run: node --check server.js && for f in public/assets/js/*.js; do node --check "$f" || exit 1; done
 
       - name: Сценарии API
         run: npm test
