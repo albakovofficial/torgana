@@ -23,7 +23,7 @@ test('опубликовано и отклонено — в колокольчи
   await admin.post(`/api/admin/listings/${b}/reject`, { reason: 'Добавьте фото товара' });
   const c = (await boris.post('/api/conversations', { listingId: a })).data.id;
   await boris.post(`/api/conversations/${c}/messages`, { body: 'Здравствуйте!' });
-  // 1.52.0: третье — медаль «Одна из первых» за первое опубликованное объявление (tests/v152.test.js)
+  // 1.52.0: третье — медаль «Одна из первых» за первое опубликованное объявление (tests/first.test.js)
   assert.equal((await anna.get('/api/me')).data.notices, 3);
   const all = (await anna.get('/api/notices')).data;
   assert.equal(all.unread, 3);
