@@ -64,12 +64,18 @@ describe('конфигурация и главная', () => {
 
   test('стили и скрипт подключены с версией — после обновления браузер берёт свежие', async () => {
     const page = String((await guest.get('/')).data);
-    const js = page.match(/\/assets\/app\.js\?v=([a-f0-9]{10})"/);
+    const js = page.match(/<script type="module" src="\/assets\/js\/main\.js\?v=([a-f0-9]{10})">/);
     const css = page.match(/\/assets\/app\.css\?v=([a-f0-9]{10})"/);
     assert.ok(js && css, 'в index.html нет версий файлов');
     assert.equal(js[1], css[1]);
-    const v = await fetch(`${srv.base}/assets/app.js?v=${js[1]}`);
+    const v = await fetch(`${srv.base}/assets/js/main.js?v=${js[1]}`);
     assert.match(v.headers.get('cache-control'), /immutable/);
+    assert.match(v.headers.get('content-type'), /text\/javascript/);
+    // модули, которые подключает main.js, — с той же версией, иначе браузер переспрашивал бы их при каждом входе
+    const code = await v.text();
+    assert.match(code, new RegExp(`import './router\\.js\\?v=${js[1]}';`));
+    assert.doesNotMatch(code, /from '\.\/[\w-]+\.js'/);
+    assert.equal((await fetch(`${srv.base}/assets/js/package.json`)).status, 404, 'отдаются только модули');
     const plain = await fetch(`${srv.base}/assets/app.css`);
     assert.equal(plain.headers.get('cache-control'), 'no-cache');
     assert.match(String((await guest.get('/index.html')).data), /\?v=/);
