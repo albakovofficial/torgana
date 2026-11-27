@@ -1,10 +1,10 @@
 // Профиль: карточка, меню, «Мои объявления», своя репутация, статистика, бизнес и товарный знак.
 import { $, $$, NATIVE, NF, PAY, S, api, app, ava, dateLong, dateShort, esc, html, lpath, nativePost, plural, price, raw, rub, shortWhen, when } from './core.js';
-import { pageCover } from './cover.js';
+import { pageCover, tileIc } from './cover.js';
 import { P, ic, svg } from './icons.js';
 import { confirmModal, openModal, toast } from './ui.js';
 import { resizeImage } from './photos.js';
-import { FOOTER_COLS, FOOTER_LABEL, HELP_LINKS, renderHeader, setUnread } from './layout.js';
+import { renderHeader, setUnread } from './layout.js';
 import { reviewLine } from './messages.js';
 import { go, requireAuth, setTitle } from './router.js';
 import { renderFollowing } from './search.js';
@@ -14,7 +14,7 @@ import { BOOST, boostBusy, boostModal, boostOn, boostPrices, mlBoostRow } from '
 import { verifyModal } from './auth.js';
 import { levelMedal, repCard, repHow, repLine, repTasks } from './reputation.js';
 import { nameSeal, planBadge, trustBadges, verifiedSeal } from './badges.js';
-import { SET_SECTIONS, viewSettings } from './settings.js';
+import { viewSettings } from './settings.js';
 import { dayWord, daysLeft, renderBusinessHub, setPin } from './business.js';
 import { refreshMe } from './main.js';
 
@@ -107,59 +107,58 @@ function navKey() {
 }
 // Пункт меню со значком — один для меню профиля, панели ≡ и меню модерации.
 export const navLink = (href, icon, label, on, right = '', key = '') => html`<a href="${href}" class="${on ? 'on' : ''}"${on ? raw(' aria-current="page"') : ''}${key ? raw(` data-k="${key}"`) : ''}>${ic(icon, 20)}<span class="lbl">${label}</span>${right}</a>`;
-// На телефоне в профиле меню прячется, а четыре пункта (data-k: msg, fav, following, rep) становятся плитками.
-function profileNav(full = false) {
+// Меню профиля на компьютере (слева). На телефоне в профиле оно прячется, а четыре пункта (data-k: msg, fav, following, rep)
+// становятся плитками. Панель ≡ — своя (openMenu).
+function profileNav() {
   const active = navKey();
   const u = S.user;
   const item = (href, icon, label, key = href, right = '') => navLink(href, icon, label, active === key, right, key);
-  const head = (t) => html`<div class="pf-nav-h">${t}</div>`;
-  const help = HELP_LINKS.map(([href, icon]) => item(href, icon, FOOTER_LABEL[href]));
-  if (!u) {
-    return html`<nav class="pf-nav full" aria-label="Меню">
-      ${item('/new', 'plus', 'Разместить объявление', 'new')}
-      ${item('/page/support', 'headset', 'Поддержка')}
-      ${head('Помощь')}${help}
-    </nav>`;
-  }
-  const pub = item(`/u/${u.id}`, 'eye', 'Как меня видят покупатели');
-  return html`<nav class="pf-nav ${full ? 'full' : ''}" aria-label="${full ? 'Меню' : 'Разделы профиля'}">
+  return html`<nav class="pf-nav" aria-label="Разделы профиля">
     ${item('/profile', 'tag', 'Мои объявления', 'listings')}
     ${item('/messages', 'chat', 'Сообщения', 'msg', html`<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span>`)}
     ${item('/favorites', 'heart', 'Избранное', 'fav')}
     ${item('/profile/following', 'users', 'Подписки', 'following', html`<span class="badge ${S.fresh && S.fresh.follow ? '' : 'hidden'}" data-fresh-follow>${S.fresh ? S.fresh.follow || 0 : 0}</span>`)}
     ${item('/profile/reputation', 'handshake', 'Репутация', 'rep', u.rep && u.rep.level ? html`<span class="nav-rating">${levelMedal(u.rep.level, 14)}</span>` : '')}
     ${PAY ? item('/profile/business', 'store', 'Для бизнеса', 'business') : ''}
-    ${full ? '' : html`<hr>${item('/profile/settings', 'gear', 'Настройки', 'settings')}`}
+    <hr>${item('/profile/settings', 'gear', 'Настройки', 'settings')}
     ${item('/messages/support', 'headset', 'Поддержка', 'support')}
     ${u.isAdmin ? item('/admin', 'shield', 'Модерация', 'admin') : ''}
-    ${full ? html`${head('Настройки')}
-      ${SET_SECTIONS.map(([id, icon, label]) => item(`/profile/settings#${id}`, icon, label, ''))}
-      ${head('Публичный профиль')}
-      ${pub}
-      <button type="button" data-share-me>${ic('share', 20)}<span class="lbl">Поделиться профилем</span></button>
-      ${head('Помощь')}${help}` : pub}
+    ${item(`/u/${u.id}`, 'eye', 'Как меня видят покупатели')}
     <hr>
     <button type="button" class="out" data-logout>${ic('logout', 20, 2)}<span class="lbl">Выйти из аккаунта</span></button>
   </nav>`;
 }
 
-// Панель ≡ справа: кто вошёл (или «Войти»), все разделы и настройки, документы внизу.
+// Панель ≡ справа — вариант A «Плитки» (выбор владельца 27.11, как в приложении): вы, модерация (модераторам),
+// шесть плиток — подписки, уведомления, бизнес, профиль, оформление, чёрный список; помощь; «Выйти».
+// Без повторов: «Мои объявления» и «Репутация» — в профиле, сообщения и избранное — в шапке и в нижнем меню.
+const MENU_TILES = [['/profile/following', 'users', 'purple', 'Подписки', 'Продавцы и новинки'], ['/profile/settings#sn', 'bell', 'red', 'Уведомления', 'Push и письма'],
+  ['/profile/business', 'store', 'yellow', 'Для бизнеса', 'Витрина, статистика'], ['/profile/settings#sf', 'user', 'blue', 'Профиль', 'Фото, имя, вход'],
+  ['/profile/settings#s-look', 'moon', 'purple', 'Оформление', 'Светлое, тёмное, авто'], ['/profile/settings#s-block', 'ban', 'gray', 'Чёрный список', 'Кому нельзя писать']];
 export function openMenu() {
   const u = S.user;
-  const docs = FOOTER_COLS[FOOTER_COLS.length - 1][1].concat([['/page/contacts', FOOTER_LABEL['/page/contacts']]]);
+  const tiles = MENU_TILES.filter(([href]) => PAY || href !== '/profile/business');
+  const fresh = S.fresh && S.fresh.follow;
   openModal(String(html`<div class="menu-top">
-      ${u ? html`<a class="menu-me" href="/profile">${ava(u, 'lg')}<span class="menu-me-txt"><b>${u.name}</b><small>Мой профиль</small></span></a>`
+      ${u ? html`<a class="menu-me" href="/profile">${ava(u, 'lg')}<span class="menu-me-txt"><b>${u.name}</b><small>Мой профиль</small></span>${ic('right', 18, 2)}</a>`
   : html`<div class="menu-me-txt"><b>Добро пожаловать</b><small>Войдите, чтобы писать продавцам и размещать объявления</small></div>`}
       <button type="button" class="icon-btn" data-x aria-label="Закрыть меню">${ic('close', 20, 2)}</button>
     </div>
     ${u ? '' : html`<div class="menu-auth"><a class="btn btn-dark" href="/login">Войти</a><a class="btn btn-soft" href="/register">Регистрация</a></div>`}
-    ${profileNav(true)}
-    <div class="menu-docs">${docs.map(([href, label]) => html`<a href="${href}">${label}</a>`)}</div>`), (m, close) => {
+    ${u && u.isAdmin ? html`<a class="menu-mod" href="/admin"><span class="menu-mod-ic">${ic('shield', 20, 2)}</span><span class="menu-me-txt"><b>Модерация</b><small data-mod-sub>Загружаем…</small></span><em data-mod-n hidden></em></a>` : ''}
+    ${u ? html`<nav class="menu-tiles" aria-label="Разделы">${tiles.map(([href, icon, tone, t, sub]) => html`<a class="menu-tile" href="${href}">${tileIc(icon, tone, 18)}<b>${t}</b><small>${href === '/profile/following' && fresh ? `${fresh} ${plural(fresh, 'новое', 'новых', 'новых')}` : sub}</small></a>`)}</nav>` : html`<nav class="menu-tiles"><a class="menu-tile" href="/new">${tileIc('plus', 'blue', 18)}<b>Разместить</b><small>Бесплатно</small></a><a class="menu-tile" href="/page/search">${tileIc('search', 'purple', 18)}<b>Как искать</b><small>Советы</small></a></nav>`}
+    <div class="menu-help">${[['/messages/support', 'headset', 'Поддержка', 'Отвечают люди, а не боты'], ['/page/help', 'info', 'Помощь и безопасность', ''], ['/page/rules', 'list', 'Правила и документы', '']].map(([href, icon, t, sub]) => html`<a href="${href}">${tileIc(icon, icon === 'list' ? 'gray' : 'blue', 16)}<span class="menu-me-txt"><b>${t}</b>${sub ? html`<small>${sub}</small>` : ''}</span>${ic('right', 16, 2)}</a>`)}</div>
+    ${u ? html`<button type="button" class="btn btn-line menu-out" data-logout>${ic('logout', 18, 2)}Выйти</button>` : ''}`), (m, close) => {
     m.classList.add('drawer'); m.parentElement.classList.add('drawer-back'); m.setAttribute('aria-label', 'Меню');
     $('[data-x]', m).onclick = close;
     m.addEventListener('click', (e) => { if (e.target.closest('a[href], [data-logout]')) close(); });
-    const sh = $('[data-share-me]', m);
-    if (sh) sh.onclick = () => { close(); shareLink(`${location.origin}/u/${u.id}`, `${u.name} на Торгане`); };
+    // Модераторам — что ждёт решения (те же счётчики, что на пульте модерации).
+    if (u && u.isAdmin) api('GET', '/api/admin/stats').then((st) => {
+      const parts = [st.pending && `${st.pending} на проверке`, st.reports && `${st.reports} ${plural(st.reports, 'жалоба', 'жалобы', 'жалоб')}`, st.support && `${st.support} в поддержке`, st.appeals && `${st.appeals} ${plural(st.appeals, 'апелляция', 'апелляции', 'апелляций')}`].filter(Boolean);
+      const total = ['pending', 'reports', 'appeals', 'rep', 'support', 'biz'].reduce((n, k) => n + (st[k] || 0), 0);
+      const sub = $('[data-mod-sub]', m); if (sub) sub.textContent = parts.length ? parts.join(' · ') : 'Всё разобрано';
+      const n = $('[data-mod-n]', m); if (n && total) { n.textContent = total; n.hidden = false; }
+    }).catch(() => {});
   });
 }
 

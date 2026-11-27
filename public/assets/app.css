@@ -487,8 +487,29 @@ button { cursor: pointer; }
 .menu-me-txt b { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-me-txt small { font-size: 13px; color: var(--muted); }
 .menu-auth { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 8px; }
-.menu-docs { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: auto; padding: 12px 14px 0; border-top: 1px solid var(--line); font-size: 13px; }
-.menu-docs a { color: var(--muted); }
+/* 1.66.0: панель ≡ — вариант A «Плитки» */
+.menu-me > svg { flex: none; color: var(--faint); }
+.drawer .menu-top { padding: 0; }
+.drawer .menu-me { margin: 0; padding: 12px 14px; background: var(--accent-soft); }
+.menu-mod { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 20px; color: #fff; background: linear-gradient(135deg, #3D67D0, #5B5CE0); }
+.menu-mod:hover { color: #fff; filter: brightness(1.05); }
+.menu-mod .menu-me-txt small { color: rgba(255, 255, 255, .85); }
+.menu-mod-ic { width: 40px; height: 40px; flex: none; border-radius: 12px; display: grid; place-items: center; background: rgba(255, 255, 255, .2); }
+.menu-mod em { font-style: normal; min-width: 26px; height: 26px; padding: 0 8px; border-radius: 13px; display: grid; place-items: center; background: #fff; color: var(--accent-fill); font-size: 13px; font-weight: 800; }
+.menu-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.menu-tile { display: flex; flex-direction: column; gap: 2px; padding: 14px; border-radius: 20px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+.menu-tile:hover { color: var(--text); border-color: var(--line-2); background: var(--surface); }
+.menu-tile .tile-ic { width: 36px; height: 36px; border-radius: 11px; margin-bottom: 8px; }
+.menu-tile b { font-size: 15px; font-weight: 700; } .menu-tile small { font-size: 12.5px; color: var(--muted); line-height: 1.3; }
+.modal.drawer > * { flex: none; }
+.modal.drawer { overflow-y: auto; overscroll-behavior: contain; }
+.menu-help { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 20px; background: var(--card); overflow: hidden; }
+.menu-help a { display: flex; align-items: center; gap: 12px; padding: 11px 14px; color: var(--text); border-top: 1px solid var(--line); }
+.menu-help a:first-child { border-top: 0; }
+.menu-help a:hover { color: var(--text); background: var(--surface); }
+.menu-help .tile-ic { width: 32px; height: 32px; border-radius: 10px; }
+.menu-help .menu-me-txt b { font-size: 15px; font-weight: 650; } .menu-help > a > svg:last-child { color: var(--faint); flex: none; }
+.menu-out { color: var(--danger); margin-top: auto; flex: none; }
 .set-group { scroll-margin-top: 88px; }
 @keyframes drawer-in { from { transform: translateX(48px); opacity: .6; } to { transform: none; opacity: 1; } }
 @keyframes sheet-up { from { transform: translateY(40px); opacity: .6; } to { transform: none; opacity: 1; } }

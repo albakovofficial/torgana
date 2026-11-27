@@ -497,7 +497,12 @@ async function main() {
         if (open === 'menu') {
           await page.click('[data-menu]');
           await page.waitForTimeout(300);
-          if (!(await page.$('.modal.drawer .pf-nav'))) errors.push('меню ≡ не открылось');
+          if (!(await page.$('.modal.drawer .menu-tiles'))) errors.push('меню ≡ не открылось');
+          // 1.66.0, вариант A «Плитки»: шесть плиток у вошедшего, модерация — только модератору, «Выйти» — один раз.
+          const loggedIn = await page.$('.modal.drawer .menu-me');
+          if (loggedIn && (await page.$$('.menu-tile')).length < 5) errors.push('в меню ≡ меньше пяти плиток');
+          if ((await page.$$('.modal.drawer [data-logout]')).length > 1) errors.push('«Выйти» в меню ≡ больше одного раза');
+          if (name === 'menu-admin') { await page.waitForTimeout(400); if (!(await page.isVisible('.menu-mod [data-mod-sub]')) || (await page.textContent('[data-mod-sub]')) === 'Загружаем…') errors.push('у модератора нет плашки «Модерация» со счётчиками'); }
         } else if (open === 'code') {
           await page.evaluate(() => sessionStorage.setItem('tg_confirm', JSON.stringify({ email: 'new.user@test.local', next: '' })));
           await page.reload({ waitUntil: 'networkidle' });
