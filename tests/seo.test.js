@@ -84,11 +84,9 @@ test('sitemap.xml и robots.txt', async () => {
 
 test('коды Вебмастера, Search Console и счётчик Метрики — из модерации', async () => {
   assert.equal((await seller.put('/api/admin/seo', { yandex: 'x' })).status, 403);
-  const r = await admin.put('/api/admin/seo', { yandex: '<meta name="yandex-verification" content="a1b2c3d4e5f60718" />', google: 'g00gle-Code_1', metrika: '98 765 432',
-    mailru: '<meta name="wmail-verification" content="0f1e2d3c4b5a6978" />' });
-  assert.deepEqual(r.data.seo, { yandex: 'a1b2c3d4e5f60718', google: 'g00gle-Code_1', mailru: '0f1e2d3c4b5a6978', mailruName: 'wmail-verification', metrika: '98765432', mapsKey: '' });
+  const r = await admin.put('/api/admin/seo', { yandex: '<meta name="yandex-verification" content="a1b2c3d4e5f60718" />', google: 'g00gle-Code_1', metrika: '98 765 432' });
+  assert.deepEqual(r.data.seo, { yandex: 'a1b2c3d4e5f60718', google: 'g00gle-Code_1', metrika: '98765432', mapsKey: '' });
   const home = await page('/');
-  assert.match(home.html, /<meta name="wmail-verification" content="0f1e2d3c4b5a6978">/, 'тег Вебмастера Mail.ru — на главной');
   assert.match(home.html, /<meta name="yandex-verification" content="a1b2c3d4e5f60718">/);
   assert.match(home.html, /<meta name="google-site-verification" content="g00gle-Code_1">/);
   assert.equal((await client(srv.base).get('/api/config')).data.metrika, '98765432');
@@ -256,4 +254,13 @@ describe('разделы, 301/410, фид, IndexNow', () => {
     assert.ok(st.sent >= 4);
     assert.equal(st.error, '');
   });
+});
+
+test('1.65.0: файлы подтверждения прав (Яндекс Вебмастер для https, Mail.ru) открываются из корня сайта', async () => {
+  const y = await fetch(`${srv.base}/yandex_215c4b475a6d1512.html`);
+  assert.equal(y.status, 200);
+  assert.match(await y.text(), /Verification: 215c4b475a6d1512/);
+  const m = await fetch(`${srv.base}/mailru-verificationd96e121c6417e858.html`);
+  assert.equal(m.status, 200);
+  assert.match(await m.text(), /mailru-verification: d96e121c6417e858/);
 });
