@@ -1,5 +1,6 @@
 // Главная: лента, разделы, свежие объявления; страница «Избранное».
 import { $, $$, S, api, app, catName, cpath, html, raw } from './core.js';
+import { pageCover } from './cover.js';
 import { catIc, ic } from './icons.js';
 import { toast } from './ui.js';
 import { card, grid, skeletonGrid } from './cards.js';
@@ -128,7 +129,7 @@ export async function viewHome() {
 export async function viewFavorites() {
   if (!requireAuth()) return;
   setTitle('Избранное');
-  app.innerHTML = String(html`<div class="wrap"><div class="section-head" style="padding-top:24px"><h2>Избранное</h2></div><div id="box">${skeletonGrid(4)}</div></div>`);
+  app.innerHTML = String(html`<div class="wrap">${pageCover({ title: 'Избранное', sub: 'Снизят цену — придёт уведомление', icon: 'heart', tone: 'red' })}<div id="box">${skeletonGrid(4)}</div></div>`);
   const { items } = await api('GET', '/api/favorites');
   $('#box').innerHTML = items.length ? String(grid(items)) : String(html`<div class="empty"><h3>Пока пусто</h3><p>Нажимайте на сердечко у объявлений, чтобы вернуться к ним позже.</p><a class="btn btn-dark" href="/">Смотреть объявления</a></div>`);
 }

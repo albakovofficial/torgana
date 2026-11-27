@@ -109,7 +109,7 @@ function renderSettingsHub(box) {
 function adminSubNav(box, status) {
   const tabs = (list) => html`<nav class="seg adm-tabs" aria-label="Подразделы">${list.map(([k, t]) => html`<a href="/admin?status=${k}" class="${k === status ? 'on' : ''}"${k === status ? raw(' aria-current="page"') : ''}>${t}</a>`)}</nav>`;
   const headEl = $('.adm-head', box);
-  if (ADMIN_PARENT[status] === 'settings') box.insertAdjacentHTML('afterbegin', String(html`<a class="pf-back always adm-back" href="/admin?status=settings">${ic('left', 18, 2)}Настройки</a>`));
+  if (ADMIN_PARENT[status] === 'settings') box.insertAdjacentHTML('afterbegin', String(html`<a class="pf-back adm-back" href="/admin?status=settings">${ic('left', 18, 2)}Настройки</a>`));
   else if (['active', 'rejected', 'sold', 'archived'].includes(status) && headEl) headEl.insertAdjacentHTML('afterend', String(tabs(LISTING_STATUS_TABS)));
   else if (MONEY_TABS.some(([k]) => k === status) && headEl) headEl.insertAdjacentHTML('afterend', String(tabs(MONEY_TABS)));
 }

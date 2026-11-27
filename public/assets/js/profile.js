@@ -1,5 +1,6 @@
 // Профиль: карточка, меню, «Мои объявления», своя репутация, статистика, бизнес и товарный знак.
 import { $, $$, NATIVE, NF, PAY, S, api, app, ava, dateLong, dateShort, esc, html, lpath, nativePost, plural, price, raw, rub, shortWhen, when } from './core.js';
+import { pageCover } from './cover.js';
 import { P, ic, svg } from './icons.js';
 import { confirmModal, openModal, toast } from './ui.js';
 import { resizeImage } from './photos.js';
@@ -235,23 +236,26 @@ export async function viewProfile(section, q) {
     </div>` : '';
   const days = ['7', '30', '0'].includes(q.get('days')) ? q.get('days') : '30';
   const bizDays = ['7', '30', '90'].includes(q.get('days')) ? q.get('days') : '30';
+  // 27.11: шапка раздела — общая обложка (cover.js); «‹» ведёт на уровень выше, вкладки периода — под заголовком.
+  const seg = (opts, cur, href) => html`<div class="seg" role="tablist">${opts.map(([v, t]) => html`<a role="tab" aria-selected="${v === cur ? 'true' : 'false'}" class="${v === cur ? 'on' : ''}" href="${href(v)}">${t}</a>`)}</div>`;
+  const nActive = count('active'); const nPending = count('pending');
   const head = sec === 'business'
-    ? html`<div class="pf-head"><h1>${BIZ_TITLE[bizSub]}</h1>${bizSub === 'stats' ? html`<div class="seg" role="tablist">${[['7', '7 дней'], ['30', '30 дней'], ['90', '90 дней']].map(([v, t]) => html`<a role="tab" aria-selected="${v === bizDays ? 'true' : 'false'}" class="${v === bizDays ? 'on' : ''}" href="/profile/business/stats?days=${v}">${t}</a>`)}</div>`
-      : bizSub === '' ? html`<a class="btn btn-soft" href="/business">${ic('tag', 18, 2)}<span>Тарифы и цены</span></a>` : bizSub === 'shop' ? html`<a class="btn btn-soft" href="/u/${u.id}">${ic('eye', 18, 2)}<span>Как видят покупатели</span></a>` : ''}</div>`
+    ? pageCover({ title: BIZ_TITLE[bizSub], back: bizSub ? '/profile/business' : '/profile', icon: 'store', tone: 'blue',
+      below: bizSub === 'stats' ? seg([['7', '7 дней'], ['30', '30 дней'], ['90', '90 дней']], bizDays, (v) => `/profile/business/stats?days=${v}`) : '',
+      side: bizSub === '' ? html`<a class="btn btn-soft" href="/business">${ic('tag', 18, 2)}<span>Тарифы и цены</span></a>` : bizSub === 'shop' ? html`<a class="btn btn-soft" href="/u/${u.id}">${ic('eye', 18, 2)}<span>Как видят покупатели</span></a>` : '' })
     : sec === 'stats'
-    ? html`<div class="pf-head"><h1>Статистика</h1><div class="seg" role="tablist">${[['7', '7 дней'], ['30', '30 дней'], ['0', 'Всё время']].map(([v, t]) => html`<a role="tab" aria-selected="${v === days ? 'true' : 'false'}" class="${v === days ? 'on' : ''}" href="/profile/stats/${statId}?days=${v}">${t}</a>`)}</div></div>`
+    ? pageCover({ title: 'Статистика', back: '/profile', icon: 'chart', tone: 'teal', below: seg([['7', '7 дней'], ['30', '30 дней'], ['0', 'Всё время']], days, (v) => `/profile/stats/${statId}?days=${v}`) })
     : sec === 'following'
-    ? html`<div class="pf-head"><h1>Подписки</h1></div>`
+    ? pageCover({ title: 'Подписки', back: '/profile', icon: 'users', tone: 'purple' })
     : sec === 'reputation'
-    ? html`<div class="pf-head"><h1>Репутация</h1></div>`
-    : html`<div class="pf-head"><h1>Мои объявления</h1></div>`; // 1.50.0: «Разместить» — в шапке сайта (на телефоне — «+» внизу), второй кнопки здесь нет
+    ? pageCover({ title: 'Репутация', back: '/profile', icon: 'star', tone: 'yellow' })
+    : pageCover({ title: 'Мои объявления', sub: [`${nActive} ${plural(nActive, 'активное', 'активных', 'активных')}`, ...(nPending ? [`${nPending} на проверке`] : [])].join(' · '), back: '/', icon: 'tag', tone: 'blue' });
   app.innerHTML = String(html`<div class="wrap pf2 ${hub ? 'is-hub' : 'is-section'}">
     <aside class="pf-side">
-      ${idCard(u, [[count('active'), plural(count('active'), 'активное', 'активных', 'активных'), '/profile?status=active'], [count('sold'), 'продано', '/profile?status=sold']])}
+      ${idCard(u, [[nActive, plural(nActive, 'активное', 'активных', 'активных'), '/profile?status=active'], [count('sold'), 'продано', '/profile?status=sold']])}
       ${profileNav()}
     </aside>
     <section class="pf-main">
-      ${sec === 'stats' ? html`<a class="pf-back always" href="/profile">${ic('left', 18, 2)}Мои объявления</a>` : sec === 'business' && bizSub ? html`<a class="pf-back always" href="/profile/business">${ic('left', 18, 2)}Для бизнеса</a>` : hub ? '' : html`<a class="pf-back" href="/profile">${ic('left', 18, 2)}Профиль</a>`}
       ${head}
       ${sec === 'listings' ? attention : ''}
       <div id="box"></div>

@@ -292,6 +292,8 @@ function pages(d) {
     ['favorites', '/favorites', d.buyer],
     ['messages', '/messages', d.buyer],
     ['chat', `/messages/${d.conv}`, d.buyer],
+    ['chat-rep', `/messages/${d.conv}`, d.buyer, 'rep'],
+    ['help-app', '/page/help', null, 'taps'],
     ['chat-deleted', `/messages/${d.convGone}`, d.buyer],
     // 1.38: быстрые вопросы покупателя — нажал, и вопрос ушёл продавцу
     ['chat-ask', `/messages/${d.conv}`, d.buyer, 'ask'],
@@ -472,6 +474,14 @@ async function main() {
         await ctx.route(/api-maps\.yandex\.ru/, (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: YMAPS_STUB }));
         // Плашку cookie показываем только на своей странице проверки, на остальных — выбор уже сделан.
         if (name !== 'cookie') await ctx.addInitScript(() => { try { localStorage.setItem('tg_cookie', 'necessary'); } catch { /* нет */ } });
+        // «…-app» — страница внутри приложения: мост TorganaApp и классы, которые ставит приложение (WebController.bootScript).
+        if (name.endsWith('-app')) {
+          await ctx.addInitScript(() => {
+            window.TorganaApp = { post: () => {} };
+            const mark = () => document.documentElement.classList.add('in-app', 'in-app-ios', 'in-app-native');
+            if (document.documentElement) mark(); else document.addEventListener('DOMContentLoaded', mark);
+          });
+        }
         const page = await ctx.newPage();
         const errors = [];
         page.on('pageerror', (e) => errors.push(`JS: ${e.message}`));
@@ -544,14 +554,24 @@ async function main() {
           if (!(await page.$('.pf-lockcov'))) errors.push('нет строки «Обложка и витрина — с тарифом»');
           if (/на Торгане с/.test(await page.textContent('#app'))) errors.push('осталось «на Торгане с»');
         } else if (open === 'hub') {
-          if ((await page.$$('.hub-tile')).length !== 4) errors.push('в «Помощи» не 4 темы');
-          if ((await page.$$('.hub-faq details')).length < 5) errors.push('нет частых вопросов');
-          await page.click('.hub-faq summary'); await page.waitForTimeout(200);
-          if (!(await page.isVisible('.hub-faq details[open] p'))) errors.push('вопрос не раскрылся');
+          // 27.11: обложка с поиском, шесть тем 2×3, частые вопросы, поиск прячет лишнее.
+          if ((await page.$$('.help-tiles .help-tile')).length !== 6) errors.push('в «Помощи» не 6 тем');
+          if ((await page.$$('.help-faq details')).length < 5) errors.push('нет частых вопросов');
+          if ((await page.$$('#app h1')).length !== 1) errors.push('в «Помощи» не один заголовок');
+          await page.click('.help-faq summary'); await page.waitForTimeout(200);
+          if (!(await page.isVisible('.help-faq details[open] p'))) errors.push('вопрос не раскрылся');
+          await page.fill('[data-help-find]', 'мошенник');
+          const vis = await page.$$eval('.help-tile', (a) => a.filter((x) => !x.hidden).map((x) => x.textContent));
+          if (vis.length !== 1 || !/Безопасность/.test(vis[0])) errors.push(`поиск «мошенник» показал не одну «Безопасность»: ${vis.join(' | ')}`);
+          await page.fill('[data-help-find]', 'ъъъ');
+          if (!(await page.isVisible('.help-none'))) errors.push('поиск без результата не предложил поддержку');
+          await page.fill('[data-help-find]', '');
           // Тупиков нет: каждая ссылка «Помощи» ведёт на настоящую страницу, а не на «не найдено».
-          for (const href of await page.$$eval('.hub a[href^="/"]', (a) => a.map((x) => x.getAttribute('href')))) {
+          for (const href of await page.$$eval('.help a[href^="/"]', (a) => a.map((x) => x.getAttribute('href')))) {
             const p2 = await page.context().newPage(); await p2.goto(srv.base + href, { waitUntil: 'networkidle' });
             if (/Такой страницы нет|Страница не найдена/.test(await p2.textContent('#app'))) errors.push(`«Помощь» ведёт в тупик: ${href}`);
+            if (href.startsWith('/page/') && (await p2.$$('#app h1')).length !== 1) errors.push(`${href}: заголовок не один`);
+            if (await p2.$('.help-nav, .help-crumbs, .doc-crumbs')) errors.push(`${href}: остались меню-чипсы или «хлебные крошки»`);
             await p2.close();
           }
         } else if (open === 'doc') {
@@ -644,6 +664,22 @@ async function main() {
           await page.click(`[data-step="${open.slice(5)}"]`);
           await page.waitForTimeout(400);
           if (!(await page.$(`.ed-step.cur`))) errors.push('шаг не открылся');
+        } else if (open === 'taps') {
+          // 27.11 (видео владельца: в приложении нажатие на тему не открывало её): касаниями по плиткам — тема открывается,
+          // заголовок обложки (его берёт приложение) меняется, «Другие темы» ведут дальше.
+          for (const [sel, title] of [['.help-tile[href="/page/sell"]', 'Как продавать'], ['.help-tiles.sm .help-tile[href="/page/deals"]', 'Сделки и репутация'],
+            ['.help-tiles.sm .help-tile[href="/page/safety"]', 'Безопасность'], ['.help-tiles.sm .help-tile[href="/page/support"]', 'Поддержка']]) {
+            await (vp.hasTouch ? page.tap(sel) : page.click(sel)); await page.waitForTimeout(400);
+            const t = await page.$eval('#app .pcover', (c) => c.dataset.title).catch(() => '');
+            if (t !== title) errors.push(`касание ${sel}: открылось «${t}», а не «${title}»`);
+          }
+          if (await page.isVisible('.pc-row')) errors.push('в приложении видна строка обложки — её рисует приложение');
+        } else if (open === 'rep') {
+          // 27.11: нажали на имя в шапке переписки — карточка репутации с уровнем, фактами и ссылкой на профиль.
+          await page.click('[data-rep]'); await page.waitForTimeout(400);
+          if (!(await page.isVisible('.rep-pop .rep-head'))) errors.push('по имени не открылась карточка репутации');
+          if (!(await page.$('.rep-pop a[href^="/u/"]'))) errors.push('в карточке нет ссылки на профиль');
+          if (!(await page.$('.chat-head .ch-item'))) errors.push('в шапке переписки нет объявления');
         } else if (open === '#gvbtn') {
           await page.click(open);
           await page.waitForTimeout(300);

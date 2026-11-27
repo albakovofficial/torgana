@@ -21,7 +21,7 @@ export let cleanup = null;
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 let restoreTo = null; // { y, n } — запись истории, на которую вернулись «Назад»/«Вперёд»
 export let backTo = null; // то же на время отрисовки страницы (читает лента)
-export let feedN = 0; // сколько карточек загрузила лента на текущей странице
+let feedN = 0; // сколько карточек загрузила лента на текущей странице
 function rememberPlace() {
   try { history.replaceState({ ...(history.state || {}), y: Math.round(window.scrollY), n: feedN }, ''); } catch { /* слишком часто — не важно */ }
 }
