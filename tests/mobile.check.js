@@ -316,6 +316,7 @@ function pages(d) {
     ['admin-user-gone', `/admin/u/${d.gone.user.id}`, d.admin],
     ['admin-log', '/admin?status=log', d.admin],
     ['admin-notify', '/admin?status=notify', d.admin],
+    ['admin-notify-texts', '/admin?status=notify#texts', d.admin, 'push-texts'], // 1.66.0: тексты push — открытый редактор
     ['admin-settings', '/admin?status=settings', d.admin], // 1.47.2: настройки — плитками
     ['admin-listings-sold', '/admin?status=sold', d.admin], // 1.47.2: статусы объявлений — вкладками
     ['admin-home', '/admin', d.admin, 'adm-home'], // 1.62.0: телефон — разделы списком; компьютер — очередь: список и объявление рядом
@@ -496,7 +497,12 @@ async function main() {
         if (open === 'menu') {
           await page.click('[data-menu]');
           await page.waitForTimeout(300);
-          if (!(await page.$('.modal.drawer .pf-nav'))) errors.push('меню ≡ не открылось');
+          if (!(await page.$('.modal.drawer .menu-tiles'))) errors.push('меню ≡ не открылось');
+          // 1.66.0, вариант A «Плитки»: шесть плиток у вошедшего, модерация — только модератору, «Выйти» — один раз.
+          const loggedIn = await page.$('.modal.drawer .menu-me');
+          if (loggedIn && (await page.$$('.menu-tile')).length < 5) errors.push('в меню ≡ меньше пяти плиток');
+          if ((await page.$$('.modal.drawer [data-logout]')).length > 1) errors.push('«Выйти» в меню ≡ больше одного раза');
+          if (name === 'menu-admin') { await page.waitForTimeout(400); if (!(await page.isVisible('.menu-mod [data-mod-sub]')) || (await page.textContent('[data-mod-sub]')) === 'Загружаем…') errors.push('у модератора нет плашки «Модерация» со счётчиками'); }
         } else if (open === 'code') {
           await page.evaluate(() => sessionStorage.setItem('tg_confirm', JSON.stringify({ email: 'new.user@test.local', next: '' })));
           await page.reload({ waitUntil: 'networkidle' });
@@ -580,13 +586,18 @@ async function main() {
           if ((await page.$$('.rules-list li .ban-t')).length < 10) errors.push('запрещённое не плитками с пояснением');
           if (!(await page.isVisible(vp.viewport.width <= 900 ? '.doc-toc-m' : '.doc-toc'))) errors.push('нет содержания');
         } else if (open === 'adm-home') {
+          // 1.66.0, вариант A «Пульт»: шесть плиток очередей; телефон — ниже площадка и настройки одним списком,
+          // компьютер — меню слева, следующие в очереди с решением и неделя. Своих «‹ Модерация» нет.
+          if ((await page.$$('.adm-tile')).length !== 6) errors.push(`плиток очередей не 6, а ${(await page.$$('.adm-tile')).length}`);
+          if (await page.$('.adm-up, .adm-back')) errors.push('лишняя ссылка «‹ Модерация» / «‹ Настройки»');
           if (vp.viewport.width <= 900) {
-            const n = (await page.$$('.adm-row')).length;
-            if (n !== 13) errors.push(`на главном экране модерации не 13 разделов, а ${n}`);
+            const n = (await page.$$('.adm-home-lists .adm-row')).length;
+            if (n !== 14) errors.push(`под плитками не 14 разделов и настроек, а ${n}`);
+            if (!(await page.isVisible('.pcover.adm-cover .pc-back'))) errors.push('нет «‹» в обложке');
           } else {
-            if ((await page.$$('.adm-nav a')).length !== 13) errors.push(`в меню модерации не 13 пунктов, а ${(await page.$$('.adm-nav a')).length}`);
-            if (!(await page.$('.adm-split .adm-q-row.on'))) errors.push('в очереди не выбрано объявление');
-            if (!(await page.$('.adm-pane-bar [data-restore]'))) errors.push('справа нет кнопки «Опубликовать»');
+            if ((await page.$$('.adm-nav a')).length !== 14) errors.push(`в меню модерации не 14 пунктов (с «Пультом»), а ${(await page.$$('.adm-nav a')).length}`);
+            if (!(await page.$('.adm-next [data-restore]'))) errors.push('в «Следующие в очереди» нет «Опубликовать»');
+            if (await page.isVisible('.adm-cover')) errors.push('на компьютере видна обложка с «‹» — слева и так меню');
           }
         } else if (open === 'step:2:more') {
           await page.click('[data-step="1"]');
@@ -680,6 +691,14 @@ async function main() {
           if (!(await page.isVisible('.rep-pop .rep-head'))) errors.push('по имени не открылась карточка репутации');
           if (!(await page.$('.rep-pop a[href^="/u/"]'))) errors.push('в карточке нет ссылки на профиль');
           if (!(await page.$('.chat-head .ch-item'))) errors.push('в шапке переписки нет объявления');
+        } else if (open === 'push-texts') {
+          // 1.66.0: тексты push — раскрыли первый, вставили подстановку, пример обновился; лишних «‹» нет.
+          await page.click('.pt-item summary'); await page.waitForTimeout(250);
+          if (!(await page.isVisible('.pt-item[open] .pt-banner'))) errors.push('редактор текста не раскрылся');
+          await page.fill('.pt-item[open] input[name=title]', 'Проверка {имя}'); await page.waitForTimeout(100);
+          const pv = await page.textContent('.pt-item[open] [data-pv-t]');
+          if (!/^Проверка \S/.test(pv) || pv.includes('{')) errors.push(`пример не подставился: «${pv}»`);
+          await page.fill('.pt-item[open] input[name=title]', ''); await page.waitForTimeout(100);
         } else if (open === '#gvbtn') {
           await page.click(open);
           await page.waitForTimeout(300);

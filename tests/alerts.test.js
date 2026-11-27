@@ -146,3 +146,61 @@ test('push модератору: новое на проверку и подде�
   const user = await anna.get('/api/me');
   assert.equal(user.status, 200);
 });
+
+// 1.66.0: все push — из одного каталога; модератор правит тексты и присылает себе пробные.
+test('каталог push: каждый ключ отправляется из кода, у каждого — пример без пустых подстановок', () => {
+  const fs = require('node:fs');
+  const { CATALOG } = require('../lib/push-texts');
+  const code = fs.readdirSync(path.join(__dirname, '..', 'lib')).filter((f) => f.endsWith('.js') && f !== 'push-texts.js')
+    .map((f) => fs.readFileSync(path.join(__dirname, '..', 'lib', f), 'utf8')).join('\n');
+  for (const c of CATALOG) {
+    assert.ok(code.includes(`'${c.key}'`), `уведомление ${c.key} нигде не отправляется — лишнее в каталоге`);
+  }
+  const keys = new Set(CATALOG.map((c) => c.key));
+  for (const m of code.matchAll(/alerts\.notify(?:Admins)?\(\s*(?:[^,'()]+,\s*)?(?:[^,'()]+\?\s*)?'([a-z-]+)'/g)) assert.ok(keys.has(m[1]), `в коде ${m[1]}, а в каталоге его нет`);
+  const texts = require('../lib/push-texts')({ db: { setting: () => null, saveSetting() {} } });
+  for (const it of texts.list()) assert.doesNotMatch(`${it.sample.title} ${it.sample.body}`, /\{|\}|«»/, `пример ${it.key}`);
+});
+
+test('тексты push: свой текст и «Стандартный», чужие подстановки — нельзя; пробное — только себе', async () => {
+  const list = (await admin.get('/api/admin/push/texts')).data;
+  assert.ok(list.items.length > 40 && list.groups.length === 6 && list.kinds.length === 12);
+  const rej = list.items.find((x) => x.key === 'rejected');
+  assert.deepEqual(rej.vars, ['объявление', 'причина']);
+  assert.equal((await boris.get('/api/admin/push/texts')).status, 403);
+  const bad = await admin.put('/api/admin/push/texts/rejected', { title: 'Исправьте объявление', body: '{цена}' });
+  assert.equal(bad.status, 400);
+  assert.match(bad.data.error, /Такой подстановки нет: \{цена\}/);
+  const ok = await admin.put('/api/admin/push/texts/rejected', { title: 'Исправьте объявление', body: '' });
+  assert.equal(ok.data.item.title, 'Исправьте объявление');
+  assert.equal(ok.data.item.sample.title, 'Исправьте объявление');
+  assert.equal(ok.data.item.sample.body, '«Велосипед детский»: контакты в тексте объявления', 'пустой текст — по умолчанию');
+  // Пробное — себе, с примером; открывает страницу уведомлений модерации.
+  const before = apple.to('admin').length;
+  assert.equal((await admin.post('/api/admin/push/test', { key: 'rejected' })).data.sent, 1);
+  const p = await waitPush((x) => x.title === 'Исправьте объявление', 'admin');
+  assert.equal(p.url, '/admin?status=notify');
+  assert.equal((await admin.post('/api/admin/push/test', { all: true })).data.sent, 15);
+  assert.equal(apple.to('admin').length, before + 16);
+  assert.equal((await admin.post('/api/admin/push/test', { key: 'нет-такого' })).status, 400);
+  // «Стандартный» — пустые поля; настоящее решение модерации идёт с текстом каталога.
+  assert.equal((await admin.put('/api/admin/push/texts/rejected', { title: '', body: '' })).data.item.title, '');
+  // Человек без iPhone: понятная подсказка, куда нажать.
+  const noPhone = await registerUser(srv.base, { name: 'Второй модератор', email: 'mod2@test.local', smtp });
+  const { DatabaseSync: D } = require('node:sqlite');
+  const db = new D(path.join(srv.tmp, 'data', 'torgana.db')); db.prepare('UPDATE users SET is_admin = 1 WHERE email = ?').run('mod2@test.local'); db.close();
+  const r = await noPhone.post('/api/admin/push/test', { key: 'adm-new' });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /Включить уведомления/);
+});
+
+test('переключатели людей: «Сделки» и «Бизнес и оплата» отдельно от «Мои объявления»', async () => {
+  const me = (await anna.get('/api/me')).data.user;
+  assert.equal(me.pushDeals, true);
+  assert.equal(me.pushMoney, true);
+  await anna.patch('/api/me', { pushModeration: false });
+  const after = (await anna.get('/api/me')).data.user;
+  assert.equal(after.pushModeration, false);
+  assert.equal(after.pushDeals, true, 'сделки не выключились вместе с объявлениями');
+  await anna.patch('/api/me', { pushModeration: true });
+});

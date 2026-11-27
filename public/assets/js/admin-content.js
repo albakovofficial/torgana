@@ -1,4 +1,5 @@
 // Модерация: реклама, жалобы на сделки, журнал, проверка объявления «от и до», поддержка.
+import { pageCover } from './cover.js';
 import { $, $$, CONDITION_LABEL, NF, S, api, app, ava, catName, esc, html, price, raw, shortWhen, subName, when } from './core.js';
 import { ic } from './icons.js';
 import { reasonModal, toast } from './ui.js';
@@ -37,7 +38,7 @@ export async function renderRepAdmin(box) {
 // ---------- журнал действий ----------
 const LOG_TEXT = {
   approved: 'Опубликовал объявление', restored: 'Восстановил объявление', 'appeal-approved': 'Одобрил апелляцию', 'appeal-denied': 'Отказал по апелляции',
-  'reports-dismissed': 'Закрыл жалобы на объявление', 'plan-gift': 'Подарил тариф', 'promo-gift': 'Подарил рекламу над поиском', 'boost-gift': 'Подарил продвижение в ленте', 'avatar-removed': 'Убрал фото профиля', 'user-blocked': 'Заблокировал пользователя', 'user-unblocked': 'Разблокировал пользователя',
+  'reports-dismissed': 'Закрыл жалобы на объявление', 'plan-gift': 'Подарил тариф', 'push-text': 'Изменил текст уведомления', 'promo-gift': 'Подарил рекламу над поиском', 'boost-gift': 'Подарил продвижение в ленте', 'avatar-removed': 'Убрал фото профиля', 'user-blocked': 'Заблокировал пользователя', 'user-unblocked': 'Разблокировал пользователя',
   'biz-verified': 'Подтвердил бизнес', 'biz-rejected': 'Отказал в подтверждении бизнеса', 'support-reply': 'Ответил в поддержке',
   'billing-settings': 'Изменил настройки оплаты', 'billing-prices': 'Изменил цены', 'payment-refund': 'Оформил возврат', 'promo-erid': 'Указал erid и запустил рекламу',
   'promo-stopped': 'Отключил рекламу над поиском', 'plan-stopped': 'Отключил тариф', 'boost-stopped': 'Отключил продвижение', 'user-deactivated': 'Временно удалил профиль', 'user-restored': 'Восстановил профиль', 'user-erased': 'Удалил профиль навсегда', 'seo-settings': 'Изменил настройки поиска и Метрики', 'ads-settings': 'Изменил настройки рекламы', 'shop-cleared': 'Очистил витрину магазина', 'starter-settings': 'Изменил бесплатный старт', 'issue-confirmed': 'Подтвердил жалобу по сделке', 'issue-dismissed': 'Закрыл жалобу по сделке', 'deal-counted': 'Засчитал подозрительную сделку', 'deal-dropped': 'Не засчитал подозрительную сделку', 'tm-verified': 'Выдал галочку бренда', 'tm-rejected': 'Вернул заявку на галочку на исправление', 'tm-doc-viewed': 'Открыл документ заявки на галочку'
@@ -192,8 +193,8 @@ export async function viewAdminListing(id) {
   setTitle(`Проверка: ${l.title}`);
   const nextUrl = d.next ? `/admin/l/${d.next}` : '/admin?status=pending';
   app.innerHTML = String(html`<div class="wrap mod-page">
+    ${pageCover({ title: 'Проверка объявления', back: `/admin?status=${back}`, icon: 'inbox', tone: 'blue' })}
     <div class="mod-top">
-      <a href="/admin?status=${back}" class="btn btn-soft btn-sm">${ic('left', 18)}К списку</a>
       <span class="tag ${l.status === 'active' ? 'accent' : l.status === 'rejected' ? 'danger' : ''}">${STATUS_LABEL[l.status]}</span>
       <span class="muted" style="font-size:14px">№ ${l.id}</span>
       <span style="flex:1"></span>

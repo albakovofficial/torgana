@@ -6,6 +6,7 @@ import { confirmModal, reasonModal, toast } from './ui.js';
 import { go, render, requireAuth, setTitle, viewNotFound } from './router.js';
 import { navLink } from './profile.js';
 import { verifiedSeal } from './badges.js';
+import { pageCover, tileIc } from './cover.js';
 import { renderAdsAdmin, renderUsersAdmin } from './admin-users.js';
 import { renderLogAdmin, renderModPane, renderOauthAdmin, renderRepAdmin, renderSiteAdmin, renderSupportAdmin } from './admin-content.js';
 import { renderAiAdmin, renderApnsAdmin, renderBackupAdmin, renderBillingAdmin, renderMailAdmin, renderNotifyAdmin, renderPaymentsAdmin, renderSeoAdmin, renderSourcesAdmin } from './admin-settings.js';
@@ -52,24 +53,27 @@ export const modButtons = (i) => html`
   ${i.reports ? html`<button class="btn btn-soft btn-sm" data-dismiss="${i.id}">Закрыть жалобы</button>` : ''}`;
 export const STATUS_LABEL = { pending: 'На проверке', scheduled: 'Запланировано', active: 'Опубликовано', rejected: 'Отклонено', sold: 'Продано', archived: 'Снято', deleted: 'Удалено автором' };
 
-// ---------- оболочка модерации (вариант C, 1.62.0) ----------
-// Компьютер: слева разделы, как в почте; у очередей — список и объявление рядом (renderListingsAdmin).
-// Телефон: главный экран модерации — список разделов со значками и счётчиками (renderAdminHome), в разделе — «‹ Модерация».
+// ---------- оболочка модерации (1.66.0, вариант A «Пульт» — выбор владельца 27.11) ----------
+// Главный экран — плитки «что ждёт решения» с числами; на телефоне ниже — разделы и настройки одним списком,
+// на компьютере — следующие в очереди и неделя. Компьютер: слева разделы, у очередей — список и объявление рядом.
+// Назад — одна стрелка: на телефоне — строка обложки (.pcover), в приложении — его родная шапка; своих «‹ Модерация» нет.
 // [ключ, значок, название, счётчик из /api/admin/stats, подпись на телефоне, цвет значка]
 const ADMIN_NAV = [
   ['Ждут решения', [['pending', 'inbox', 'На проверке', 'pending', 'новые и изменённые объявления', 'blue'], ['reports', 'flag', 'Жалобы', 'reports', 'на объявления от покупателей', 'red'],
-    ['appeals', 'reply', 'Апелляции', 'appeals', 'просят пересмотреть отказ', 'amber'], ['rep', 'star', 'Сделки', 'rep', 'жалобы по сделкам и накрутка', 'amber'],
+    ['appeals', 'reply', 'Апелляции', 'appeals', 'просят пересмотреть отказ', 'amber'], ['rep', 'handshake', 'Сделки', 'rep', 'жалобы по сделкам и накрутка', 'amber'],
     ['support', 'headset', 'Поддержка', 'support', 'вопросы пользователей', 'violet'], ['biz', 'shield', 'Бизнес', 'biz', 'проверка ИП, компаний и брендов', 'violet']]],
   ['Площадка', [['dash', 'chart', 'Сводка', '', 'очередь, графики, воронка продавцов', 'sky'], ['active', 'tag', 'Объявления', '', 'опубликованные, отклонённые, проданные', 'sky'],
     ['users', 'users', 'Люди', '', 'поиск, блокировка, модераторы', 'sky'], ['payments', 'card', 'Деньги', '', 'платежи, реклама, настройки оплаты', 'sky'],
     ['sources', 'trend', 'Откуда приходят', '', 'источники посетителей', 'sky'], ['log', 'list', 'Журнал действий', '', 'кто и что сделал в модерации', 'sky']]],
   ['', [['settings', 'gear', 'Настройки', '', 'почта, вход, приложение, копии', 'gray']]]
 ];
+// Цвет плитки обложки по цвету значка раздела.
+const TONE = { blue: 'blue', red: 'red', amber: 'yellow', violet: 'purple', sky: 'blue', gray: 'gray' };
 // Подразделы → пункт меню, который подсвечивается.
 const ADMIN_PARENT = { rejected: 'active', sold: 'active', archived: 'active', ads: 'payments', billing: 'payments', notify: 'settings', mail: 'settings', oauth: 'settings', apns: 'settings', ai: 'settings', seo: 'settings', backup: 'settings', site: 'settings' };
 const LISTING_STATUS_TABS = [['active', 'Опубликованные'], ['rejected', 'Отклонённые'], ['sold', 'Проданные'], ['archived', 'Снятые']];
 const MONEY_TABS = [['payments', 'Платежи'], ['ads', 'Реклама'], ['billing', 'Настройки оплаты']];
-const ADMIN_SETTINGS = [['notify', 'bell', 'Мои уведомления', 'Push и письма о новом'], ['mail', 'mail', 'Почта', 'Отправка писем, коды, очередь'], ['oauth', 'lock', 'Вход через сервисы', 'Яндекс ID и VK ID'], ['apns', 'phone', 'Приложение iPhone', 'Push через Apple, ссылки в приложение'],
+const ADMIN_SETTINGS = [['notify', 'bell', 'Уведомления', 'Push модератору, тексты, пробные'], ['mail', 'mail', 'Почта', 'Отправка писем, коды, очередь'], ['oauth', 'lock', 'Вход через сервисы', 'Яндекс ID и VK ID'], ['apns', 'phone', 'Приложение iPhone', 'Push через Apple, ссылки в приложение'],
   ['ai', 'sparkle', 'ИИ по фото', 'Заполнение объявления по фото'], ['seo', 'search', 'Поиск и статистика', 'Вебмастер, Метрика, карта сайта'], ['backup', 'shield', 'Копии и безопасность', 'Резервные копии базы, защита входа'], ['site', 'refresh', 'Версия сайта', 'Обновления и откат']];
 const NAV_ITEMS = ADMIN_NAV.flatMap((g) => g[1]);
 const adminLabel = (k) => { const x = NAV_ITEMS.find(([key]) => key === k) || ADMIN_SETTINGS.find(([key]) => key === k); return x ? x[2] : ({ rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые', ads: 'Реклама', billing: 'Настройки оплаты' }[k] || 'Модерация'); };
@@ -77,40 +81,64 @@ const LISTING_TABS = ['pending', 'reports', 'appeals', 'active', 'rejected', 'so
 const QUEUES = ['pending', 'reports', 'appeals'];
 // Как у телефона в вёрстке модерации (app.css, max-width: 900px).
 const isPhone = () => window.matchMedia('(max-width: 900px)').matches;
-export function adminShell(active, stats, body) {
+export function adminShell(active, stats, body, { title = '', back = '/admin' } = {}) {
   const on = ADMIN_PARENT[active] || active;
   const badge = (k) => (k && stats[k] ? html`<span class="badge">${stats[k]}</span>` : '');
+  // Обложка раздела: на телефоне — «‹» на главный экран модерации и заголовок; на компьютере её нет (слева меню).
+  const nav = NAV_ITEMS.find(([k]) => k === on) || ADMIN_SETTINGS.find(([k]) => k === active) || [];
+  const cover = active === 'home' ? '' : pageCover({ title: title || adminLabel(ADMIN_PARENT[active] && ADMIN_PARENT[active] !== 'settings' ? on : active), back, icon: nav[1] || 'shield', tone: TONE[nav[5]] || 'blue', cls: 'adm-cover' });
   return html`<div class="wrap adm">
     <aside class="adm-side">
-      <nav class="pf-nav adm-nav" aria-label="Разделы модерации">${ADMIN_NAV.map(([group, items]) => html`
+      <nav class="pf-nav adm-nav" aria-label="Разделы модерации">${navLink('/admin', 'home', 'Пульт', on === 'home')}${ADMIN_NAV.map(([group, items]) => html`
         ${group ? html`<div class="pf-nav-h">${group}</div>` : html`<div class="adm-nav-end"></div>`}
         ${items.map(([k, icon, label, cnt]) => navLink(`/admin?status=${k}`, icon, label, k === on, badge(cnt)))}`)}
       </nav>
     </aside>
     <section class="adm-main">
-      ${active === 'home' ? '' : html`<a class="adm-up" href="/admin">${ic('left', 18, 2.2)}Модерация</a>`}
+      ${cover}
       ${body}
     </section>
   </div>`;
 }
-// Телефон: главный экран — разделы списком, как в «Настройках» iPhone.
-function renderAdminHome(box, stats) {
-  box.innerHTML = String(html`<div class="adm-head"><h1>Модерация</h1></div>
-    ${ADMIN_NAV.map(([group, items]) => html`<section class="adm-list">${group ? html`<div class="adm-list-h">${group}</div>` : ''}
-      <div class="adm-rows">${items.map(([k, icon, label, cnt, sub, tone]) => html`<a class="adm-row" href="/admin?status=${k}"><span class="adm-row-ic ${tone}">${ic(icon, 19, 2)}</span>
-        <span class="adm-row-t"><b>${label}</b><small>${sub}</small></span>${cnt && stats[cnt] ? html`<em>${stats[cnt]}</em>` : ''}${ic('right', 18, 2)}</a>`)}</div></section>`)}`);
+// Главный экран — «Пульт»: плитки очередей с числами (пустые — бледнее), на телефоне ниже — разделы и настройки;
+// на компьютере — следующие в очереди с решением в одно касание и неделя (вся статистика — в «Сводке»).
+async function renderAdminHome(box, stats) {
+  const queues = ADMIN_NAV[0][1];
+  const waiting = queues.reduce((n, [, , , cnt]) => n + (stats[cnt] || 0), 0);
+  const [dash, next] = await Promise.all([api('GET', '/api/admin/dashboard'), api('GET', '/api/admin/listings?status=pending')]);
+  const week = dash.days.slice(-7);
+  const max = Math.max(1, ...week.map((d) => d.listings));
+  const row = ([k, icon, label, , sub, tone], n = 0) => html`<a class="adm-row" href="/admin?status=${k}"><span class="adm-row-ic ${tone || 'sky'}">${ic(icon, 19, 2)}</span>
+    <span class="adm-row-t"><b>${label}</b><small>${sub}</small></span>${n ? html`<em>${n}</em>` : ''}${ic('right', 18, 2)}</a>`;
+  box.innerHTML = String(html`${pageCover({ title: 'Модерация', sub: waiting ? `${waiting} ${plural(waiting, 'ждёт', 'ждут', 'ждут')} решения` : 'Всё разобрано', back: '/profile', icon: 'shield', tone: 'blue', cls: 'adm-cover home' })}
+    <div class="adm-head adm-home-h"><h1>Модерация</h1><span class="tag ${waiting ? 'accent' : ''}">${waiting ? `${waiting} ${plural(waiting, 'ждёт', 'ждут', 'ждут')} решения` : 'Всё разобрано'}</span></div>
+    <p class="muted adm-home-sub">Сегодня проверено ${dash.today.approved} · новых объявлений ${dash.today.listings} · среднее ожидание ${fmtDur(dash.speed.avg)}</p>
+    <div class="adm-tiles">${queues.map(([k, icon, label, cnt, , tone]) => html`<a class="adm-tile ${stats[cnt] ? '' : 'calm'}" href="/admin?status=${k}">
+      <span class="adm-tile-top">${tileIc(icon, TONE[tone], 20)}<b>${stats[cnt] || 0}</b></span><span class="adm-tile-t">${label}</span><small>${stats[cnt] ? 'ждут решения' : 'всё разобрано'}</small></a>`)}</div>
+    <div class="adm-home-grid">
+      <section class="panel adm-next"><div class="adm-next-h"><h2 class="h2">Следующие в очереди</h2>${next.items.length > 3 ? html`<a href="/admin?status=pending">Вся очередь · ${next.items.length}</a>` : ''}</div>
+        ${next.items.length ? next.items.slice(0, 3).map((i) => html`<div class="adm-next-i"><a class="adm-q-img" href="/admin/l/${i.id}">${i.photo ? html`<img src="${i.photo}" alt="" loading="lazy">` : svg(P.image, 22, 1.3)}</a>
+          <span class="adm-next-t"><a href="/admin/l/${i.id}"><b>${i.title}</b></a><small>${price(i.price, i.priceUnit)} · ${i.city} · ${i.user.name} · ${shortAgo(i.updatedAt)}</small>${checkChips(i)}</span>
+          <span class="adm-next-a"><button class="btn btn-accent btn-sm" data-restore="${i.id}">Опубликовать</button><button class="btn btn-danger btn-sm" data-reject="${i.id}">Отклонить</button></span></div>`)
+          : html`<p class="muted">Очередь пуста — все объявления проверены.</p>`}</section>
+      <section class="panel adm-week"><div class="adm-next-h"><h2 class="h2">За 7 дней</h2><a href="/admin?status=dash">Сводка</a></div>
+        <div class="adm-bars">${week.map((d, i) => html`<span title="${d.day}: ${d.listings}"><i style="height:${Math.round((d.listings / max) * 100)}%" class="${i === week.length - 1 ? 'on' : ''}"></i></span>`)}</div>
+        <p class="muted">Новых объявлений: ${week.reduce((n, d) => n + d.listings, 0)} · людей: ${week.reduce((n, d) => n + d.users, 0)}</p></section>
+    </div>
+    <div class="adm-home-lists">${ADMIN_NAV.slice(1, 2).map(([group, items]) => html`<section class="adm-list"><div class="adm-list-h">${group}</div><div class="adm-rows">${items.map((x) => row(x))}</div></section>`)}
+      <section class="adm-list"><div class="adm-list-h">Настройки</div><div class="adm-rows">${ADMIN_SETTINGS.map(([k, icon, t, sub]) => row([k, icon, t, '', k === 'mail' && !S.config.mail ? 'Не подключена — письма не уходят' : sub, 'gray']))}</div></section></div>`);
+  bindModActions(box, () => render());
 }
 // Раздел «Настройки» — плитки; внутри каждой настройки — ссылка назад.
 function renderSettingsHub(box) {
   box.innerHTML = String(html`<div class="adm-head"><h1>Настройки</h1></div>
     <div class="set-hub">${ADMIN_SETTINGS.map(([k, icon, t, sub]) => html`<a class="set-tile" href="/admin?status=${k}"><span class="set-tile-ic">${ic(icon, 22, 2)}</span><span class="set-tile-t"><b>${t}</b><small>${k === 'mail' && !S.config.mail ? 'Не подключена — письма не уходят' : sub}</small></span>${k === 'mail' && !S.config.mail ? html`<i class="set-tile-warn">${ic('warn', 14, 2.4)}</i>` : ''}${ic('right', 18, 2)}</a>`)}</div>`);
 }
-// Подвкладки: статусы объявлений, «Платежи / Настройки оплаты»; у настроек — «← Настройки».
+// Подвкладки: статусы объявлений, «Платежи / Реклама / Настройки оплаты».
 function adminSubNav(box, status) {
   const tabs = (list) => html`<nav class="seg adm-tabs" aria-label="Подразделы">${list.map(([k, t]) => html`<a href="/admin?status=${k}" class="${k === status ? 'on' : ''}"${k === status ? raw(' aria-current="page"') : ''}>${t}</a>`)}</nav>`;
   const headEl = $('.adm-head', box);
-  if (ADMIN_PARENT[status] === 'settings') box.insertAdjacentHTML('afterbegin', String(html`<a class="pf-back adm-back" href="/admin?status=settings">${ic('left', 18, 2)}Настройки</a>`));
-  else if (['active', 'rejected', 'sold', 'archived'].includes(status) && headEl) headEl.insertAdjacentHTML('afterend', String(tabs(LISTING_STATUS_TABS)));
+  if (['active', 'rejected', 'sold', 'archived'].includes(status) && headEl) headEl.insertAdjacentHTML('afterend', String(tabs(LISTING_STATUS_TABS)));
   else if (MONEY_TABS.some(([k]) => k === status) && headEl) headEl.insertAdjacentHTML('afterend', String(tabs(MONEY_TABS)));
 }
 // Длительность по-человечески: «40 мин», «3 ч 20 мин», «2 дн 4 ч».
@@ -127,11 +155,10 @@ function fmtDur(ms) {
 export async function viewAdmin(_, q) {
   if (!requireAuth()) return;
   if (!S.user.isAdmin) { viewNotFound(); return; }
-  // Без раздела: на телефоне — список разделов, на компьютере — очередь (если есть), иначе сводка.
-  let status = q.get('status') || (isPhone() ? 'home' : '');
+  // Без раздела — пульт (и на телефоне, и на компьютере).
+  let status = q.get('status') || 'home';
   if (status === 'listings') { go('/admin?status=active', true); return; }
   const [stats, dev] = await Promise.all([api('GET', '/api/admin/stats'), api('GET', '/api/admin/device').catch(() => null)]);
-  if (!status) status = stats.pending ? 'pending' : 'dash';
   setTitle(status === 'home' ? 'Модерация' : `${adminLabel(status)} — модерация`);
   const arm = dev && dev.required && !dev.armed ? html`<div class="banner warn adm-arm">${ic('shield', 20, 2)}<div><b>Защита входа в модерацию не включена.</b> Подтвердите это устройство кодом из письма — после этого на новых устройствах модерация будет открываться только по коду.</div><a class="btn btn-dark btn-sm" href="/admin/device">Включить</a></div>` : '';
   app.innerHTML = String(adminShell(status, stats, html`${arm}<div id="adm-box" class="adm-box"><div class="loader"></div></div>`));
