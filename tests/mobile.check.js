@@ -581,13 +581,18 @@ async function main() {
           if ((await page.$$('.rules-list li .ban-t')).length < 10) errors.push('запрещённое не плитками с пояснением');
           if (!(await page.isVisible(vp.viewport.width <= 900 ? '.doc-toc-m' : '.doc-toc'))) errors.push('нет содержания');
         } else if (open === 'adm-home') {
+          // 1.66.0, вариант A «Пульт»: шесть плиток очередей; телефон — ниже площадка и настройки одним списком,
+          // компьютер — меню слева, следующие в очереди с решением и неделя. Своих «‹ Модерация» нет.
+          if ((await page.$$('.adm-tile')).length !== 6) errors.push(`плиток очередей не 6, а ${(await page.$$('.adm-tile')).length}`);
+          if (await page.$('.adm-up, .adm-back')) errors.push('лишняя ссылка «‹ Модерация» / «‹ Настройки»');
           if (vp.viewport.width <= 900) {
-            const n = (await page.$$('.adm-row')).length;
-            if (n !== 13) errors.push(`на главном экране модерации не 13 разделов, а ${n}`);
+            const n = (await page.$$('.adm-home-lists .adm-row')).length;
+            if (n !== 14) errors.push(`под плитками не 14 разделов и настроек, а ${n}`);
+            if (!(await page.isVisible('.pcover.adm-cover .pc-back'))) errors.push('нет «‹» в обложке');
           } else {
-            if ((await page.$$('.adm-nav a')).length !== 13) errors.push(`в меню модерации не 13 пунктов, а ${(await page.$$('.adm-nav a')).length}`);
-            if (!(await page.$('.adm-split .adm-q-row.on'))) errors.push('в очереди не выбрано объявление');
-            if (!(await page.$('.adm-pane-bar [data-restore]'))) errors.push('справа нет кнопки «Опубликовать»');
+            if ((await page.$$('.adm-nav a')).length !== 14) errors.push(`в меню модерации не 14 пунктов (с «Пультом»), а ${(await page.$$('.adm-nav a')).length}`);
+            if (!(await page.$('.adm-next [data-restore]'))) errors.push('в «Следующие в очереди» нет «Опубликовать»');
+            if (await page.isVisible('.adm-cover')) errors.push('на компьютере видна обложка с «‹» — слева и так меню');
           }
         } else if (open === 'step:2:more') {
           await page.click('[data-step="1"]');

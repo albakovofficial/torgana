@@ -1,4 +1,5 @@
 // Модерация: реклама, жалобы на сделки, журнал, проверка объявления «от и до», поддержка.
+import { pageCover } from './cover.js';
 import { $, $$, CONDITION_LABEL, NF, S, api, app, ava, catName, esc, html, price, raw, shortWhen, subName, when } from './core.js';
 import { ic } from './icons.js';
 import { reasonModal, toast } from './ui.js';
@@ -192,8 +193,8 @@ export async function viewAdminListing(id) {
   setTitle(`Проверка: ${l.title}`);
   const nextUrl = d.next ? `/admin/l/${d.next}` : '/admin?status=pending';
   app.innerHTML = String(html`<div class="wrap mod-page">
+    ${pageCover({ title: 'Проверка объявления', back: `/admin?status=${back}`, icon: 'inbox', tone: 'blue' })}
     <div class="mod-top">
-      <a href="/admin?status=${back}" class="btn btn-soft btn-sm">${ic('left', 18)}К списку</a>
       <span class="tag ${l.status === 'active' ? 'accent' : l.status === 'rejected' ? 'danger' : ''}">${STATUS_LABEL[l.status]}</span>
       <span class="muted" style="font-size:14px">№ ${l.id}</span>
       <span style="flex:1"></span>

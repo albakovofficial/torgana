@@ -3146,9 +3146,36 @@ html.dw-open { overflow: hidden; }
 .adm-nav .badge { background: none; color: var(--text); font-size: 13px; font-weight: 800; min-width: 0; padding: 0; }
 .adm-nav-end { height: 1px; margin: 12px 10px 8px; background: var(--line); }
 .adm-head h1 { font-size: 30px; }
-.adm-up { display: none; }
 .adm-tabs { width: max-content; max-width: 100%; }
-.adm-back { margin-bottom: -6px; }
+/* 1.66.0: обложка раздела — только на телефоне (на компьютере слева меню); пульт — плитки очередей */
+.adm-main > .pcover.adm-cover, .adm-box > .pcover.adm-cover { display: none; }
+.adm-home-sub { margin: -6px 0 2px; font-size: 15px; }
+.adm-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.adm-tile { display: flex; flex-direction: column; gap: 2px; padding: 16px; border-radius: 22px; background: var(--card); box-shadow: 0 0 0 1px var(--line); color: var(--text); transition: box-shadow .15s, transform .15s; }
+.adm-tile:hover { color: var(--text); box-shadow: 0 0 0 1px var(--line-2), 0 8px 24px rgba(30, 42, 107, .08); }
+.adm-tile-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+.adm-tile-top .tile-ic { width: 40px; height: 40px; border-radius: 12px; }
+.adm-tile-top b { font-size: 32px; font-weight: 800; line-height: 1; letter-spacing: -.03em; }
+.adm-tile-t { font-size: 15.5px; font-weight: 700; }
+.adm-tile small { font-size: 13px; color: var(--muted); }
+.adm-tile.calm { opacity: .55; }
+.adm-home-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.adm-next, .adm-week { padding: 18px; }
+.adm-next-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.adm-next-h .h2 { margin: 0; font-size: 19px; }
+.adm-next-h a { font-size: 14px; font-weight: 600; color: var(--accent); }
+.adm-next-i { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.adm-next-i:first-of-type { border-top: 0; padding-top: 4px; }
+.adm-next-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.adm-next-t a { color: var(--text); } .adm-next-t small { font-size: 13px; color: var(--muted); }
+.adm-next-t .chk-list { margin-top: 6px; }
+.adm-next-a { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.adm-bars { display: flex; align-items: flex-end; gap: 8px; height: 120px; margin: 6px 0 12px; }
+.adm-bars span { flex: 1; height: 100%; display: flex; align-items: flex-end; }
+.adm-bars i { width: 100%; min-height: 6px; border-radius: 8px; background: var(--accent-soft-2); }
+.adm-bars i.on { background: var(--accent-fill); }
+.adm-week p { margin: 0; font-size: 14px; }
+.adm-home-lists { display: none; }
 /* Очереди на компьютере: список и объявление рядом */
 .adm-split { display: grid; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr); gap: 0; border-radius: 24px; box-shadow: 0 0 0 1px var(--line); background: var(--card); overflow: hidden; height: calc(100vh - 140px); min-height: 560px; }
 .adm-q { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
@@ -3208,9 +3235,15 @@ html.dw-open { overflow: hidden; }
 @media (max-width: 900px) {
   .adm { grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .adm-side { display: none; }
-  .adm-up { display: inline-flex; align-self: flex-start; align-items: center; gap: 4px; height: 36px; margin: -4px 0 -6px -6px; padding: 0 10px 0 4px; border-radius: 999px; color: var(--accent); font-size: 15px; font-weight: 650; }
-  .adm-up:hover { color: var(--accent); background: var(--accent-soft); }
   .adm-head h1 { font-size: 26px; }
+  /* Телефон: заголовок и «‹» — в обложке (в приложении — его шапка), свой h1 раздела не повторяем */
+  .adm-main > .pcover.adm-cover, .adm-box > .pcover.adm-cover { display: flex; margin: 0; }
+  .adm-main .adm-head h1, .adm-home-h, .adm-home-sub, .adm-home-grid { display: none; }
+  .adm-main .adm-head:not(:has(> :not(h1))) { display: none; }
+  .adm-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .adm-tile { padding: 14px; border-radius: 20px; }
+  .adm-tile-top b { font-size: 28px; }
+  .adm-home-lists { display: flex; flex-direction: column; gap: 16px; }
   .set-hub { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .set-tile { padding: 14px; border-radius: 20px; }
   .adm-tabs { width: auto; }
