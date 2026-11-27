@@ -293,6 +293,7 @@ function pages(d) {
     ['messages', '/messages', d.buyer],
     ['chat', `/messages/${d.conv}`, d.buyer],
     ['chat-rep', `/messages/${d.conv}`, d.buyer, 'rep'],
+    ['help-app', '/page/help', null, 'taps'],
     ['chat-deleted', `/messages/${d.convGone}`, d.buyer],
     // 1.38: быстрые вопросы покупателя — нажал, и вопрос ушёл продавцу
     ['chat-ask', `/messages/${d.conv}`, d.buyer, 'ask'],
@@ -473,6 +474,14 @@ async function main() {
         await ctx.route(/api-maps\.yandex\.ru/, (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: YMAPS_STUB }));
         // Плашку cookie показываем только на своей странице проверки, на остальных — выбор уже сделан.
         if (name !== 'cookie') await ctx.addInitScript(() => { try { localStorage.setItem('tg_cookie', 'necessary'); } catch { /* нет */ } });
+        // «…-app» — страница внутри приложения: мост TorganaApp и классы, которые ставит приложение (WebController.bootScript).
+        if (name.endsWith('-app')) {
+          await ctx.addInitScript(() => {
+            window.TorganaApp = { post: () => {} };
+            const mark = () => document.documentElement.classList.add('in-app', 'in-app-ios', 'in-app-native');
+            if (document.documentElement) mark(); else document.addEventListener('DOMContentLoaded', mark);
+          });
+        }
         const page = await ctx.newPage();
         const errors = [];
         page.on('pageerror', (e) => errors.push(`JS: ${e.message}`));
@@ -655,6 +664,16 @@ async function main() {
           await page.click(`[data-step="${open.slice(5)}"]`);
           await page.waitForTimeout(400);
           if (!(await page.$(`.ed-step.cur`))) errors.push('шаг не открылся');
+        } else if (open === 'taps') {
+          // 27.11 (видео владельца: в приложении нажатие на тему не открывало её): касаниями по плиткам — тема открывается,
+          // заголовок обложки (его берёт приложение) меняется, «Другие темы» ведут дальше.
+          for (const [sel, title] of [['.help-tile[href="/page/sell"]', 'Как продавать'], ['.help-tiles.sm .help-tile[href="/page/deals"]', 'Сделки и репутация'],
+            ['.help-tiles.sm .help-tile[href="/page/safety"]', 'Безопасность'], ['.help-tiles.sm .help-tile[href="/page/support"]', 'Поддержка']]) {
+            await (vp.hasTouch ? page.tap(sel) : page.click(sel)); await page.waitForTimeout(400);
+            const t = await page.$eval('#app .pcover', (c) => c.dataset.title).catch(() => '');
+            if (t !== title) errors.push(`касание ${sel}: открылось «${t}», а не «${title}»`);
+          }
+          if (await page.isVisible('.pc-row')) errors.push('в приложении видна строка обложки — её рисует приложение');
         } else if (open === 'rep') {
           // 27.11: нажали на имя в шапке переписки — карточка репутации с уровнем, фактами и ссылкой на профиль.
           await page.click('[data-rep]'); await page.waitForTimeout(400);
