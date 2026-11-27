@@ -28,7 +28,7 @@ test('понятный адрес: транслитерация названия
 test('объявление: заголовок, описание, canonical с названием, карточка для мессенджеров, разметка, снимок', async () => {
   const p = await page(`/l/${id}`);
   assert.equal(p.status, 200);
-  assert.match(p.html, /<title>Велосипед Stels Navigator 26&quot; — 15 000 ₽ в Казани \| Торгана<\/title>/);
+  assert.match(p.html, /<title>Купить велосипед Stels Navigator 26&quot; в Казани за 15 000 ₽ — Торгана<\/title>/);
   assert.match(p.html, new RegExp(`<link rel="canonical" href="https://torgana\\.test/l/${id}-velosiped-stels-navigator-26">`));
   assert.match(p.html, /<meta property="og:image" content="https:\/\/torgana\.test\/assets\/og\.jpg">/, 'без фото — фирменная картинка');
   assert.match(p.html, /<meta property="og:type" content="product">/);
@@ -54,7 +54,7 @@ test('раздел по городу и по России; несуществу�
   assert.equal(p.status, 200);
   assert.match(p.html, /<h1>Хобби и отдых в Казани<\/h1>/);
   assert.match(p.html, new RegExp(`href="/l/${id}-velosiped-stels-navigator-26"`));
-  assert.match(p.html, /<title>Хобби и отдых в Казани: купить, 1 объявление, цена 15\s000\s₽ \| Торгана<\/title>/);
+  assert.match(p.html, /<title>Купить товары для хобби и отдыха в Казани — 1 объявление, цена 15\s000\s₽(?: \| Торгана)?<\/title>/);
   assert.match((await page('/c/hobby')).html, /<h1>Хобби и отдых по всей России<\/h1>/);
   assert.match((await page('/c/home/kazan')).html, /<meta name="robots" content="noindex">/, 'пустой раздел не индексируем');
   assert.equal((await page('/c/hobby/atlantida')).status, 404);
@@ -99,18 +99,18 @@ test('1.33: разделы второго уровня, страницы пом�
   const cars = await publish(seller, admin, { title: 'Toyota Camry 2.5', category: 'transport', subcategory: 'cars', attrs: { brand: 'Toyota', model: 'Camry', year: 2018, mileage: 86500, gearbox: 'Автомат' }, city: 'Москва', price: 2350000, description: 'Один владелец, обслуживание у дилера.' });
   // объявление: характеристики в заголовке и описании, марка и свойства в разметке, путь через раздел
   const l = await page(`/l/${cars}`);
-  assert.match(l.html, /<title>Toyota Camry · 2018 · автомат, 86 500 км — 2 350 000 ₽ в Москве[^<]*<\/title>|<title>Toyota Camry · 2018 · автомат[^<]*в Москве/);
+  assert.match(l.html, /<title>Купить Toyota Camry · 2018 · автомат[^<]*в Москве за 2 350 000 ₽[^<]*<\/title>/);
   const ld = JSON.parse(/<script type="application\/ld\+json">(.+?)<\/script>/.exec(l.html)[1]);
   assert.equal(ld.brand.name, 'Toyota');
   assert.ok(ld.additionalProperty.some((x) => x.name === 'Пробег'));
   assert.match(l.html, /href="\/c\/transport\/cars\/moskva"/);
-  assert.match(l.html, /Объявление проверено модератором/);
+  assert.match(l.html, /Проверено модератором, напишите продавцу в чате/);
   // раздел второго уровня и он же по городу
   const s1 = await page('/c/transport/cars');
   assert.equal(s1.status, 200);
   assert.match(s1.html, /<h1>Автомобили по всей России<\/h1>/);
   const s2 = await page('/c/transport/cars/moskva');
-  assert.match(s2.html, /<title>Автомобили в Москве: купить, 1 объявление, цена 2\s350\s000\s₽ \| Торгана<\/title>/);
+  assert.match(s2.html, /<title>Купить автомобиль в Москве — 1 объявление, цена 2\s350\s000\s₽(?: \| Торгана)?<\/title>/);
   assert.match(s2.html, /"@type":"ItemList"/);
   assert.equal((await page('/c/transport/flats')).status, 404, 'раздел другой категории — 404');
   assert.equal((await page('/c/transport/cars/atlantida')).status, 404);
@@ -183,7 +183,7 @@ describe('разделы, 301/410, фид, IndexNow', () => {
     const jobs = await publish(seller, admin, { title: 'Курьер', category: 'jobs', subcategory: 'vacancies', attrs: { schedule: 'Сменный' }, city: 'Казань', price: 60000, description: 'Работа курьером.' });
     assert.ok(jobs); assert.ok((await client(srv.base).get('/api/sections/info?category=jobs')).data.faq.some((x) => x.q === 'Вакансии проверяются?'));
     const p = await page('/c/electronics/phones/kazan');
-    assert.match(p.html, /<title>Телефоны в Казани: купить, 3 объявления, цены от 10\s000 ₽ \| Торгана<\/title>/);
+    assert.match(p.html, /<title>Купить телефон в Казани — 3 объявления от 10\s000 ₽ \| Торгана<\/title>/);
     assert.match(p.html, /<h2>Частые вопросы<\/h2><h3>Можно ли купить с доставкой\?<\/h3>/);
     const ld = [...p.html.matchAll(/<script type="application\/ld\+json">(.+?)<\/script>/g)].map((m) => JSON.parse(m[1]));
     const faq = ld.find((x) => x['@type'] === 'FAQPage');
@@ -254,4 +254,13 @@ describe('разделы, 301/410, фид, IndexNow', () => {
     assert.ok(st.sent >= 4);
     assert.equal(st.error, '');
   });
+});
+
+test('1.65.0: файлы подтверждения прав (Яндекс Вебмастер для https, Mail.ru) открываются из корня сайта', async () => {
+  const y = await fetch(`${srv.base}/yandex_215c4b475a6d1512.html`);
+  assert.equal(y.status, 200);
+  assert.match(await y.text(), /Verification: 215c4b475a6d1512/);
+  const m = await fetch(`${srv.base}/mailru-verificationd96e121c6417e858.html`);
+  assert.equal(m.status, 200);
+  assert.match(await m.text(), /mailru-verification: d96e121c6417e858/);
 });

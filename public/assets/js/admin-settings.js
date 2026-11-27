@@ -204,8 +204,9 @@ export async function renderSeoAdmin(box) {
           ${step(2, 'Карта сайта', html`В Вебмастере: «Индексирование → Файлы Sitemap» → добавьте <code>${d.sitemap}</code>. Она обновляется сама.`)}
           ${step(3, 'Яндекс Товары', html`В Вебмастере: «Товары и цены → Фиды» → «Добавить фид» → <code>${d.feed}</code>. Объявления-вещи с ценой и фото появятся в товарном блоке выдачи. Фид обновляется раз в час.`)}
           ${step(4, 'Метрика', html`На <a href="https://metrika.yandex.ru" target="_blank" rel="noopener" style="text-decoration:underline">metrika.yandex.ru</a> создайте счётчик для torgana.ru без Вебвизора → номер счётчика — сюда.`)}
-          ${step(5, 'Google', 'По желанию: Search Console → «Тег HTML» → код сюда, затем добавьте ту же карту сайта.')}
-          ${step(6, 'Карта объявлений', html`В <a href="https://developer.tech.yandex.ru" target="_blank" rel="noopener" style="text-decoration:underline">Кабинете разработчика Яндекса</a> → «Подключить API» → «JavaScript API и HTTP Геокодер» → в ограничениях укажите сайт torgana.ru → ключ сюда.`)}
+          ${step(5, 'Mail.ru', html`Права на torgana.ru в Постмастере и Вебмастере Mail.ru подтверждаются файлом в корне сайта (<code>public/mailru-verification….html</code>, он уже на месте). В <a href="https://webmaster.mail.ru" target="_blank" rel="noopener" style="text-decoration:underline">Вебмастере Mail.ru</a> добавьте ту же карту сайта.`)}
+          ${step(6, 'Google', 'По желанию: Search Console → «Тег HTML» → код сюда, затем добавьте ту же карту сайта.')}
+          ${step(7, 'Карта объявлений', html`В <a href="https://developer.tech.yandex.ru" target="_blank" rel="noopener" style="text-decoration:underline">Кабинете разработчика Яндекса</a> → «Подключить API» → «JavaScript API и HTTP Геокодер» → в ограничениях укажите сайт torgana.ru → ключ сюда.`)}
         </ol>
         <div class="oa-copy"><code>${d.robots}</code><a class="btn btn-soft btn-sm" href="${d.robots}" target="_blank" rel="noopener">Открыть</a></div>
         <div class="seo-now"><b>IndexNow</b> — Яндекс узнаёт о новых, изменённых и снятых объявлениях за минуты, настраивать ничего не нужно.
