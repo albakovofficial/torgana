@@ -1,0 +1,14 @@
+name: httpscheck
+on: workflow_dispatch
+jobs:
+  c:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          for u in http://torgana.ru/ http://www.torgana.ru/ https://www.torgana.ru/ https://torgana.ru/ http://torgana.ru/page/help; do
+            echo "== $u"; curl -s -o /dev/null -m 15 -w '%{http_code} -> %{redirect_url}\n' "$u" || echo fail
+          done
+          echo "== HSTS / сертификат"; curl -sI -m 15 https://torgana.ru/ | grep -i "strict-transport\|^HTTP" || true
+          echo | openssl s_client -servername torgana.ru -connect torgana.ru:443 2>/dev/null | openssl x509 -noout -subject -issuer -enddate -ext subjectAltName
+          echo "== robots"; curl -s -m 15 https://torgana.ru/robots.txt | grep -i "host\|sitemap"
+          echo "== canonical"; curl -s -m 15 https://torgana.ru/ | grep -oE '<link rel="canonical"[^>]*>|og:url" content="[^"]*"' | head -3
