@@ -7,7 +7,7 @@ import { firstChip, verifiedSeal } from './badges.js';
 
 // ================= репутация (1.46.0): сделки, а не оценки =================
 // 1.59.0: уровень — объёмная монета: Новичок — бронза с листком, Надёжный — изумруд со щитом, Опытный — золото
-// со звездой, Мастер Торганы — бриллиант с короной. Те же монеты — картинками в приложении (Assets Level0–3).
+// с рукопожатием (1.66.0, было со звездой), Мастер Торганы — бриллиант с короной. Те же монеты — картинками в приложении (Assets Level0–3).
 // Цвета: [светлый, середина, тёмный, обод светлый, обод тёмный, знак].
 let medalN = 0;
 const MEDAL = [['#F6C9A0', '#C7834F', '#7A4320', '#FFE2C6', '#B06D3C', '#FFF4EA'], ['#B8F5C9', '#2FBF6A', '#0B6B3A', '#D8FFE3', '#22A35A', '#FFFFFF'],
@@ -15,7 +15,7 @@ const MEDAL = [['#F6C9A0', '#C7834F', '#7A4320', '#FFE2C6', '#B06D3C', '#FFF4EA'
 const MEDAL_MARK = [
   (g) => `<path d="M16.8 7.2c-5.6-.2-9.4 2.3-9.6 6.6 0 .9.2 1.7.6 2.4 1.1-2.6 3.2-4.3 5.9-5.4-2.4 1.5-4.2 3.4-5.1 5.9.7.4 1.5.5 2.3.5 4.4-.1 6.2-4 5.9-10z" fill="${g}"/>`,
   (g, d) => `<path d="M12 6.3l5.2 1.9v3.7c0 3.2-2.2 5.6-5.2 6.6-3-1-5.2-3.4-5.2-6.6V8.2z" fill="${g}"/><path d="M9.6 12.2l1.7 1.7 3.2-3.3" fill="none" stroke="${d}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`,
-  (g) => `<path d="M12 6.6l1.7 3.4 3.8.6-2.7 2.6.6 3.7L12 15.1l-3.4 1.8.6-3.7-2.7-2.6 3.8-.6z" fill="${g}"/>`,
+  (g) => `<g transform="translate(5.1 4.9) scale(.575)" fill="none" stroke="${g}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 17l2 2a1.4 1.4 0 0 0 2-2"/><path d="M14 14l2.5 2.5a1.4 1.4 0 0 0 2-2l-3.9-3.9a2.8 2.8 0 0 0-4 0l-.9.9a1.4 1.4 0 0 1-2-2l2.8-2.8a4 4 0 0 1 4.8-.6l.5.3a3 3 0 0 0 2 .4H21v8h-2M3 4h3l4 4M3 13h3l1.5 1.5"/><path d="M8 17l1.5 1.5a1.4 1.4 0 0 0 2-2"/></g>`, // «Опытный» — рукопожатие (1.66.0)
   (g) => `<path d="M7.2 15l-.7-5.8 3.3 2.5L12 7.6l2.2 4.1 3.3-2.5-.7 5.8z" fill="${g}"/><rect x="7.3" y="15.9" width="9.4" height="1.6" rx=".8" fill="${g}"/>`];
 export function levelMedal(level = 0, size = 20) {
   const k = `md${++medalN}`; const [light, mid, dark, rimL, rimD, glyph] = MEDAL[level] || MEDAL[0];
@@ -52,7 +52,7 @@ export function repCard(r, compact = false) {
       ${r.reply && r.reply.time ? html`<span><b>${REPLY_TXT[r.reply.time]}</b>ответ</span>` : ''}
       <span class="${r.complaints ? 'bad' : ''}"><b>${r.complaints}</b>${plural(r.complaints, 'жалоба', 'жалобы', 'жалоб')}</span></div>`}
     ${tags.length ? html`<div class="rep-tags">${tags.map((t) => html`<span>${t.tag}<b>${t.n}</b></span>`)}</div>` : ''}
-    ${!compact && r.marks.length ? html`<div class="rep-marks">${r.marks.map((m) => html`<span>${ic('star', 13, 2)}${MARKS[m]}</span>`)}</div>` : ''}
+    ${!compact && r.marks.length ? html`<div class="rep-marks">${r.marks.map((m) => html`<span>${ic('check', 13, 2.4)}${MARKS[m]}</span>`)}</div>` : ''}
   </div>`;
 }
 // Подсказка: как считается (одна строка, без простыни).

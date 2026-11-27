@@ -58,7 +58,7 @@ export function setNotices(n) {
 // 1.47.2: у всех уведомлений один вид — картинка (фото объявления или знак Торганы) и цветной значок события в углу.
 // Цвет события (1.25): зелёный — опубликовано, красный — нужно исправить, жёлтый — сроки,
 // синий — оплата и возвраты, фиолетовый — продвижение.
-const NOTICE_COLOR = { check: 'green', warn: 'red', clock: 'amber', star: 'amber', store: 'amber', card: 'blue', megaphone: 'violet', tag: 'violet', bolt: 'violet', down: 'green', shield: 'green' };
+const NOTICE_COLOR = { check: 'green', warn: 'red', clock: 'amber', handshake: 'amber', store: 'amber', card: 'blue', megaphone: 'violet', tag: 'violet', bolt: 'violet', down: 'green', shield: 'green' };
 const noticeColor = (n) => (n.tone === 'bad' ? 'red' : NOTICE_COLOR[n.icon] || (n.tone === 'ok' ? 'green' : n.tone === 'wait' ? 'amber' : 'gray'));
 function noticeDay(ts) {
   const d = new Date(ts); const t = new Date();

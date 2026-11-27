@@ -59,7 +59,7 @@ const TOPICS = [
   { k: 'search', t: 'Как искать', sub: 'Пишите, как сказали бы человеку', icon: 'search', tone: 'blue', more: ['safety', 'sell'] },
   { k: 'sell', t: 'Как продавать', sub: 'Фото, цена, проверка модератором', icon: 'tag', tone: 'red', more: ['rules', 'deals'] },
   { k: 'safety', t: 'Безопасность', sub: 'Как не попасться мошенникам', icon: 'shield', tone: 'purple', more: ['deals', 'support'] },
-  { k: 'deals', t: 'Сделки и репутация', sub: 'Уровни, подтверждение, жалобы', icon: 'star', tone: 'yellow', more: ['safety', 'sell'] },
+  { k: 'deals', t: 'Сделки и репутация', sub: 'Уровни, подтверждение, жалобы', icon: 'handshake', tone: 'yellow', more: ['safety', 'sell'] },
   { k: 'rules', t: 'Правила площадки', sub: 'Что можно и нельзя размещать', icon: 'list', tone: 'teal' },
   { k: 'support', t: 'Поддержка', sub: 'Чат с людьми, почта', icon: 'chat', tone: 'green', more: ['safety', 'rules'] }
 ];

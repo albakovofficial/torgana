@@ -127,7 +127,7 @@ function profileNav(full = false) {
     ${item('/messages', 'chat', 'Сообщения', 'msg', html`<span class="badge ${S.unread ? '' : 'hidden'}" data-unread>${S.unread}</span>`)}
     ${item('/favorites', 'heart', 'Избранное', 'fav')}
     ${item('/profile/following', 'users', 'Подписки', 'following', html`<span class="badge ${S.fresh && S.fresh.follow ? '' : 'hidden'}" data-fresh-follow>${S.fresh ? S.fresh.follow || 0 : 0}</span>`)}
-    ${item('/profile/reputation', 'star', 'Репутация', 'rep', u.rep && u.rep.level ? html`<span class="nav-rating">${levelMedal(u.rep.level, 14)}</span>` : '')}
+    ${item('/profile/reputation', 'handshake', 'Репутация', 'rep', u.rep && u.rep.level ? html`<span class="nav-rating">${levelMedal(u.rep.level, 14)}</span>` : '')}
     ${PAY ? item('/profile/business', 'store', 'Для бизнеса', 'business') : ''}
     ${full ? '' : html`<hr>${item('/profile/settings', 'gear', 'Настройки', 'settings')}`}
     ${item('/messages/support', 'headset', 'Поддержка', 'support')}
@@ -248,7 +248,7 @@ export async function viewProfile(section, q) {
     : sec === 'following'
     ? pageCover({ title: 'Подписки', back: '/profile', icon: 'users', tone: 'purple' })
     : sec === 'reputation'
-    ? pageCover({ title: 'Репутация', back: '/profile', icon: 'star', tone: 'yellow' })
+    ? pageCover({ title: 'Репутация', back: '/profile', icon: 'handshake', tone: 'yellow' })
     : pageCover({ title: 'Мои объявления', sub: [`${nActive} ${plural(nActive, 'активное', 'активных', 'активных')}`, ...(nPending ? [`${nPending} на проверке`] : [])].join(' · '), back: '/', icon: 'tag', tone: 'blue' });
   app.innerHTML = String(html`<div class="wrap pf2 ${hub ? 'is-hub' : 'is-section'}">
     <aside class="pf-side">
