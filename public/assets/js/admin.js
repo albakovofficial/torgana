@@ -69,7 +69,7 @@ const ADMIN_NAV = [
 const ADMIN_PARENT = { rejected: 'active', sold: 'active', archived: 'active', ads: 'payments', billing: 'payments', notify: 'settings', mail: 'settings', oauth: 'settings', apns: 'settings', ai: 'settings', seo: 'settings', backup: 'settings', site: 'settings' };
 const LISTING_STATUS_TABS = [['active', 'Опубликованные'], ['rejected', 'Отклонённые'], ['sold', 'Проданные'], ['archived', 'Снятые']];
 const MONEY_TABS = [['payments', 'Платежи'], ['ads', 'Реклама'], ['billing', 'Настройки оплаты']];
-const ADMIN_SETTINGS = [['notify', 'bell', 'Мои уведомления', 'Push и письма о новом'], ['mail', 'mail', 'Почта', 'Отправка писем, коды, очередь'], ['oauth', 'lock', 'Вход через сервисы', 'Яндекс ID и VK ID'], ['apns', 'phone', 'Приложение iPhone', 'Push через Apple, ссылки в приложение'],
+const ADMIN_SETTINGS = [['notify', 'bell', 'Уведомления', 'Push модератору, тексты, пробные'], ['mail', 'mail', 'Почта', 'Отправка писем, коды, очередь'], ['oauth', 'lock', 'Вход через сервисы', 'Яндекс ID и VK ID'], ['apns', 'phone', 'Приложение iPhone', 'Push через Apple, ссылки в приложение'],
   ['ai', 'sparkle', 'ИИ по фото', 'Заполнение объявления по фото'], ['seo', 'search', 'Поиск и статистика', 'Вебмастер, Метрика, карта сайта'], ['backup', 'shield', 'Копии и безопасность', 'Резервные копии базы, защита входа'], ['site', 'refresh', 'Версия сайта', 'Обновления и откат']];
 const NAV_ITEMS = ADMIN_NAV.flatMap((g) => g[1]);
 const adminLabel = (k) => { const x = NAV_ITEMS.find(([key]) => key === k) || ADMIN_SETTINGS.find(([key]) => key === k); return x ? x[2] : ({ rejected: 'Отклонённые', sold: 'Проданные', archived: 'Снятые', ads: 'Реклама', billing: 'Настройки оплаты' }[k] || 'Модерация'); };

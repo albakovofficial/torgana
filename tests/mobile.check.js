@@ -316,6 +316,7 @@ function pages(d) {
     ['admin-user-gone', `/admin/u/${d.gone.user.id}`, d.admin],
     ['admin-log', '/admin?status=log', d.admin],
     ['admin-notify', '/admin?status=notify', d.admin],
+    ['admin-notify-texts', '/admin?status=notify#texts', d.admin, 'push-texts'], // 1.66.0: тексты push — открытый редактор
     ['admin-settings', '/admin?status=settings', d.admin], // 1.47.2: настройки — плитками
     ['admin-listings-sold', '/admin?status=sold', d.admin], // 1.47.2: статусы объявлений — вкладками
     ['admin-home', '/admin', d.admin, 'adm-home'], // 1.62.0: телефон — разделы списком; компьютер — очередь: список и объявление рядом
@@ -680,6 +681,14 @@ async function main() {
           if (!(await page.isVisible('.rep-pop .rep-head'))) errors.push('по имени не открылась карточка репутации');
           if (!(await page.$('.rep-pop a[href^="/u/"]'))) errors.push('в карточке нет ссылки на профиль');
           if (!(await page.$('.chat-head .ch-item'))) errors.push('в шапке переписки нет объявления');
+        } else if (open === 'push-texts') {
+          // 1.66.0: тексты push — раскрыли первый, вставили подстановку, пример обновился; лишних «‹» нет.
+          await page.click('.pt-item summary'); await page.waitForTimeout(250);
+          if (!(await page.isVisible('.pt-item[open] .pt-banner'))) errors.push('редактор текста не раскрылся');
+          await page.fill('.pt-item[open] input[name=title]', 'Проверка {имя}'); await page.waitForTimeout(100);
+          const pv = await page.textContent('.pt-item[open] [data-pv-t]');
+          if (!/^Проверка \S/.test(pv) || pv.includes('{')) errors.push(`пример не подставился: «${pv}»`);
+          await page.fill('.pt-item[open] input[name=title]', ''); await page.waitForTimeout(100);
         } else if (open === '#gvbtn') {
           await page.click(open);
           await page.waitForTimeout(300);

@@ -355,45 +355,86 @@ export async function viewDevice() {
   };
 }
 
-// ---------- мои уведомления ----------
-export async function renderNotifyAdmin(box) {
-  const cur = await api('GET', '/api/admin/me/notify');
+// ---------- уведомления (1.66.0) ----------
+// Одна страница: «Мне» — какие push присылать этому модератору, пробное у каждого вида, письма о новом;
+// «Тексты» — все push людям и модераторам: текст по умолчанию, свой текст, пробное себе. Каталог — lib/push-texts.js.
+export async function renderNotifyAdmin(box, tab = location.hash === '#texts' ? 'texts' : 'me') {
+  const [cur, d] = await Promise.all([api('GET', '/api/admin/me/notify'), api('GET', '/api/admin/push/texts')]);
   const MODES = [['instant', 'Сразу', 'Одним письмом в течение минуты после нового'], ['hourly', 'Раз в час', 'Сводка всего нового за час'], ['off', 'Не присылать', 'Смотрю сам на сайте']];
   const KINDS = [['pending', 'Новые объявления на проверку', 'И изменённые — после правки они снова в очереди'], ['reports', 'Жалобы на объявления', ''], ['support', 'Сообщения в поддержку', 'Только те, что ещё никто не прочитал']];
-  // 1.47.2: push — сразу, отдельно от писем; 1.60.0: только в приложение Торгана на iPhone.
-  // 1.53.0: + новые продавцы, долгое ожидание, апелляции, медали, итоги дня, сбои сайта (порядок — как на сервере).
-  const PUSH = [['pending', 'Новые и изменённые объявления', 'Не чаще раза в 2 минуты — со счётчиком очереди'],
-    ['sellers', 'Новые продавцы', 'Первое объявление человека — вместо обычного «на проверку»'],
-    ['waiting', 'Объявления долго ждут', 'Если ждут проверки дольше часа — днём, не чаще раза в час'],
-    ['appeals', 'Апелляции', 'Продавец оспаривает отказ'], ['reports', 'Жалобы на объявления', ''], ['support', 'Сообщения в поддержку', ''],
-    ['biz', 'Проверка бизнеса и галочки бренда', 'Новые заявки'], ['rep', 'Репутация', 'Жалобы по сделкам и подозрительные сделки'], ['pay', 'Оплаты', 'Каждая прошедшая оплата'],
-    ['medals', 'Медали «Один из первых»', 'Медаль № 1, 10, 50, 100, 250, 500, 750, 900 и 1000'],
-    ['digest', 'Итоги дня', 'В 21:00 по Москве: регистрации, объявления, проверка, оплаты'],
-    ['ops', 'Сбои сайта', 'Резервные копии, место на диске, почта, ошибки сервера']];
-  box.innerHTML = String(html`<div class="adm-head"><h1>Мои уведомления</h1></div>
-    <form class="panel nt-form" id="ntp" style="margin-bottom:16px">
-      <div><h2 class="h2">Push — сразу в приложение</h2><p class="muted" style="margin:4px 0 0">Приходят в приложение Торгана на iPhone, если в нём включены уведомления. Ваши собственные действия не присылаем.</p></div>
-      <div class="nt-kinds">${PUSH.map(([k, t, sub]) => html`<label class="switch"><span>${t}${sub ? html`<small>${sub}</small>` : ''}</span><input type="checkbox" name="push" value="${k}" ${cur.push.includes(k) ? raw('checked') : ''}><span class="track"></span></label>`)}</div>
-    </form>
-    ${S.config.mail ? '' : html`<div class="banner warn" style="margin-bottom:16px">Почта ещё не подключена — письма начнут приходить после настройки в разделе <a href="/admin?status=mail" style="text-decoration:underline">«Почта»</a>.</div>`}
-    <form class="panel nt-form" id="nt">
-      <div><h2 class="h2">Письма — как часто</h2><p class="muted" style="margin:4px 0 0">Письма приходят на ${S.user.email}. У каждого модератора — свои настройки.</p></div>
-      <div class="nt-modes" role="radiogroup" aria-label="Как часто">${MODES.map(([k, t, sub]) => html`<label class="nt-mode"><input type="radio" name="mode" value="${k}" ${cur.mode === k ? raw('checked') : ''}><span><b>${t}</b><small>${sub}</small></span></label>`)}</div>
-      <div class="nt-kinds ${cur.mode === 'off' ? 'off' : ''}"><h2 class="h2">О чём</h2>
-        ${KINDS.map(([k, t, sub]) => html`<label class="switch"><span>${t}${sub ? html`<small>${sub}</small>` : ''}</span><input type="checkbox" name="kinds" value="${k}" ${cur.kinds.includes(k) ? raw('checked') : ''}><span class="track"></span></label>`)}</div>
-    </form>`);
-  const f = $('#nt');
-  f.onchange = async () => {
-    const mode = f.mode.value;
-    const kinds = $$('input[name=kinds]:checked', f).map((x) => x.value);
-    $('.nt-kinds', f).classList.toggle('off', mode === 'off');
-    try { await api('PUT', '/api/admin/me/notify', { mode, kinds }); toast(mode === 'off' ? 'Письма о новом отключены' : 'Сохранено'); } catch (e) { toast(e.message, true); }
+  const firstKey = (k) => (d.items.find((x) => x.admin && x.group === k) || {}).key;
+  const test = async (btn, body) => {
+    btn.disabled = true;
+    try { const r = await api('POST', '/api/admin/push/test', body); toast(r.sent > 1 ? `Отправлено: ${r.sent} — проверьте iPhone` : 'Отправлено — проверьте iPhone'); } catch (e) { toast(e.message, true); }
+    btn.disabled = false;
   };
-  const fp = $('#ntp');
-  fp.onchange = async (e) => {
-    if (e.target.name !== 'push') return;
-    try { await api('PUT', '/api/admin/me/notify', { push: $$('input[name=push]:checked', fp).map((x) => x.value) }); toast('Сохранено'); } catch (ex) { toast(ex.message, true); }
-  };
+  // Состояние iPhone: нет ключа Apple → в «Приложение iPhone»; нет устройства → куда нажать в приложении.
+  const phone = !d.apple ? html`<div class="nt-dev warn"><span class="nt-dev-ic">${ic('warn', 20, 2)}</span><span><b>Push не подключены</b><small>Сначала вставьте ключ Apple — без него уведомления не уходят никому</small></span><a class="btn btn-dark btn-sm" href="/admin?status=apns">Подключить</a></div>`
+    : !d.devices ? html`<div class="nt-dev warn"><span class="nt-dev-ic">${ic('phone', 20, 2)}</span><span><b>На вашем iPhone уведомления не включены</b><small>Приложение Торгана → Профиль → ⚙ → Уведомления → «Включить уведомления»</small></span></div>`
+      : html`<div class="nt-dev"><span class="nt-dev-ic">${ic('phone', 20, 2)}</span><span><b>iPhone подключён</b><small>Push приходят на ${d.devices} ${plural(d.devices, 'устройство', 'устройства', 'устройств')}</small></span><button class="btn btn-soft btn-sm" type="button" data-test-all>Все пробные</button></div>`;
+  const meTab = html`${phone}
+    <section class="nt-sec"><h2 class="h2">Push модератору</h2><p class="muted">Сразу, на iPhone с приложением. Ваши собственные действия не присылаем.</p>
+      <div class="nt-rows" id="ntp">${d.kinds.map(({ k, name, sub }) => html`<div class="nt-row"><span class="nt-t"><b>${name}</b><small>${sub}</small></span>
+        <button class="btn btn-line btn-sm" type="button" data-test="${firstKey(k)}" ${d.apple && d.devices ? '' : raw('disabled')}>Пробное</button>
+        <label class="mini-switch"><input type="checkbox" name="push" value="${k}" aria-label="${name}" ${cur.push.includes(k) ? raw('checked') : ''}><span class="track"></span></label></div>`)}</div></section>
+    <section class="nt-sec"><h2 class="h2">Письма о новом</h2><p class="muted">${S.config.mail ? `На ${S.user.email}. У каждого модератора — свои настройки.` : raw('Почта ещё не подключена — письма начнут приходить после настройки в разделе <a href="/admin?status=mail">«Почта»</a>.')}</p>
+      <form id="nt" class="nt-form">
+        <div class="nt-modes" role="radiogroup" aria-label="Как часто">${MODES.map(([k, t, sub]) => html`<label class="nt-mode"><input type="radio" name="mode" value="${k}" ${cur.mode === k ? raw('checked') : ''}><span><b>${t}</b><small>${sub}</small></span></label>`)}</div>
+        <div class="nt-rows nt-kinds ${cur.mode === 'off' ? 'off' : ''}">${KINDS.map(([k, t, sub]) => html`<label class="nt-row"><span class="nt-t"><b>${t}</b>${sub ? html`<small>${sub}</small>` : ''}</span><span class="mini-switch"><input type="checkbox" name="kinds" value="${k}" aria-label="${t}" ${cur.kinds.includes(k) ? raw('checked') : ''}><span class="track"></span></span></label>`)}</div>
+      </form></section>`;
+  // Тексты: людям — по группам переключателей, модераторам — по видам.
+  const own = (x) => !!(x.title || x.body);
+  const row = (x) => html`<details class="pt-item" data-key="${x.key}"><summary><span class="nt-t"><b>${x.name}</b><small>${x.sample.title}</small></span>${own(x) ? html`<span class="tag accent">свой текст</span>` : ''}${ic('down', 18, 2)}</summary>
+    <form class="pt-edit" data-key="${x.key}">
+      <div class="pt-banner"><span class="pt-logo">т</span><span><b data-pv-t>${x.sample.title}</b><small data-pv-b>${x.sample.body}</small></span></div>
+      <label class="field"><span>Заголовок</span><input class="input" name="title" maxlength="120" value="${x.title || x.defTitle}"></label>
+      <label class="field"><span>Текст</span><textarea class="input" name="body" rows="3" maxlength="300">${x.body || x.defBody}</textarea></label>
+      ${x.vars.length ? html`<div class="pt-vars"><small class="muted">Подставится само — нажмите, чтобы вставить:</small>${x.vars.map((v) => html`<button type="button" class="chip" data-var="${v}">{${v}}</button>`)}</div>` : ''}
+      <div class="pt-act"><button class="btn btn-accent" type="submit">Сохранить</button><button class="btn btn-soft" type="button" data-test="${x.key}" ${d.apple && d.devices ? '' : raw('disabled')}>${ic('phone', 16, 2)}Прислать себе</button>
+        <button class="btn btn-line" type="button" data-reset ${own(x) ? '' : raw('disabled')}>${ic('refresh', 16, 2)}Стандартный</button></div>
+    </form></details>`;
+  const block = (title, sub, items) => (items.length ? html`<section class="nt-sec"><h2 class="h2">${title}</h2>${sub ? html`<p class="muted">${sub}</p>` : ''}<div class="pt-list">${items.map(row)}</div></section>` : '');
+  const textsTab = html`<p class="muted nt-lead">Тексты по умолчанию уже стоят везде. Меняйте только то, что хотите сказать иначе, — «Стандартный» вернёт исходный текст. Слова в {скобках} подставятся сами.</p>
+    <nav class="seg adm-tabs nt-aud" aria-label="Кому"><a href="#texts" data-aud="user" class="on">Пользователям</a><a href="#texts" data-aud="admin">Модераторам</a></nav>
+    <div data-aud-box="user">${d.groups.map((g) => block(g.name, g.sub, d.items.filter((x) => !x.admin && x.group === g.k)))}</div>
+    <div data-aud-box="admin" hidden>${d.kinds.map((g) => block(g.name, g.sub, d.items.filter((x) => x.admin && x.group === g.k)))}</div>`;
+  box.innerHTML = String(html`<div class="adm-head"><h1>Уведомления</h1></div>
+    <nav class="seg adm-tabs nt-tabs" aria-label="Раздел"><a href="/admin?status=notify" class="${tab === 'me' ? 'on' : ''}" data-tab="me">Мне</a><a href="/admin?status=notify#texts" class="${tab === 'texts' ? 'on' : ''}" data-tab="texts">Тексты</a></nav>
+    <div class="nt-page">${tab === 'me' ? meTab : textsTab}</div>`);
+  $$('[data-tab]', box).forEach((a) => { a.onclick = (e) => { e.preventDefault(); history.replaceState(history.state, '', a.getAttribute('href')); renderNotifyAdmin(box, a.dataset.tab); }; });
+  $$('[data-test]', box).forEach((b) => { b.onclick = () => test(b, { key: b.dataset.test }); });
+  const all = $('[data-test-all]', box); if (all) all.onclick = () => test(all, { all: true });
+  if (tab === 'me') {
+    const fp = $('#ntp');
+    fp.onchange = async (e) => {
+      if (e.target.name !== 'push') return;
+      try { await api('PUT', '/api/admin/me/notify', { push: $$('input[name=push]:checked', fp).map((x) => x.value) }); toast('Сохранено'); } catch (ex) { toast(ex.message, true); }
+    };
+    const f = $('#nt');
+    f.onchange = async () => {
+      const mode = f.mode.value;
+      $('.nt-kinds', f).classList.toggle('off', mode === 'off');
+      try { await api('PUT', '/api/admin/me/notify', { mode, kinds: $$('input[name=kinds]:checked', f).map((x) => x.value) }); toast(mode === 'off' ? 'Письма о новом отключены' : 'Сохранено'); } catch (e) { toast(e.message, true); }
+    };
+    return;
+  }
+  $$('[data-aud]', box).forEach((a) => { a.onclick = (e) => { e.preventDefault(); $$('[data-aud]', box).forEach((x) => x.classList.toggle('on', x === a)); $$('[data-aud-box]', box).forEach((x) => { x.hidden = x.dataset.audBox !== a.dataset.aud; }); }; });
+  // Живой пример: как увидит человек — с примером подстановок.
+  const sample = (key) => d.items.find((x) => x.key === key);
+  const fill = (t) => t.replace(/\{([^{}]+)\}/g, (m, v) => (v in d.samples ? d.samples[v] : m));
+  $$('.pt-edit', box).forEach((f) => {
+    const key = f.dataset.key;
+    const pv = () => { $('[data-pv-t]', f).textContent = fill(f.title.value || sample(key).defTitle); $('[data-pv-b]', f).textContent = fill(f.body.value || sample(key).defBody); };
+    f.oninput = pv;
+    let last = f.body;
+    f.title.onfocus = () => { last = f.title; }; f.body.onfocus = () => { last = f.body; };
+    $$('[data-var]', f).forEach((c) => { c.onclick = () => { const el = last; const at = el.selectionStart ?? el.value.length; el.value = `${el.value.slice(0, at)}{${c.dataset.var}}${el.value.slice(el.selectionEnd ?? at)}`; el.focus(); pv(); }; });
+    const save = async (title, body, msg) => {
+      try { await api('PUT', `/api/admin/push/texts/${key}`, { title, body }); toast(msg); renderNotifyAdmin(box, 'texts').then(() => { const el = $(`.pt-item[data-key="${key}"]`, box); if (el) { el.open = true; if (el.closest('[data-aud-box="admin"]')) $('[data-aud="admin"]', box).click(); } }); } catch (e) { toast(e.message, true); }
+    };
+    f.onsubmit = (e) => { e.preventDefault(); save(f.title.value, f.body.value, 'Текст сохранён'); };
+    $('[data-reset]', f).onclick = () => save('', '', 'Вернули стандартный текст');
+  });
 }
 
 // Найденные подозрительные основы слов → целые слова в тексте (ё = е, позиции совпадают).
